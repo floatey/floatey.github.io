@@ -303,7 +303,7 @@ const smoothPath = (pts, tension = 0.4) => {
 
 // ─── MAIN APP ───
 function App() {
-  // ── All state declared first (hooks must be in consistent order) ──
+  // ── ALL hooks must be declared before any conditional return ──
   const [data, setData] = useState(null);
   const [fbReady, setFbReady] = useState(false);
   const [view, setView] = useState("dashboard");
@@ -320,48 +320,46 @@ function App() {
   const saveTimer = useRef(null);
   const fileInputRef = useRef(null);
 
-  // ── Subscribe to Firestore once Firebase module is ready ──
+  // ── Firestore subscription ──
   useEffect(() => {
     const subscribe = () => {
       const unsub = fsListen(snap => {
-      const snapData = snap.exists() ? snap.data() : null;
-      if (snapData && snapData.payload) {
-        const raw = snapData.payload;
-        const migrated = migrate(raw);
-        const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
-        if (resolved) {
-          isRemoteUpdate.current = true;
-          setData(resolved);
-          setActiveSprint(a => a || resolved.sprints[0]?.id || null);
+        const snapData = snap.exists() ? snap.data() : null;
+        if (snapData && snapData.payload) {
+          const raw = snapData.payload;
+          const migrated = migrate(raw);
+          const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
+          if (resolved) {
+            isRemoteUpdate.current = true;
+            setData(resolved);
+            setActiveSprint(a => a || resolved.sprints[0]?.id || null);
+            setFbReady(true);
+          }
+        } else {
+          const team = DEFAULT_TEAM;
+          const fresh = { team, sprints: [makeDefaultSprint(team)] };
+          fsSave(fresh);
+          setData(fresh);
+          setActiveSprint(fresh.sprints[0]?.id || null);
           setFbReady(true);
         }
-      } else {
-        // First ever load — seed Firestore with defaults
-        const team = DEFAULT_TEAM;
-        const fresh = { team, sprints: [makeDefaultSprint(team)] };
-        fsSave(fresh);
-        setData(fresh);
-        setActiveSprint(fresh.sprints[0]?.id || null);
+      }, err => {
+        console.error("Firestore error:", err);
         setFbReady(true);
-      }
-    }, err => {
-      console.error("Firestore error:", err);
-      setFbReady(true);
-    });
-    return unsub;
-  };
-
-  // Module scripts are deferred — wait for firebaseReady if not yet loaded
-  if (window._firebaseReady) {
-    return subscribe();
-  } else {
-    const handler = () => subscribe();
-    window.addEventListener("firebaseReady", handler, { once: true });
-    return () => window.removeEventListener("firebaseReady", handler);
-  }
+      });
+      return unsub;
+    };
+    if (window._firebaseReady) {
+      return subscribe();
+    } else {
+      let unsub = null;
+      const handler = () => { unsub = subscribe(); };
+      window.addEventListener("firebaseReady", handler, { once: true });
+      return () => { window.removeEventListener("firebaseReady", handler); if (unsub) unsub(); };
+    }
   }, []);
 
-  // ── Write to Firestore on local changes (debounced 800ms) ──
+  // ── Debounced save to Firestore ──
   useEffect(() => {
     if (!data || !fbReady) return;
     if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
@@ -371,84 +369,14 @@ function App() {
     }, 800);
   }, [data, fbReady]);
 
-  // ── Loading screen while Firestore connects ──
-  if (!data) return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#07090f", gap: 16 }}>
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #4e7fff 0%, #8b5cf6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: "#fff" }}>T</div>
-      <div style={{ fontSize: 14, color: "#7880a0", fontFamily: "'JetBrains Mono'" }}>Connecting to Firebase…</div>
-    </div>
-  );
-
-  const notify = (msg, type = "info") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2600); };
-
-  const exportData = () => {
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = "tmcc-backup-" + todayStr() + ".json";
-    a.click(); URL.revokeObjectURL(url); notify("Data exported!");
-  };
-  const importData = (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target.result);
-        if (parsed.team && parsed.sprints) {
-          const migrated = migrate(parsed);
-          setData(migrated); setActiveSprint(migrated.sprints[0]?.id || null);
-          notify("Data imported!");
-        } else { notify("Invalid file format"); }
-      } catch { notify("Failed to parse file"); }
-    };
-    reader.readAsText(file); e.target.value = "";
-  };
-
-  const sprint = useMemo(() => data.sprints.find(s => s.id === activeSprint), [data.sprints, activeSprint]);
-  const team = data.team;
+  // ── Derived data (all useMemo/useCallback before any return) ──
+  const sprint = useMemo(() => data ? data.sprints.find(s => s.id === activeSprint) : null, [data, activeSprint]);
+  const team = useMemo(() => data ? data.team : [], [data]);
   const mMap = useMemo(() => { const m = {}; team.forEach(t => { m[t.id] = t; }); return m; }, [team]);
 
   const uSprint = useCallback((sid, fn) => {
     setData(p => ({ ...p, sprints: p.sprints.map(s => s.id === sid ? (typeof fn === "function" ? fn(s) : { ...s, ...fn }) : s) }));
   }, []);
-
-  const cycleStatus = (tid) => {
-    if (!sprint) return;
-    const order = ["not-started", "in-progress", "complete"];
-    uSprint(sprint.id, s => ({
-      ...s,
-      tasks: s.tasks.map(t => {
-        if (t.id !== tid) return t;
-        const next = order[(order.indexOf(t.status) + 1) % 3];
-        return {
-          ...t,
-          status: next,
-          completedAt: next === "complete" ? nowESTiso() : null,
-        };
-      })
-    }));
-  };
-  const deleteTask = (tid) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.filter(t => t.id !== tid).map(t => ({ ...t, deps: (t.deps || []).filter(d => d !== tid) })) })); notify("Task removed"); };
-  const addTask = (task) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: [...s.tasks, { ...task, id: uid(), deps: task.deps || [] }] })); setShowNewTask(false); notify("Task added!"); };
-  const updateTask = (tid, u) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, ...u } : t) })); };
-  const logTime = (tid, hrs) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, logged: (t.logged || 0) + hrs } : t) })); setShowLogTime(null); notify("Logged " + hrs + "h ✓", "success"); };
-  const reorderTasks = (fromIdx, toIdx) => { if (!sprint) return; uSprint(sprint.id, s => { const ts = [...s.tasks]; const [moved] = ts.splice(fromIdx, 1); ts.splice(toIdx, 0, moved); return { ...s, tasks: ts }; }); };
-
-  const createSprint = (sd) => {
-    const ns = { ...sd, id: uid(), tasks: [] };
-    setData(p => ({ ...p, sprints: [...p.sprints, ns] }));
-    setActiveSprint(ns.id); setShowNewSprint(false); notify("Sprint created!");
-  };
-  const deleteSprint = (id) => {
-    setData(p => ({ ...p, sprints: p.sprints.filter(s => s.id !== id) }));
-    if (activeSprint === id) setActiveSprint(data.sprints.find(s => s.id !== id)?.id || null);
-    notify("Sprint deleted");
-  };
-  const updateSprintMeta = (id, updates) => {
-    uSprint(id, s => ({ ...s, ...updates }));
-    setShowEditSprint(false); notify("Sprint updated!");
-  };
 
   const filteredTasks = useMemo(() => {
     if (!sprint) return [];
@@ -485,45 +413,34 @@ function App() {
     const today = todayStr();
     const totalEst = stats.estimated;
     const pts = [];
-
     for (let d = 0; d <= totalDays; d++) {
       const dayStr = addDays(sprint.startDate, d);
       const isInPast = dayStr <= today;
-
       let remaining = 0;
       sprint.tasks.forEach(t => {
         const est = t.estimated || 0;
         const logged = t.logged || 0;
         if (t.status === "complete") {
           const completedDay = t.completedAt ? t.completedAt.slice(0, 10) : t.endDate;
-          if (completedDay > dayStr) remaining += est; // not yet done on this day
+          if (completedDay > dayStr) remaining += est;
         } else if (t.status === "in-progress") {
-          // spread logged hours linearly from task start → today
           const taskStart = t.startDate <= today ? t.startDate : today;
           const daysActive = Math.max(1, daysBetween(taskStart, today));
           const daysToHere = clamp(daysBetween(taskStart, dayStr), 0, daysActive);
           const burnedByDay = logged * (daysToHere / daysActive);
           remaining += Math.max(0, est - burnedByDay);
         } else {
-          remaining += est; // not started
+          remaining += est;
         }
       });
-
       const ideal = Math.max(0, totalEst * (1 - d / totalDays));
-      pts.push({
-        day: dayStr,
-        label: fmt(dayStr),
-        ideal: Math.round(ideal * 10) / 10,
-        actual: isInPast ? Math.round(remaining * 10) / 10 : null,
-        isToday: dayStr === today,
-        weekMark: d % 7 === 0,
-      });
+      pts.push({ day: dayStr, label: fmt(dayStr), ideal: Math.round(ideal * 10) / 10, actual: isInPast ? Math.round(remaining * 10) / 10 : null, isToday: dayStr === today, weekMark: d % 7 === 0 });
     }
     return pts;
   }, [sprint, stats]);
 
-  // Velocity: tasks completed per sprint (primary), hours as secondary
   const velocityData = useMemo(() => {
+    if (!data) return [];
     return data.sprints.map(s => ({
       name: s.name,
       doneCount: s.tasks.filter(t => t.status === "complete").length,
@@ -531,16 +448,114 @@ function App() {
       loggedHours: s.tasks.reduce((acc, t) => acc + (t.logged || 0), 0),
       estimatedHours: s.tasks.reduce((acc, t) => acc + (t.estimated || 0), 0),
     }));
-  }, [data.sprints]);
+  }, [data]);
 
   const sprintProgress = sprint ? (stats.tasks > 0 ? Math.round(stats.doneTasks / stats.tasks * 100) : 0) : 0;
 
+  // ── Handlers (defined after hooks, before return) ──
+  const notify = useCallback((msg) => { setToast({ msg }); setTimeout(() => setToast(null), 2600); }, []);
+
+  const cycleStatus = useCallback((tid) => {
+    if (!sprint) return;
+    const order = ["not-started", "in-progress", "complete"];
+    uSprint(sprint.id, s => ({
+      ...s,
+      tasks: s.tasks.map(t => {
+        if (t.id !== tid) return t;
+        const next = order[(order.indexOf(t.status) + 1) % 3];
+        return { ...t, status: next, completedAt: next === "complete" ? nowESTiso() : null };
+      })
+    }));
+  }, [sprint, uSprint]);
+
+  const deleteTask = useCallback((tid) => {
+    if (!sprint) return;
+    uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.filter(t => t.id !== tid).map(t => ({ ...t, deps: (t.deps || []).filter(d => d !== tid) })) }));
+    notify("Task removed");
+  }, [sprint, uSprint, notify]);
+
+  const addTask = useCallback((task) => {
+    if (!sprint) return;
+    uSprint(sprint.id, s => ({ ...s, tasks: [...s.tasks, { ...task, id: uid(), deps: task.deps || [] }] }));
+    setShowNewTask(false); notify("Task added!");
+  }, [sprint, uSprint, notify]);
+
+  const updateTask = useCallback((tid, u) => {
+    if (!sprint) return;
+    uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, ...u } : t) }));
+  }, [sprint, uSprint]);
+
+  const logTime = useCallback((tid, hrs) => {
+    if (!sprint) return;
+    uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, logged: (t.logged || 0) + hrs } : t) }));
+    setShowLogTime(null); notify("Logged " + hrs + "h ✓");
+  }, [sprint, uSprint, notify]);
+
+  const reorderTasks = useCallback((fromIdx, toIdx) => {
+    if (!sprint) return;
+    uSprint(sprint.id, s => { const ts = [...s.tasks]; const [moved] = ts.splice(fromIdx, 1); ts.splice(toIdx, 0, moved); return { ...s, tasks: ts }; });
+  }, [sprint, uSprint]);
+
+  const createSprint = useCallback((sd) => {
+    const ns = { ...sd, id: uid(), tasks: [] };
+    setData(p => ({ ...p, sprints: [...p.sprints, ns] }));
+    setActiveSprint(ns.id); setShowNewSprint(false); notify("Sprint created!");
+  }, [notify]);
+
+  const deleteSprint = useCallback((id) => {
+    setData(p => {
+      const remaining = p.sprints.filter(s => s.id !== id);
+      if (activeSprint === id) setActiveSprint(remaining[0]?.id || null);
+      return { ...p, sprints: remaining };
+    });
+    notify("Sprint deleted");
+  }, [activeSprint, notify]);
+
+  const updateSprintMeta = useCallback((id, updates) => {
+    uSprint(id, s => ({ ...s, ...updates }));
+    setShowEditSprint(false); notify("Sprint updated!");
+  }, [uSprint, notify]);
+
+  const exportData = useCallback(() => {
+    if (!data) return;
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = "tmcc-backup-" + todayStr() + ".json";
+    a.click(); URL.revokeObjectURL(url); notify("Data exported!");
+  }, [data, notify]);
+
+  const importData = useCallback((e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (parsed.team && parsed.sprints) {
+          const migrated = migrate(parsed);
+          setData(migrated); setActiveSprint(migrated.sprints[0]?.id || null);
+          notify("Data imported!");
+        } else { notify("Invalid file format"); }
+      } catch { notify("Failed to parse file"); }
+    };
+    reader.readAsText(file); e.target.value = "";
+  }, [notify]);
+
   const NAV = [
-    { id: "dashboard", label: "Dashboard",  icon: "▦" },
-    { id: "gantt",     label: "Timeline",   icon: "▤" },
-    { id: "burndown",  label: "Burndown",   icon: "◿" },
-    { id: "team",      label: "Team",       icon: "◉" },
+    { id: "dashboard", label: "Dashboard", icon: "▦" },
+    { id: "gantt",     label: "Timeline",  icon: "▤" },
+    { id: "burndown",  label: "Burndown",  icon: "◿" },
+    { id: "team",      label: "Team",      icon: "◉" },
   ];
+
+  // ── Loading screen (only conditional return, comes after ALL hooks) ──
+  if (!data) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#07090f", gap: 16 }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #4e7fff 0%, #8b5cf6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: "#fff" }}>T</div>
+      <div style={{ fontSize: 14, color: "#7880a0", fontFamily: "'JetBrains Mono'" }}>Connecting to Firebase…</div>
+    </div>
+  );
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
