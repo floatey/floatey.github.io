@@ -84,6 +84,7 @@ const migrate = (data) => {
   return {
     ...data,
     team: data.team,
+    pet: data.pet ? data.pet : { ...DEFAULT_PET, createdAt: todayStr(), updatedAt: nowESTiso() },
     sprints: data.sprints.map(s => ({
       ...s,
       notes: s.notes || "",
@@ -105,6 +106,18 @@ const migrate = (data) => {
       }) : [],
     }))
   };
+};
+
+const DEFAULT_PET = {
+  name: "Tomochi",
+  hunger: 80,
+  happiness: 80,
+  updatedAt: null,
+  lastFedBy: null,
+  lastPlayedBy: null,
+  totalFeeds: 0,
+  totalPlays: 0,
+  createdAt: null,
 };
 
 const DEFAULT_TEAM = [
@@ -434,6 +447,242 @@ function SidebarClock() {
   );
 }
 
+
+// ─── TOMODACHI ──────────────────────────────────────────────────────────────
+const TOMO_MOODS = {
+  ecstatic: {
+    frames: [
+      ["  /\\_/\\  ", " ( ★‿★ ) ", "  ( ♥ )  "],
+      ["  /\\_/\\  ", " ( ★‿★ ) ", " ~( ♥ )~ "],
+    ],
+    label: "ECSTATIC", color: "#fbbf24",
+    texts: ["life is perfect. cannot complain.", "absolutely thriving rn.", "peak happiness achieved.", "this is the good life."],
+  },
+  happy: {
+    frames: [
+      ["  /\\_/\\  ", " ( ◕‿◕ ) ", "  ( v )  "],
+      ["  /\\_/\\  ", " ( ◕‿◕ ) ", " ~( v )~ "],
+    ],
+    label: "HAPPY", color: "#2ed09b",
+    texts: ["doing great actually.", "things are good. no notes.", "genuinely content.", "vibes are immaculate."],
+  },
+  content: {
+    frames: [
+      ["  /\\_/\\  ", " ( -‿- ) ", "  ( . )  "],
+      ["  /\\_/\\  ", " ( -.- ) ", "  ( . )  "],
+    ],
+    label: "OKAY", color: "#4e9fff",
+    texts: ["vibing. nothing major.", "existing comfortably.", "fine. everything is fine.", "could be worse honestly."],
+  },
+  hungry: {
+    frames: [
+      ["  /\\_/\\  ", " ( >◇< ) ", "  ( . )  "],
+      ["  /\\_/\\  ", " ( >o< ) ", "  ( . )  "],
+    ],
+    label: "HUNGRY", color: "#f97316",
+    texts: ["would appreciate food rn.", "hello? snacks?", "thinking about eating.", "a snack would be great."],
+  },
+  sad: {
+    frames: [
+      ["  /\\_/\\  ", " ( ╥_╥ ) ", "  ( . )  "],
+      ["  /\\_/\\  ", " ( ;_; ) ", "  ( . )  "],
+    ],
+    label: "SAD", color: "#b87fff",
+    texts: ["could use some attention.", "a bit lonely ngl.", "anyone there?", "just hanging out... alone..."],
+  },
+  miserable: {
+    frames: [
+      ["  /\\_/\\  ", " ( x_x ) ", "  ( . )  "],
+      ["  /\\_/\\  ", " ( X_X ) ", "  ( . )  "],
+    ],
+    label: "SUFFERING", color: "#ff4d6d",
+    texts: ["this is a cry for help.", "hello?? HELLO??", "pls.", "someone. anyone."],
+  },
+};
+
+function getMood(hunger, happiness) {
+  if (hunger > 75 && happiness > 75) return "ecstatic";
+  if (hunger > 50 && happiness > 50) return "happy";
+  if (hunger > 30 && happiness > 30) return "content";
+  if (hunger <= 20 && happiness <= 20) return "miserable";
+  if (hunger <= 30) return "hungry";
+  return "sad";
+}
+
+function StatBar({ label, value, color }) {
+  const pct = Math.round(value);
+  const segments = 20;
+  const filled = Math.round(pct / 100 * segments);
+  const bar = Array.from({ length: segments }, (_, i) => i < filled ? "█" : "░").join("");
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", minWidth: 70, fontFamily: "'Inter'" }}>{label}</span>
+      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color, letterSpacing: "1px", flex: 1 }}>{bar}</span>
+      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color, minWidth: 36, textAlign: "right" }}>{pct}%</span>
+    </div>
+  );
+}
+
+function TomoView({ pet, team, computePetStats, onFeed, onPlay, onRename }) {
+  const [tick, setTick] = useState(0);
+  const [actingAs, setActingAs] = useState(team[0]?.id || null);
+  const [renaming, setRenaming] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 900);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!pet) return null;
+
+  const { hunger, happiness } = computePetStats(pet);
+  const moodKey = getMood(hunger, happiness);
+  const mood    = TOMO_MOODS[moodKey];
+  const frame   = mood.frames[tick % mood.frames.length];
+  const flavor  = mood.texts[tick % mood.texts.length];
+
+  const actor  = team.find(m => m.id === actingAs);
+  const fedM   = pet.lastFedBy;
+  const playM  = pet.lastPlayedBy;
+
+  // Days alive
+  const daysAlive = pet.createdAt
+    ? Math.max(1, Math.round((new Date() - new Date(pet.createdAt + (pet.createdAt.includes("T") ? "" : "T00:00:00"))) / 86400000))
+    : 1;
+
+  const isHurt = hunger < 20 || happiness < 20;
+
+  return (
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "8px 0", animation: "fadeUp 0.3s ease" }}>
+
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          {renaming ? (
+            <div style={{ display: "flex", gap: 8, flex: 1 }}>
+              <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { onRename(nameInput); setRenaming(false); } if (e.key === "Escape") setRenaming(false); }}
+                style={{ ...inputStyle, fontSize: 20, fontWeight: 800, flex: 1 }} />
+              <button onClick={() => { onRename(nameInput); setRenaming(false); }} style={{ ...btnBase, padding: "8px 16px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Save</button>
+              <button onClick={() => setRenaming(false)} style={{ ...btnBase, padding: "8px 14px", background: T.bgElevated, color: T.textSub, fontSize: 13 }}>✕</button>
+            </div>
+          ) : (
+            <>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Inter'", letterSpacing: "-0.5px" }}>{pet.name}</h2>
+              <button onClick={() => { setNameInput(pet.name); setRenaming(true); }}
+                style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, fontSize: 10, padding: "3px 8px", borderRadius: 5 }}>rename</button>
+            </>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: T.textMuted }}>
+          age {daysAlive} day{daysAlive !== 1 ? "s" : ""} · shared team pet · {pet.totalFeeds || 0} feeds · {pet.totalPlays || 0} play sessions
+        </div>
+      </div>
+
+      {/* ASCII creature */}
+      <div style={{
+        background: T.bgCard, border: "1px solid " + (isHurt ? mood.color + "50" : T.border),
+        borderRadius: T.radiusXl, padding: "32px 24px", marginBottom: 20,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 0,
+        boxShadow: isHurt ? "0 0 32px " + mood.color + "18" : "none",
+        transition: "box-shadow 0.5s ease, border-color 0.5s ease",
+      }}>
+        {/* Mood badge */}
+        <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase",
+            color: mood.color, background: mood.color + "18", border: "1px solid " + mood.color + "30",
+            padding: "3px 12px", borderRadius: 20,
+          }}>{mood.label}</span>
+        </div>
+
+        {/* ASCII art */}
+        <pre style={{
+          fontFamily: "'JetBrains Mono'", fontSize: 22, lineHeight: 1.6,
+          color: mood.color, textAlign: "center", margin: 0,
+          textShadow: "0 0 24px " + mood.color + "60",
+          userSelect: "none",
+        }}>{frame.join("\n")}</pre>
+
+        {/* Flavor text */}
+        <div style={{
+          marginTop: 20, fontSize: 13, color: T.textMuted, fontStyle: "italic",
+          textAlign: "center", minHeight: 20, fontFamily: "'Inter'",
+          transition: "opacity 0.3s ease",
+        }}>"{flavor}"</div>
+
+        {/* Stat bars */}
+        <div style={{
+          marginTop: 24, width: "100%", maxWidth: 380,
+          background: T.bg, borderRadius: T.radius, padding: "14px 16px",
+          display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          <StatBar label="Hunger" value={hunger} color={hunger < 30 ? T.danger : hunger < 60 ? T.warning : T.success} />
+          <StatBar label="Happiness" value={happiness} color={happiness < 30 ? T.danger : happiness < 60 ? "#b87fff" : T.accent} />
+        </div>
+      </div>
+
+      {/* Acting as */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8, fontFamily: "'Inter'" }}>You are</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {team.map(m => (
+            <button key={m.id} onClick={() => setActingAs(m.id)} style={{
+              ...btnBase, padding: "7px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 7,
+              background: actingAs === m.id ? m.color + "20" : T.bgCard,
+              color: actingAs === m.id ? m.color : T.textSub,
+              border: actingAs === m.id ? "1px solid " + m.color + "50" : "1px solid " + T.border,
+            }}>
+              <div style={{ width: 18, height: 18, borderRadius: "50%", background: m.color + "30", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>
+              {m.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+        <button onClick={() => actor && onFeed(actor.name)} disabled={!actingAs} style={{
+          ...btnBase, flex: 1, padding: "14px 0", fontSize: 14, fontWeight: 700,
+          background: actingAs ? T.success + "18" : T.bgCard, color: actingAs ? T.success : T.textMuted,
+          border: "1px solid " + (actingAs ? T.success + "40" : T.border),
+          borderRadius: T.radiusLg,
+        }}>
+          🍖  Feed
+        </button>
+        <button onClick={() => actor && onPlay(actor.name)} disabled={!actingAs} style={{
+          ...btnBase, flex: 1, padding: "14px 0", fontSize: 14, fontWeight: 700,
+          background: actingAs ? T.accent + "18" : T.bgCard, color: actingAs ? T.accent : T.textMuted,
+          border: "1px solid " + (actingAs ? T.accent + "40" : T.border),
+          borderRadius: T.radiusLg,
+        }}>
+          🎮  Play
+        </button>
+      </div>
+
+      {/* Last activity */}
+      <div style={{ background: T.bgCard, borderRadius: T.radius, padding: "12px 16px", display: "flex", gap: 20 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 4, fontFamily: "'Inter'" }}>Last Fed By</div>
+          <div style={{ fontSize: 13, color: fedM ? T.success : T.textMuted, fontWeight: fedM ? 600 : 400 }}>{fedM || "no one yet"}</div>
+        </div>
+        <div style={{ width: 1, background: T.border }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 4, fontFamily: "'Inter'" }}>Last Played By</div>
+          <div style={{ fontSize: 13, color: playM ? T.accent : T.textMuted, fontWeight: playM ? 600 : 400 }}>{playM || "no one yet"}</div>
+        </div>
+      </div>
+
+      {/* Decay hint */}
+      <div style={{ marginTop: 12, fontSize: 11, color: T.textMuted, textAlign: "center", fontStyle: "italic" }}>
+        hunger drains ~3%/hr · happiness drains ~2%/hr · shared between your whole team
+      </div>
+
+    </div>
+  );
+}
+
 // ─── MAIN APP ───
 function App() {
   // ── ALL hooks must be declared before any conditional return ──
@@ -726,11 +975,48 @@ function App() {
     reader.readAsText(file); e.target.value = "";
   }, [notify]);
 
+  // ── Pet helpers ──
+  const computePetStats = useCallback((pet) => {
+    if (!pet) return { hunger: 0, happiness: 0 };
+    const nowMs  = new Date().getTime();
+    const lastMs = pet.updatedAt ? new Date(pet.updatedAt).getTime() : nowMs;
+    const hours  = Math.max(0, (nowMs - lastMs) / 3600000);
+    return {
+      hunger:    Math.round(Math.max(0, Math.min(100, (pet.hunger    || 0) - hours * 3))),
+      happiness: Math.round(Math.max(0, Math.min(100, (pet.happiness || 0) - hours * 2))),
+    };
+  }, []);
+
+  const feedPet = useCallback((memberName) => {
+    if (!data?.pet) return;
+    const cur = computePetStats(data.pet);
+    const next = { ...data.pet, hunger: Math.min(100, cur.hunger + 35), happiness: Math.min(100, cur.happiness + 5),
+      updatedAt: nowESTiso(), lastFedBy: memberName, totalFeeds: (data.pet.totalFeeds || 0) + 1 };
+    setData(p => ({ ...p, pet: next }));
+    notify(memberName + " fed Tomochi! 🍖");
+  }, [data, computePetStats, notify]);
+
+  const playWithPet = useCallback((memberName) => {
+    if (!data?.pet) return;
+    const cur = computePetStats(data.pet);
+    const next = { ...data.pet, happiness: Math.min(100, cur.happiness + 35), hunger: Math.max(0, cur.hunger - 8),
+      updatedAt: nowESTiso(), lastPlayedBy: memberName, totalPlays: (data.pet.totalPlays || 0) + 1 };
+    setData(p => ({ ...p, pet: next }));
+    notify(memberName + " played with Tomochi! 🎮");
+  }, [data, computePetStats, notify]);
+
+  const renamePet = useCallback((name) => {
+    if (!data?.pet || !name.trim()) return;
+    setData(p => ({ ...p, pet: { ...p.pet, name: name.trim() } }));
+    notify("Renamed to " + name.trim() + "!");
+  }, [data, notify]);
+
   const NAV = [
     { id: "dashboard", label: "Dashboard", icon: "▦" },
     { id: "gantt",     label: "Timeline",  icon: "▤" },
     { id: "burndown",  label: "Burndown",  icon: "◿" },
     { id: "team",      label: "Team",      icon: "◉" },
+    { id: "tomo",      label: "Tomochi",   icon: "ᘛ" },
   ];
 
   // ── Loading screen (only conditional return, comes after ALL hooks) ──
@@ -855,7 +1141,9 @@ function App() {
 
         {/* View Content */}
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
-          {!sprint
+          {view === "tomo"
+            ? <TomoView pet={data.pet} team={team} computePetStats={computePetStats} onFeed={feedPet} onPlay={playWithPet} onRename={renamePet} />
+            : !sprint
             ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
             : view === "dashboard"
               ? <DashView sprint={sprint} stats={stats} team={team} mMap={mMap} tasks={filteredTasks} allTasks={sprint.tasks} cycle={cycleStatus} del={deleteTask} onLog={setShowLogTime} onEdit={setShowEditTask} onReorder={reorderTasks} />
