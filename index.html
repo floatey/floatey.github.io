@@ -7,11 +7,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script>
-  // ── Firebase init (runs before React) ──
-  const _firebaseConfig = {
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+  import { getFirestore, doc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+  import { onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+  const firebaseConfig = {
     apiKey: "AIzaSyAOVZlazcx9gktgnIthaM3iB_Q1-9wyarA",
     authDomain: "test-531f9.firebaseapp.com",
     projectId: "test-531f9",
@@ -19,9 +20,20 @@
     messagingSenderId: "365348741958",
     appId: "1:365348741958:web:2886ae3d47789021917b47"
   };
-  firebase.initializeApp(_firebaseConfig);
-  window._db = firebase.firestore();
-  window._docRef = window._db.collection("tmcc").doc("state");
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const docRef = doc(db, "tmcc", "state");
+
+  // Expose to window so the Babel/React script can access them
+  window._docRef = docRef;
+  window._onSnapshot = onSnapshot;
+  window._setDoc = setDoc;
+  window._deleteDoc = deleteDoc;
+  window._firebaseReady = true;
+
+  // Dispatch event so React knows Firebase is ready
+  window.dispatchEvent(new Event("firebaseReady"));
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -59,8 +71,11 @@ const todayStr = () => { const d = toEST(); return d.getFullYear() + "-" + Strin
 const nowESTiso = () => { const d = toEST(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0") + "T" + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); };
 const fmtDateTime = (iso) => { if (!iso) return ""; const [date, time] = iso.split("T"); const dt = new Date(date + "T00:00:00"); const d = dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); return time ? d + " at " + time : d; };
 
-// ── Storage: Firestore (replaces localStorage) ──
-const docRef = window._docRef;
+// ── Storage: Firestore modular SDK (via window globals set by type=module script) ──
+const docRef    = () => window._docRef;
+const fsListen  = (cb, err) => window._onSnapshot(window._docRef, cb, err);
+const fsSave    = (data) => window._setDoc(window._docRef, { payload: data });
+const fsDelete  = () => window._deleteDoc(window._docRef);
 
 // Migrate old data format
 const migrate = (data) => {
@@ -293,11 +308,13 @@ function App() {
   const isRemoteUpdate = useRef(false);
   const saveTimer = useRef(null);
 
-  // ── Subscribe to Firestore (real-time sync for all teammates) ──
+  // ── Subscribe to Firestore once Firebase module is ready ──
   useEffect(() => {
-    const unsub = docRef.onSnapshot(snap => {
-      if (snap.exists) {
-        const raw = snap.data().payload;
+    const subscribe = () => {
+      const unsub = fsListen(snap => {
+      const snapData = snap.exists() ? snap.data() : null;
+      if (snapData && snapData.payload) {
+        const raw = snapData.payload;
         const migrated = migrate(raw);
         const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
         if (resolved) {
@@ -310,16 +327,26 @@ function App() {
         // First ever load — seed Firestore with defaults
         const team = DEFAULT_TEAM;
         const fresh = { team, sprints: [makeDefaultSprint(team)] };
-        docRef.set({ payload: fresh });
+        fsSave(fresh);
         setData(fresh);
         setActiveSprint(fresh.sprints[0]?.id || null);
         setFbReady(true);
       }
     }, err => {
       console.error("Firestore error:", err);
-      setFbReady(true); // still unblock the UI
+      setFbReady(true);
     });
-    return () => unsub();
+    return unsub;
+  };
+
+  // Module scripts are deferred — wait for firebaseReady if not yet loaded
+  if (window._firebaseReady) {
+    return subscribe();
+  } else {
+    const handler = () => subscribe();
+    window.addEventListener("firebaseReady", handler, { once: true });
+    return () => window.removeEventListener("firebaseReady", handler);
+  }
   }, []);
 
   // ── Write to Firestore on local changes (debounced 800ms) ──
@@ -328,7 +355,7 @@ function App() {
     if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      docRef.set({ payload: data }).catch(err => console.error("Save failed:", err));
+      fsSave(data).catch(err => console.error("Save failed:", err));
     }, 800);
   }, [data, fbReady]);
 
@@ -665,7 +692,7 @@ function App() {
         onRemoveMember={(id) => { setData(p => ({ ...p, team: p.team.filter(m => m.id !== id) })); notify("Member removed"); }}
         onDeleteSprint={deleteSprint}
         onExport={exportData} onImport={() => fileInputRef.current?.click()}
-        onReset={() => { docRef.delete().then(() => window.location.reload()); }} />
+        onReset={() => { fsDelete().then(() => window.location.reload()); }} />
       <input ref={fileInputRef} type="file" accept=".json" style={{ display: "none" }} onChange={importData} />
 
       {/* Toast */}
