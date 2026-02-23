@@ -303,10 +303,22 @@ const smoothPath = (pts, tension = 0.4) => {
 
 // ─── MAIN APP ───
 function App() {
-  const [data, setData] = useState(null);  // null = loading from Firestore
+  // ── All state declared first (hooks must be in consistent order) ──
+  const [data, setData] = useState(null);
   const [fbReady, setFbReady] = useState(false);
+  const [view, setView] = useState("dashboard");
+  const [activeSprint, setActiveSprint] = useState(null);
+  const [showNewSprint, setShowNewSprint] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [showLogTime, setShowLogTime] = useState(null);
+  const [showEditTask, setShowEditTask] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showEditSprint, setShowEditSprint] = useState(false);
+  const [filterMember, setFilterMember] = useState(null);
+  const [toast, setToast] = useState(null);
   const isRemoteUpdate = useRef(false);
   const saveTimer = useRef(null);
+  const fileInputRef = useRef(null);
 
   // ── Subscribe to Firestore once Firebase module is ready ──
   useEffect(() => {
@@ -358,18 +370,6 @@ function App() {
       fsSave(data).catch(err => console.error("Save failed:", err));
     }, 800);
   }, [data, fbReady]);
-
-  const [view, setView] = useState("dashboard");
-  const [activeSprint, setActiveSprint] = useState(null);
-  const [showNewSprint, setShowNewSprint] = useState(false);
-  const [showNewTask, setShowNewTask] = useState(false);
-  const [showLogTime, setShowLogTime] = useState(null);
-  const [showEditTask, setShowEditTask] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showEditSprint, setShowEditSprint] = useState(false);
-  const [filterMember, setFilterMember] = useState(null);
-  const [toast, setToast] = useState(null);
-  const fileInputRef = useRef(null);
 
   // ── Loading screen while Firestore connects ──
   if (!data) return (
