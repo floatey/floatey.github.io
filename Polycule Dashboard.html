@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TMCC – Team Time Management</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+  // ── Firebase init (runs before React) ──
+  const _firebaseConfig = {
+    apiKey: "AIzaSyAOVZlazcx9gktgnIthaM3iB_Q1-9wyarA",
+    authDomain: "test-531f9.firebaseapp.com",
+    projectId: "test-531f9",
+    storageBucket: "test-531f9.firebasestorage.app",
+    messagingSenderId: "365348741958",
+    appId: "1:365348741958:web:2886ae3d47789021917b47"
+  };
+  firebase.initializeApp(_firebaseConfig);
+  window._db = firebase.firestore();
+  window._docRef = window._db.collection("tmcc").doc("state");
+</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #07090f; font-family: 'Inter', -apple-system, sans-serif; color: #cdd1e8; overflow-x: hidden; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #1e2338; border-radius: 10px; }
+  input, select, textarea, button { font-family: inherit; }
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slideRight { from { opacity: 0; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
+  @keyframes popIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+  @keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+  ::selection { background: #4e7fff30; color: #e0e4f7; }
+  .drag-over { outline: 2px solid #4e7fff55 !important; background: #4e7fff08 !important; }
+  .dragging { opacity: 0.4; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useEffect, useCallback, useRef } = React;
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const fmt = (d) => { if (!d) return ""; const dt = new Date(d + "T00:00:00"); return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
+const fmtFull = (d) => { if (!d) return ""; const dt = new Date(d + "T00:00:00"); return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
+const addDays = (d, n) => { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + n); return dt.toISOString().slice(0, 10); };
+// All dates standardized to America/New_York (EST/EDT)
+const toEST = (date = new Date()) => new Date(date.toLocaleString("en-US", { timeZone: "America/New_York" }));
+const todayStr = () => { const d = toEST(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); };
+const nowESTiso = () => { const d = toEST(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0") + "T" + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); };
+const fmtDateTime = (iso) => { if (!iso) return ""; const [date, time] = iso.split("T"); const dt = new Date(date + "T00:00:00"); const d = dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); return time ? d + " at " + time : d; };
+
+// ── Storage: Firestore (replaces localStorage) ──
+const docRef = window._docRef;
+
+// Migrate old data format
+const migrate = (data) => {
+  if (!data) return null;
+  return {
+    ...data,
+    sprints: data.sprints.map(s => ({
+      ...s,
+      tasks: s.tasks.map(t => ({
+        deps: [],
+        completedAt: t.status === "complete" ? (t.completedAt || t.endDate) : null,
+        ...t,
+      }))
+    }))
+  };
+};
+
+const DEFAULT_TEAM = [
+  { id: uid(), name: "Tarro", color: "#ff5270", initials: "TA" },
+  { id: uid(), name: "Nathan", color: "#4e9fff", initials: "NA" },
+  { id: uid(), name: "Damian", color: "#2ed09b", initials: "DA" },
+  { id: uid(), name: "Harrison", color: "#fbbf24", initials: "HA" },
+  { id: uid(), name: "Nick", color: "#b87fff", initials: "NI" },
+];
+
+const makeDefaultSprint = (team) => {
+  const start = todayStr();
+  const end = addDays(start, 55);
+  const t1id = uid(), t2id = uid(), t3id = uid(), t4id = uid(), t5id = uid();
+  return {
+    id: uid(), name: "Sprint 1", startDate: start, endDate: end, weekLength: 1,
+    tasks: [
+      { id: t1id, name: "Core Systems Architecture", assignee: team[0].id, startDate: start, endDate: addDays(start, 13), estimated: 24, logged: 0, status: "not-started", deps: [] },
+      { id: t2id, name: "UI Framework & HUD", assignee: team[1].id, startDate: start, endDate: addDays(start, 20), estimated: 28, logged: 0, status: "not-started", deps: [] },
+      { id: t3id, name: "Character Controller", assignee: team[2].id, startDate: addDays(start, 7), endDate: addDays(start, 20), estimated: 20, logged: 0, status: "not-started", deps: [t1id] },
+      { id: t4id, name: "Level Design – Zone A", assignee: team[3].id, startDate: start, endDate: addDays(start, 27), estimated: 32, logged: 0, status: "not-started", deps: [] },
+      { id: t5id, name: "Weapon Systems & FX", assignee: team[4].id, startDate: start, endDate: addDays(start, 20), estimated: 24, logged: 0, status: "not-started", deps: [t3id] },
+    ],
+  };
+};
+
+// ─── DESIGN TOKENS ───
+const T = {
+  bg: "#07090f", bgCard: "#0b0f1a", bgElevated: "#10141f", bgHover: "#141929",
+  border: "#181d2e", borderLight: "#1e2438",
+  text: "#dde1f0", textSub: "#7880a0", textMuted: "#454c68",
+  accent: "#4e7fff", accentHover: "#6b94ff", accentBg: "#4e7fff12",
+  success: "#2ed09b", warning: "#f5a623", danger: "#ff4d6d",
+  radius: "8px", radiusLg: "12px", radiusXl: "16px",
+};
+
+const btnBase = { border: "none", cursor: "pointer", borderRadius: T.radius, fontWeight: 500, transition: "all 0.15s" };
+const inputStyle = {
+  width: "100%", padding: "10px 12px", background: T.bg, border: "1px solid " + T.border,
+  borderRadius: T.radius, color: T.text, fontSize: 13, outline: "none", transition: "border-color 0.15s",
+};
+const labelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6, display: "block", fontFamily: "'Inter', sans-serif" };
+
+// ─── TOOLTIP ───
+function Tip({ children, text }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && <div style={{
+        position: "absolute", bottom: "calc(100% + 7px)", left: "50%", transform: "translateX(-50%)",
+        background: T.bgElevated, border: "1px solid " + T.borderLight, borderRadius: 6,
+        padding: "5px 10px", fontSize: 11, color: T.textSub, whiteSpace: "nowrap", zIndex: 999,
+        animation: "fadeIn 0.1s ease", pointerEvents: "none", boxShadow: "0 4px 16px #00000050",
+      }}>{text}</div>}
+    </div>
+  );
+}
+
+// ─── STATUS BADGE ───
+function StatusBadge({ status, onClick, size = "normal" }) {
+  const cfgs = {
+    "complete":     { color: T.success, label: "Done",   dot: "✓" },
+    "in-progress":  { color: T.warning, label: "Active", dot: "●" },
+    "not-started":  { color: T.textMuted, label: "Todo", dot: "○" },
+  };
+  const c = cfgs[status] || cfgs["not-started"];
+  const s = size === "small" ? { padding: "2px 8px", fontSize: 10 } : { padding: "4px 10px", fontSize: 11 };
+  return (
+    <button onClick={onClick} style={{ ...btnBase, ...s, display: "inline-flex", alignItems: "center", gap: 5, background: c.color + "18", color: c.color, fontWeight: 600, letterSpacing: "0.2px" }}>
+      <span style={{ fontSize: size === "small" ? 7 : 8, lineHeight: 1 }}>{c.dot}</span>{c.label}
+    </button>
+  );
+}
+
+// ─── PROGRESS BAR ───
+function ProgressBar({ value, max, color = T.accent, height = 4, showLabel = false }) {
+  const pct = max > 0 ? clamp((value / max) * 100, 0, 100) : 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ flex: 1, height, background: T.border, borderRadius: height, overflow: "hidden" }}>
+        <div style={{ width: pct + "%", height: "100%", background: color, borderRadius: height, transition: "width 0.5s cubic-bezier(0.4,0,0.2,1)" }} />
+      </div>
+      {showLabel && <span style={{ fontSize: 10, fontWeight: 600, color, minWidth: 34, textAlign: "right", fontFamily: "'JetBrains Mono'" }}>{Math.round(pct)}%</span>}
+    </div>
+  );
+}
+
+// ─── RING PROGRESS ───
+function RingProgress({ value, max, color, size = 44, stroke = 4 }) {
+  const pct = max > 0 ? clamp(value / max, 0, 1) : 0;
+  const r = (size - stroke * 2) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.border} strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}
+        strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s cubic-bezier(0.4,0,0.2,1)" }} />
+    </svg>
+  );
+}
+
+// ─── PIE CHART ───
+function PieChart({ slices, size = 130, label, total, unit = "" }) {
+  const r = size / 2;
+  const cx = r, cy = r;
+  const innerR = r * 0.56;
+  let cursor = -Math.PI / 2;
+  const paths = slices.filter(s => s.value > 0).map(s => {
+    const angle = (s.value / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(cursor);
+    const y1 = cy + r * Math.sin(cursor);
+    cursor += angle;
+    const x2 = cx + r * Math.cos(cursor);
+    const y2 = cy + r * Math.sin(cursor);
+    const large = angle > Math.PI ? 1 : 0;
+    return { ...s, d: `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z`, angle };
+  });
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 20, flex: 1 }}>
+      <div style={{ position: "relative", flexShrink: 0 }}>
+        <svg width={size} height={size}>
+          {paths.length === 0
+            ? <circle cx={cx} cy={cy} r={r} fill={T.border} />
+            : paths.map((p, i) => <path key={i} d={p.d} fill={p.color} opacity={0.9} />)
+          }
+          <circle cx={cx} cy={cy} r={innerR} fill={T.bgCard} />
+          <text x={cx} y={cy - 6} textAnchor="middle" fill={T.text} fontSize={18} fontWeight="700" fontFamily="JetBrains Mono">{total}{unit}</text>
+          <text x={cx} y={cy + 12} textAnchor="middle" fill={T.textMuted} fontSize={9} fontWeight="600" letterSpacing="0.5">{label.toUpperCase()}</text>
+        </svg>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7, flex: 1 }}>
+        {slices.map((s, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }}>
+              <div style={{ width: 22, height: 22, borderRadius: "50%", background: s.color + "18", border: "1.5px solid " + s.color + "50", color: s.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{s.initials}</div>
+              <span style={{ fontSize: 12, color: T.textSub, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: s.color, fontFamily: "'JetBrains Mono'", flexShrink: 0 }}>{s.value}{unit}</span>
+            <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono'", flexShrink: 0, minWidth: 30, textAlign: "right" }}>{total > 0 ? Math.round(s.value / total * 100) : 0}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+function Empty({ icon, title, subtitle, action }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", animation: "fadeUp 0.4s ease" }}>
+      <div style={{ fontSize: 44, marginBottom: 18, opacity: 0.3 }}>{icon}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 6, fontFamily: "'Inter', sans-serif" }}>{title}</div>
+      <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 24, textAlign: "center", maxWidth: 320 }}>{subtitle}</div>
+      {action}
+    </div>
+  );
+}
+
+// ─── MODAL ───
+function Modal({ open, onClose, title, width = 480, children }) {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "#00000078", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, animation: "fadeIn 0.15s ease",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: T.bgCard, border: "1px solid " + T.borderLight, borderRadius: T.radiusXl,
+        padding: 28, width, maxWidth: "92vw", maxHeight: "88vh", overflowY: "auto",
+        animation: "popIn 0.2s cubic-bezier(0.34,1.56,0.64,1)", boxShadow: "0 32px 80px #000000a0, 0 0 0 1px " + T.border,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <h3 style={{ fontSize: 17, fontWeight: 700, color: T.text, fontFamily: "'Inter', sans-serif" }}>{title}</h3>
+          <button onClick={onClose} style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, fontSize: 13, padding: "5px 9px", borderRadius: 6 }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── SMOOTH SVG PATH  (Catmull-Rom → cubic Bézier, tension 0–1) ───
+// tension = 0   → straight segments (no smoothing)
+// tension = 0.4 → smooth but hugs the data (default)
+// tension = 1   → very loose / over-smoothed
+const smoothPath = (pts, tension = 0.4) => {
+  if (pts.length < 2) return "";
+  if (pts.length === 2) return `M ${pts[0].x},${pts[0].y} L ${pts[1].x},${pts[1].y}`;
+  const n = pts.length;
+  let d = `M ${pts[0].x},${pts[0].y}`;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(n - 1, i + 2)];
+    // Catmull-Rom tangents → cubic Bézier control handles
+    const cp1x = p1.x + (p2.x - p0.x) * tension / 2;
+    const cp1y = p1.y + (p2.y - p0.y) * tension / 2;
+    const cp2x = p2.x - (p3.x - p1.x) * tension / 2;
+    const cp2y = p2.y - (p3.y - p1.y) * tension / 2;
+    d += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+  }
+  return d;
+};
+
+// ─── MAIN APP ───
+function App() {
+  const [data, setData] = useState(null);  // null = loading from Firestore
+  const [fbReady, setFbReady] = useState(false);
+  const isRemoteUpdate = useRef(false);
+  const saveTimer = useRef(null);
+
+  // ── Subscribe to Firestore (real-time sync for all teammates) ──
+  useEffect(() => {
+    const unsub = docRef.onSnapshot(snap => {
+      if (snap.exists()) {
+        const raw = snap.data().payload;
+        const migrated = migrate(raw);
+        const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
+        if (resolved) {
+          isRemoteUpdate.current = true;
+          setData(resolved);
+          setActiveSprint(a => a || resolved.sprints[0]?.id || null);
+          setFbReady(true);
+        }
+      } else {
+        // First ever load — seed Firestore with defaults
+        const team = DEFAULT_TEAM;
+        const fresh = { team, sprints: [makeDefaultSprint(team)] };
+        docRef.set({ payload: fresh });
+        setData(fresh);
+        setActiveSprint(fresh.sprints[0]?.id || null);
+        setFbReady(true);
+      }
+    }, err => {
+      console.error("Firestore error:", err);
+      setFbReady(true); // still unblock the UI
+    });
+    return () => unsub();
+  }, []);
+
+  // ── Write to Firestore on local changes (debounced 800ms) ──
+  useEffect(() => {
+    if (!data || !fbReady) return;
+    if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      docRef.set({ payload: data }).catch(err => console.error("Save failed:", err));
+    }, 800);
+  }, [data, fbReady]);
+
+  const [view, setView] = useState("dashboard");
+  const [activeSprint, setActiveSprint] = useState(null);
+  const [showNewSprint, setShowNewSprint] = useState(false);
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [showLogTime, setShowLogTime] = useState(null);
+  const [showEditTask, setShowEditTask] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showEditSprint, setShowEditSprint] = useState(false);
+  const [filterMember, setFilterMember] = useState(null);
+  const [toast, setToast] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // ── Loading screen while Firestore connects ──
+  if (!data) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#07090f", gap: 16 }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #4e7fff 0%, #8b5cf6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 800, color: "#fff" }}>T</div>
+      <div style={{ fontSize: 14, color: "#7880a0", fontFamily: "'JetBrains Mono'" }}>Connecting to Firebase…</div>
+    </div>
+  );
+
+  const notify = (msg, type = "info") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2600); };
+
+  const exportData = () => {
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url;
+    a.download = "tmcc-backup-" + todayStr() + ".json";
+    a.click(); URL.revokeObjectURL(url); notify("Data exported!");
+  };
+  const importData = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        if (parsed.team && parsed.sprints) {
+          const migrated = migrate(parsed);
+          setData(migrated); setActiveSprint(migrated.sprints[0]?.id || null);
+          notify("Data imported!");
+        } else { notify("Invalid file format"); }
+      } catch { notify("Failed to parse file"); }
+    };
+    reader.readAsText(file); e.target.value = "";
+  };
+
+  const sprint = useMemo(() => data.sprints.find(s => s.id === activeSprint), [data.sprints, activeSprint]);
+  const team = data.team;
+  const mMap = useMemo(() => { const m = {}; team.forEach(t => { m[t.id] = t; }); return m; }, [team]);
+
+  const uSprint = useCallback((sid, fn) => {
+    setData(p => ({ ...p, sprints: p.sprints.map(s => s.id === sid ? (typeof fn === "function" ? fn(s) : { ...s, ...fn }) : s) }));
+  }, []);
+
+  const cycleStatus = (tid) => {
+    if (!sprint) return;
+    const order = ["not-started", "in-progress", "complete"];
+    uSprint(sprint.id, s => ({
+      ...s,
+      tasks: s.tasks.map(t => {
+        if (t.id !== tid) return t;
+        const next = order[(order.indexOf(t.status) + 1) % 3];
+        return {
+          ...t,
+          status: next,
+          completedAt: next === "complete" ? nowESTiso() : null,
+        };
+      })
+    }));
+  };
+  const deleteTask = (tid) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.filter(t => t.id !== tid).map(t => ({ ...t, deps: (t.deps || []).filter(d => d !== tid) })) })); notify("Task removed"); };
+  const addTask = (task) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: [...s.tasks, { ...task, id: uid(), deps: task.deps || [] }] })); setShowNewTask(false); notify("Task added!"); };
+  const updateTask = (tid, u) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, ...u } : t) })); };
+  const logTime = (tid, hrs) => { if (!sprint) return; uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, logged: (t.logged || 0) + hrs } : t) })); setShowLogTime(null); notify("Logged " + hrs + "h ✓", "success"); };
+  const reorderTasks = (fromIdx, toIdx) => { if (!sprint) return; uSprint(sprint.id, s => { const ts = [...s.tasks]; const [moved] = ts.splice(fromIdx, 1); ts.splice(toIdx, 0, moved); return { ...s, tasks: ts }; }); };
+
+  const createSprint = (sd) => {
+    const ns = { ...sd, id: uid(), tasks: [] };
+    setData(p => ({ ...p, sprints: [...p.sprints, ns] }));
+    setActiveSprint(ns.id); setShowNewSprint(false); notify("Sprint created!");
+  };
+  const deleteSprint = (id) => {
+    setData(p => ({ ...p, sprints: p.sprints.filter(s => s.id !== id) }));
+    if (activeSprint === id) setActiveSprint(data.sprints.find(s => s.id !== id)?.id || null);
+    notify("Sprint deleted");
+  };
+  const updateSprintMeta = (id, updates) => {
+    uSprint(id, s => ({ ...s, ...updates }));
+    setShowEditSprint(false); notify("Sprint updated!");
+  };
+
+  const filteredTasks = useMemo(() => {
+    if (!sprint) return [];
+    return filterMember ? sprint.tasks.filter(t => t.assignee === filterMember) : sprint.tasks;
+  }, [sprint, filterMember]);
+
+  const stats = useMemo(() => {
+    if (!sprint) return { total: 0, completed: 0, inProgress: 0, logged: 0, estimated: 0, tasks: 0, doneTasks: 0, inProgressTasks: 0 };
+    const ts = sprint.tasks;
+    return {
+      tasks: ts.length, doneTasks: ts.filter(t => t.status === "complete").length,
+      inProgressTasks: ts.filter(t => t.status === "in-progress").length,
+      estimated: ts.reduce((s, t) => s + (t.estimated || 0), 0),
+      logged: ts.reduce((s, t) => s + (t.logged || 0), 0),
+      completed: ts.filter(t => t.status === "complete").reduce((s, t) => s + (t.estimated || 0), 0),
+      inProgress: ts.filter(t => t.status === "in-progress").reduce((s, t) => s + (t.estimated || 0), 0),
+    };
+  }, [sprint]);
+
+  const ganttWeeks = useMemo(() => {
+    if (!sprint) return [];
+    const weeks = []; const totalDays = daysBetween(sprint.startDate, sprint.endDate);
+    const wLen = (sprint.weekLength || 1) * 7; const count = Math.max(1, Math.ceil(totalDays / wLen));
+    for (let i = 0; i < count; i++) {
+      const s = addDays(sprint.startDate, i * wLen);
+      weeks.push({ start: s, end: addDays(sprint.startDate, Math.min((i + 1) * wLen - 1, totalDays)), label: "W" + (i + 1), dateLabel: fmt(s) });
+    }
+    return weeks;
+  }, [sprint]);
+
+  const burndownData = useMemo(() => {
+    if (!sprint || stats.estimated === 0) return [];
+    const totalDays = daysBetween(sprint.startDate, sprint.endDate);
+    const today = todayStr();
+    const totalEst = stats.estimated;
+    const pts = [];
+
+    for (let d = 0; d <= totalDays; d++) {
+      const dayStr = addDays(sprint.startDate, d);
+      const isInPast = dayStr <= today;
+
+      let remaining = 0;
+      sprint.tasks.forEach(t => {
+        const est = t.estimated || 0;
+        const logged = t.logged || 0;
+        if (t.status === "complete") {
+          const completedDay = t.completedAt ? t.completedAt.slice(0, 10) : t.endDate;
+          if (completedDay > dayStr) remaining += est; // not yet done on this day
+        } else if (t.status === "in-progress") {
+          // spread logged hours linearly from task start → today
+          const taskStart = t.startDate <= today ? t.startDate : today;
+          const daysActive = Math.max(1, daysBetween(taskStart, today));
+          const daysToHere = clamp(daysBetween(taskStart, dayStr), 0, daysActive);
+          const burnedByDay = logged * (daysToHere / daysActive);
+          remaining += Math.max(0, est - burnedByDay);
+        } else {
+          remaining += est; // not started
+        }
+      });
+
+      const ideal = Math.max(0, totalEst * (1 - d / totalDays));
+      pts.push({
+        day: dayStr,
+        label: fmt(dayStr),
+        ideal: Math.round(ideal * 10) / 10,
+        actual: isInPast ? Math.round(remaining * 10) / 10 : null,
+        isToday: dayStr === today,
+        weekMark: d % 7 === 0,
+      });
+    }
+    return pts;
+  }, [sprint, stats]);
+
+  // Velocity: tasks completed per sprint (primary), hours as secondary
+  const velocityData = useMemo(() => {
+    return data.sprints.map(s => ({
+      name: s.name,
+      doneCount: s.tasks.filter(t => t.status === "complete").length,
+      taskCount: s.tasks.length,
+      loggedHours: s.tasks.reduce((acc, t) => acc + (t.logged || 0), 0),
+      estimatedHours: s.tasks.reduce((acc, t) => acc + (t.estimated || 0), 0),
+    }));
+  }, [data.sprints]);
+
+  const sprintProgress = sprint ? (stats.tasks > 0 ? Math.round(stats.doneTasks / stats.tasks * 100) : 0) : 0;
+
+  const NAV = [
+    { id: "dashboard", label: "Dashboard",  icon: "▦" },
+    { id: "gantt",     label: "Timeline",   icon: "▤" },
+    { id: "burndown",  label: "Burndown",   icon: "◿" },
+    { id: "team",      label: "Team",       icon: "◉" },
+  ];
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
+      {/* ── SIDEBAR ── */}
+      <div style={{ width: 228, minWidth: 228, background: T.bgCard, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column" }}>
+        {/* Logo */}
+        <div style={{ padding: "22px 20px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 3 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg, " + T.accent + " 0%, #8b5cf6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800, color: "#fff", fontFamily: "'Inter', sans-serif", boxShadow: "0 4px 16px " + T.accent + "40" }}>T</div>
+            <span style={{ fontSize: 17, fontWeight: 800, color: T.text, letterSpacing: "-0.5px", fontFamily: "'Inter', sans-serif" }}>TMCC</span>
+          </div>
+          <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: "0.6px", paddingLeft: 40 }}>TEAM MANAGEMENT</div>
+        </div>
+
+        {/* Nav */}
+        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: 1, padding: "0 10px" }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setView(n.id)} style={{
+              ...btnBase, display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", fontSize: 13, textAlign: "left", width: "100%",
+              background: view === n.id ? T.accentBg : "transparent",
+              color: view === n.id ? T.accent : T.textSub,
+              fontWeight: view === n.id ? 600 : 400,
+              borderRadius: 8,
+              borderLeft: view === n.id ? "2px solid " + T.accent : "2px solid transparent",
+            }}>
+              <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>{n.icon}</span>
+              {n.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Sprints */}
+        <div style={{ padding: "14px 12px", borderTop: "1px solid " + T.border }}>
+          <div style={{ ...labelStyle, marginBottom: 8, paddingLeft: 4 }}>Sprints</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {data.sprints.map(s => {
+              const done = s.tasks.filter(t => t.status === "complete").length;
+              const pct = s.tasks.length > 0 ? Math.round(done / s.tasks.length * 100) : 0;
+              const isActive = activeSprint === s.id;
+              return (
+                <button key={s.id} onClick={() => setActiveSprint(s.id)} style={{
+                  ...btnBase, padding: "8px 10px", textAlign: "left",
+                  background: isActive ? T.accentBg : "transparent",
+                  color: isActive ? T.accent : T.textSub,
+                  borderRadius: 7, borderLeft: isActive ? "2px solid " + T.accent : "2px solid transparent",
+                  display: "flex", flexDirection: "column", gap: 5,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 12, fontWeight: isActive ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{s.name}</span>
+                    <span style={{ fontSize: 10, color: isActive ? T.accent : T.textMuted, fontFamily: "'JetBrains Mono'" }}>{pct}%</span>
+                  </div>
+                  <div style={{ height: 2, background: T.border, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: pct + "%", background: isActive ? T.accent : T.textMuted + "60", borderRadius: 2, transition: "width 0.4s ease" }} />
+                  </div>
+                </button>
+              );
+            })}
+            <button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "7px 10px", fontSize: 12, textAlign: "left", background: "transparent", color: T.accent, borderRadius: 7, border: "1px dashed " + T.border + "99", marginTop: 4, opacity: 0.7 }}>+ New Sprint</button>
+          </div>
+        </div>
+
+        {/* Settings */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid " + T.border }}>
+          <button onClick={() => setShowSettings(true)} style={{ ...btnBase, padding: "8px 10px", fontSize: 12, width: "100%", textAlign: "left", background: "transparent", color: T.textMuted, borderRadius: 7, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>⚙</span> Settings
+          </button>
+        </div>
+      </div>
+
+      {/* ── MAIN ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ padding: "14px 28px", borderBottom: "1px solid " + T.border, display: "flex", justifyContent: "space-between", alignItems: "center", background: T.bgCard, flexWrap: "wrap", gap: 10 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
+              <h2 style={{ fontSize: 19, fontWeight: 800, color: T.text, fontFamily: "'Inter', sans-serif" }}>{sprint ? sprint.name : "No Sprint"}</h2>
+              {sprint && (
+                <Tip text="Edit sprint">
+                  <button onClick={() => setShowEditSprint(true)} style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, fontSize: 11, padding: "3px 8px", borderRadius: 5 }}>Edit</button>
+                </Tip>
+              )}
+            </div>
+            {sprint && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 12, color: T.textMuted }}>{fmtFull(sprint.startDate)} → {fmtFull(sprint.endDate)}</span>
+                <span style={{ fontSize: 11, color: T.accent, fontWeight: 600, background: T.accentBg, padding: "1px 8px", borderRadius: 12, fontFamily: "'JetBrains Mono'" }}>{sprintProgress}%</span>
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+              <button onClick={() => setFilterMember(null)} style={{ ...btnBase, padding: "5px 10px", fontSize: 11, background: !filterMember ? T.accentBg : "transparent", color: !filterMember ? T.accent : T.textMuted, borderRadius: 20, fontWeight: !filterMember ? 600 : 400 }}>All</button>
+              {team.map(m => (
+                <Tip key={m.id} text={m.name}>
+                  <button onClick={() => setFilterMember(filterMember === m.id ? null : m.id)} style={{
+                    ...btnBase, width: 28, height: 28, borderRadius: "50%", padding: 0, fontSize: 9, fontWeight: 700,
+                    background: filterMember === m.id ? m.color + "28" : T.bgElevated,
+                    color: filterMember === m.id ? m.color : T.textMuted,
+                    border: filterMember === m.id ? "2px solid " + m.color : "1px solid " + T.border,
+                    boxShadow: filterMember === m.id ? "0 0 0 3px " + m.color + "20" : "none",
+                  }}>{m.initials}</button>
+                </Tip>
+              ))}
+            </div>
+            {sprint && (
+              <button onClick={() => setShowNewTask(true)} style={{ ...btnBase, padding: "8px 18px", fontSize: 13, background: T.accent, color: "#fff", fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>+ Add Task</button>
+            )}
+          </div>
+        </div>
+
+        {/* View Content */}
+        <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
+          {!sprint
+            ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
+            : view === "dashboard"
+              ? <DashView sprint={sprint} stats={stats} team={team} mMap={mMap} tasks={filteredTasks} allTasks={sprint.tasks} cycle={cycleStatus} del={deleteTask} onLog={setShowLogTime} onEdit={setShowEditTask} onReorder={reorderTasks} />
+            : view === "gantt"
+              ? <GanttView sprint={sprint} weeks={ganttWeeks} tasks={filteredTasks} allTasks={sprint.tasks} mMap={mMap} cycle={cycleStatus} onLog={setShowLogTime} />
+            : view === "burndown"
+              ? <BurnView data={burndownData} stats={stats} weeks={ganttWeeks} velocityData={velocityData} sprint={sprint} team={team} mMap={mMap} />
+            : <TeamView team={team} sprint={sprint} />
+          }
+        </div>
+      </div>
+
+      {/* ── MODALS ── */}
+      <NewSprintModal open={showNewSprint} onClose={() => setShowNewSprint(false)} onCreate={createSprint} />
+      <NewTaskModal open={showNewTask} onClose={() => setShowNewTask(false)} onCreate={addTask} team={team} sprint={sprint} />
+      <LogTimeModal open={!!showLogTime} onClose={() => setShowLogTime(null)} onLog={logTime} task={sprint?.tasks.find(t => t.id === showLogTime)} mMap={mMap} />
+      <EditTaskModal
+        open={!!showEditTask} onClose={() => setShowEditTask(null)}
+        task={sprint?.tasks.find(t => t.id === showEditTask)}
+        allTasks={sprint?.tasks || []}
+        team={team}
+        onSave={(id, u) => {
+          const prev = sprint?.tasks.find(t => t.id === id);
+          const wasComplete = prev?.status === "complete";
+          const nowComplete = u.status === "complete";
+          const completedAt = nowComplete ? (wasComplete ? prev.completedAt : nowESTiso()) : null;
+          updateTask(id, { ...u, completedAt });
+          setShowEditTask(null); notify("Saved ✓", "success");
+        }}
+        onDelete={(id) => { deleteTask(id); setShowEditTask(null); }}
+      />
+      <EditSprintModal open={showEditSprint} onClose={() => setShowEditSprint(false)} sprint={sprint} onSave={updateSprintMeta} />
+      <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} team={team} sprints={data.sprints}
+        onUpdateMember={(id, u) => setData(p => ({ ...p, team: p.team.map(m => m.id === id ? { ...m, ...u } : m) }))}
+        onAddMember={(m) => { setData(p => ({ ...p, team: [...p.team, { ...m, id: uid() }] })); notify("Member added!"); }}
+        onRemoveMember={(id) => { setData(p => ({ ...p, team: p.team.filter(m => m.id !== id) })); notify("Member removed"); }}
+        onDeleteSprint={deleteSprint}
+        onExport={exportData} onImport={() => fileInputRef.current?.click()}
+        onReset={() => { docRef.delete().then(() => window.location.reload()); }} />
+      <input ref={fileInputRef} type="file" accept=".json" style={{ display: "none" }} onChange={importData} />
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+          background: T.bgElevated, border: "1px solid " + T.borderLight, borderRadius: 10,
+          padding: "11px 22px", fontSize: 13, color: T.text, zIndex: 2000,
+          animation: "popIn 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+          boxShadow: "0 12px 40px #00000060",
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MEMBER PIES ───
+function MemberPies({ allTasks, team, stats }) {
+  const memberData = team.map(m => {
+    const myTasks = allTasks.filter(t => t.assignee === m.id);
+    return {
+      ...m,
+      logged: myTasks.reduce((s, t) => s + (t.logged || 0), 0),
+      done: myTasks.filter(t => t.status === "complete").length,
+    };
+  }).filter(m => m.logged > 0 || m.done > 0);
+
+  const totalLogged = memberData.reduce((s, m) => s + m.logged, 0);
+  const totalDone = memberData.reduce((s, m) => s + m.done, 0);
+
+  const hourSlices = memberData.filter(m => m.logged > 0).map(m => ({ name: m.name, initials: m.initials, color: m.color, value: m.logged }));
+  const taskSlices = memberData.filter(m => m.done > 0).map(m => ({ name: m.name, initials: m.initials, color: m.color, value: m.done }));
+
+  if (memberData.length === 0) return null;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16, animation: "fadeUp 0.3s ease 0.28s both" }}>
+      <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>Hours Logged</div>
+        <PieChart slices={hourSlices} total={totalLogged} label="total" unit="h" size={120} />
+      </div>
+      <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>Tasks Completed</div>
+        <PieChart slices={taskSlices} total={totalDone} label="done" unit="" size={120} />
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ───
+function DashView({ sprint, stats, team, mMap, tasks, allTasks, cycle, del, onLog, onEdit, onReorder }) {
+  const over = stats.logged > stats.estimated && stats.estimated > 0;
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", idx);
+  };
+  const handleDragOver = (e, idx) => { e.preventDefault(); setDragOverIdx(idx); };
+  const handleDrop = (e, idx) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== idx) {
+      const fromId = tasks[dragIdx]?.id;
+      const toId = tasks[idx]?.id;
+      const fromReal = allTasks.findIndex(t => t.id === fromId);
+      const toReal = allTasks.findIndex(t => t.id === toId);
+      if (fromReal >= 0 && toReal >= 0) onReorder(fromReal, toReal);
+    }
+    setDragIdx(null); setDragOverIdx(null);
+  };
+  const handleDragEnd = () => { setDragIdx(null); setDragOverIdx(null); };
+
+  const taskPct = stats.tasks > 0 ? Math.round(stats.doneTasks / stats.tasks * 100) : 0;
+
+  const statCards = [
+    { label: "Tasks Done",  value: stats.doneTasks + "/" + stats.tasks, sub: taskPct + "% complete",           color: T.accent,   ring: { v: stats.doneTasks, m: stats.tasks } },
+    { label: "In Progress", value: String(stats.inProgressTasks),       sub: "active right now",               color: T.warning,  ring: { v: stats.inProgressTasks, m: stats.tasks } },
+    { label: "Remaining",   value: String(stats.tasks - stats.doneTasks - stats.inProgressTasks), sub: "not started", color: T.textSub, ring: null },
+    { label: "Hours Est.",  value: stats.estimated + "h",               sub: stats.logged + "h logged",        color: "#4e9fff",  ring: { v: stats.logged, m: stats.estimated } },
+    { label: "Time Budget", value: over ? "Over" : (stats.estimated > 0 ? Math.round((1 - stats.logged / stats.estimated) * 100) + "%" : "–") + " left", sub: over ? stats.logged - stats.estimated + "h over estimate" : stats.logged + "h of " + stats.estimated + "h used", color: over ? T.danger : T.success, ring: null },
+  ];
+
+  return (
+    <div style={{ animation: "fadeUp 0.3s ease" }}>
+      {/* Stat Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+        {statCards.map((c, i) => (
+          <div key={i} style={{
+            background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg,
+            padding: "18px 20px", animation: "fadeUp 0.3s ease " + (i * 0.05) + "s both",
+            borderTop: "2px solid " + c.color + "60",
+            display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+          }}>
+            <div>
+              <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8, fontWeight: 700 }}>{c.label}</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: c.color, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, letterSpacing: "-1px" }}>{c.value}</div>
+              <div style={{ fontSize: 11, color: T.textMuted }}>{c.sub}</div>
+            </div>
+            {c.ring && <div style={{ position: "relative", flexShrink: 0 }}>
+              <RingProgress value={c.ring.v} max={c.ring.m} color={c.color} size={40} stroke={3.5} />
+            </div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Member Pies */}
+      {stats.tasks > 0 && (
+        <MemberPies allTasks={allTasks} team={team} stats={stats} />
+      )}
+
+      {/* Task Table */}
+      <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, overflow: "hidden" }}>
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid " + T.border, display: "grid", gridTemplateColumns: "24px 1fr 110px 100px 80px 72px 72px 32px", gap: 12, fontSize: 10, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", fontWeight: 700 }}>
+          <span></span><span>Task</span><span>Dates</span><span>Assignee</span><span>Status</span><span>Est</span><span>Logged</span><span></span>
+        </div>
+        {tasks.length === 0
+          ? <div style={{ padding: 48, textAlign: "center", color: T.textMuted, fontSize: 13 }}>No tasks yet — add one above</div>
+          : tasks.map((task, i) => {
+            const m = mMap[task.assignee];
+            const ovr = task.logged > task.estimated && task.estimated > 0;
+            const depNames = (task.deps || []).map(d => allTasks.find(t => t.id === d)?.name).filter(Boolean);
+            return (
+              <div
+                key={task.id}
+                draggable
+                onDragStart={e => handleDragStart(e, i)}
+                onDragOver={e => handleDragOver(e, i)}
+                onDrop={e => handleDrop(e, i)}
+                onDragEnd={handleDragEnd}
+                className={dragOverIdx === i && dragIdx !== i ? "drag-over" : dragIdx === i ? "dragging" : ""}
+                onClick={() => onEdit(task.id)}
+                style={{
+                  display: "grid", gridTemplateColumns: "24px 1fr 110px 100px 80px 72px 72px 32px", gap: 12,
+                  padding: "11px 20px", borderBottom: "1px solid " + T.border,
+                  alignItems: "center", cursor: "pointer", transition: "background 0.12s",
+                  animation: "fadeUp 0.25s ease " + (i * 0.02) + "s both",
+                  outline: "none",
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = T.bgHover}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              >
+                {/* Drag handle */}
+                <div style={{ color: T.textMuted, fontSize: 12, cursor: "grab", opacity: 0.4, textAlign: "center", userSelect: "none" }} title="Drag to reorder">⠿</div>
+                {/* Task name + progress + deps */}
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: T.text, textDecoration: task.status === "complete" ? "line-through" : "none", opacity: task.status === "complete" ? 0.45 : 1 }}>{task.name}</span>
+                    {depNames.length > 0 && (
+                      <Tip text={"Depends on: " + depNames.join(", ")}>
+                        <span style={{ fontSize: 9, color: T.textMuted, background: T.bgElevated, border: "1px solid " + T.border, borderRadius: 4, padding: "1px 5px", cursor: "default" }}>
+                          ⬡ {depNames.length}
+                        </span>
+                      </Tip>
+                    )}
+                  </div>
+                  <ProgressBar value={task.logged} max={task.estimated} color={ovr ? T.danger : m?.color || T.accent} height={3} />
+                </div>
+                <div style={{ fontSize: 11, color: T.textSub, lineHeight: 1.6 }}>{fmt(task.startDate)}<br />{fmt(task.endDate)}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {m && <div style={{ width: 22, height: 22, borderRadius: "50%", background: m.color + "20", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + m.color + "40", flexShrink: 0 }}>{m.initials}</div>}
+                  <span style={{ fontSize: 12, color: T.textSub }}>{m?.name || "–"}</span>
+                </div>
+                <div onClick={e => { e.stopPropagation(); cycle(task.id); }}><StatusBadge status={task.status} size="small" /></div>
+                <span style={{ fontSize: 12, color: T.textSub, fontFamily: "'JetBrains Mono'" }}>{task.estimated}h</span>
+                <div onClick={e => { e.stopPropagation(); onLog(task.id); }} style={{ cursor: "pointer" }}>
+                  <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono'", color: ovr ? T.danger : T.success, fontWeight: 600 }}>{task.logged}h</span>
+                </div>
+                <button onClick={e => { e.stopPropagation(); del(task.id); }} style={{ ...btnBase, background: "none", color: T.textMuted, fontSize: 14, padding: "2px 6px", opacity: 0.3 }}
+                  onMouseEnter={e => e.target.style.opacity = 1} onMouseLeave={e => e.target.style.opacity = 0.3}>✕</button>
+              </div>
+            );
+          })
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── GANTT ───
+function GanttView({ sprint, weeks, tasks, allTasks, mMap, cycle, onLog }) {
+  if (weeks.length === 0) return <Empty icon="▤" title="No timeline" subtitle="Add tasks to see the Gantt chart." />;
+  const totalDays = daysBetween(sprint.startDate, sprint.endDate);
+  const todayPct = clamp(daysBetween(sprint.startDate, todayStr()) / totalDays * 100, 0, 100);
+  const ROW_H = 56;
+  const LABEL_W = 290;
+  const ganttRef = useRef(null);
+
+  // Build task index map for dependency arrows
+  const taskIndexMap = useMemo(() => {
+    const m = {};
+    tasks.forEach((t, i) => { m[t.id] = i; });
+    return m;
+  }, [tasks]);
+
+  // Calculate dependency arrows
+  const depArrows = useMemo(() => {
+    const arrows = [];
+    tasks.forEach((task, toIdx) => {
+      (task.deps || []).forEach(depId => {
+        const fromIdx = taskIndexMap[depId];
+        if (fromIdx === undefined) return;
+        const depTask = tasks[fromIdx];
+        if (!depTask) return;
+        const fromEndOff = clamp(daysBetween(sprint.startDate, depTask.endDate) / totalDays, 0, 1);
+        const toStartOff = clamp(daysBetween(sprint.startDate, task.startDate) / totalDays, 0, 1);
+        const fromY = fromIdx * ROW_H + ROW_H / 2;
+        const toY = toIdx * ROW_H + ROW_H / 2;
+        arrows.push({ fromX: fromEndOff, toX: toStartOff, fromY, toY, color: mMap[task.assignee]?.color || T.accent });
+      });
+    });
+    return arrows;
+  }, [tasks, taskIndexMap, sprint, totalDays, mMap]);
+
+  return (
+    <div style={{ animation: "fadeUp 0.3s ease" }}>
+      <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, overflow: "auto" }} ref={ganttRef}>
+        <div style={{ minWidth: Math.max(800, weeks.length * 90 + LABEL_W) }}>
+          {/* Header */}
+          <div style={{ display: "flex", borderBottom: "1px solid " + T.border, position: "sticky", top: 0, background: T.bgCard, zIndex: 10 }}>
+            <div style={{ width: LABEL_W, minWidth: LABEL_W, padding: "14px 20px", fontSize: 10, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", fontWeight: 700, borderRight: "1px solid " + T.border }}>Task</div>
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(" + weeks.length + ", 1fr)", position: "relative" }}>
+              {weeks.map((w, i) => (
+                <div key={i} style={{ padding: "10px 0", textAlign: "center", borderRight: i < weeks.length - 1 ? "1px solid " + T.border : "none" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.text, fontFamily: "'Inter', sans-serif" }}>{w.label}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted }}>{w.dateLabel}</div>
+                </div>
+              ))}
+              {/* Today line */}
+              <div style={{ position: "absolute", left: todayPct + "%", top: 0, bottom: -9999, width: 1, background: T.danger + "70", zIndex: 5 }}>
+                <div style={{ position: "absolute", top: 0, left: -20, background: T.danger, color: "#fff", fontSize: 8, fontWeight: 700, padding: "2px 6px", borderRadius: 4, whiteSpace: "nowrap" }}>TODAY</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tasks + SVG overlay for dep arrows */}
+          <div style={{ position: "relative" }}>
+            {tasks.map((task, idx) => {
+              const m = mMap[task.assignee];
+              const startOff = clamp(daysBetween(sprint.startDate, task.startDate) / totalDays, 0, 1);
+              const endOff = clamp(daysBetween(sprint.startDate, task.endDate) / totalDays, 0, 1);
+              const logPct = task.estimated > 0 ? clamp(task.logged / task.estimated, 0, 1) : 0;
+              const depCount = (task.deps || []).filter(d => tasks.find(t => t.id === d)).length;
+              return (
+                <div key={task.id} style={{
+                  display: "flex", borderBottom: "1px solid " + T.border,
+                  animation: "fadeUp 0.25s ease " + (idx * 0.025) + "s both",
+                  transition: "background 0.1s", height: ROW_H,
+                }} onMouseEnter={e => e.currentTarget.style.background = T.bgHover} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <div style={{ width: LABEL_W, minWidth: LABEL_W, padding: "0 20px", display: "flex", alignItems: "center", gap: 10, borderRight: "1px solid " + T.border }}>
+                    <div onClick={() => cycle(task.id)} style={{ cursor: "pointer", flexShrink: 0 }}><StatusBadge status={task.status} size="small" /></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: task.status === "complete" ? "line-through" : "none", opacity: task.status === "complete" ? 0.45 : 1 }}>{task.name}</span>
+                        {depCount > 0 && <span style={{ fontSize: 9, color: T.textMuted, background: T.bgElevated, border: "1px solid " + T.border, borderRadius: 3, padding: "0 4px", flexShrink: 0 }}>⬡{depCount}</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: T.textMuted, display: "flex", gap: 5, marginTop: 2 }}>
+                        <span style={{ color: m?.color }}>{m?.name}</span>
+                        <span>·</span>
+                        <span onClick={() => onLog(task.id)} style={{ cursor: "pointer", color: T.success }}>{task.logged}/{task.estimated}h</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, position: "relative" }}>
+                    {weeks.map((_, i) => <div key={i} style={{ position: "absolute", left: (i / weeks.length * 100) + "%", top: 0, bottom: 0, width: 1, background: T.border + "30", pointerEvents: "none" }} />)}
+                    {/* Bar */}
+                    <div style={{
+                      position: "absolute", top: 16, height: 22,
+                      left: (startOff * 100) + "%",
+                      width: Math.max(0.5, (endOff - startOff) * 100) + "%",
+                      background: (m?.color || T.accent) + "22",
+                      borderRadius: 6,
+                      border: "1px solid " + (m?.color || T.accent) + "50",
+                      animation: "slideRight 0.4s ease " + (idx * 0.03) + "s both",
+                      transformOrigin: "left center", overflow: "hidden",
+                    }}>
+                      <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: (logPct * 100) + "%", background: (m?.color || T.accent) + "45", borderRadius: "5px 0 0 5px", transition: "width 0.4s ease" }} />
+                      <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, fontWeight: 600, color: T.text, whiteSpace: "nowrap", textShadow: "0 1px 4px #0009" }}>{task.name}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Dependency arrows SVG overlay */}
+            {depArrows.length > 0 && (
+              <svg style={{ position: "absolute", top: 0, left: LABEL_W, right: 0, height: tasks.length * ROW_H, width: "calc(100% - " + LABEL_W + "px)", pointerEvents: "none", overflow: "visible" }}>
+                <defs>
+                  {depArrows.map((a, i) => (
+                    <marker key={i} id={"arr" + i} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                      <path d="M0,0 L6,3 L0,6 Z" fill={a.color + "99"} />
+                    </marker>
+                  ))}
+                </defs>
+                {depArrows.map((a, i) => {
+                  const svgPercent = (v) => v * 100 + "%";
+                  const x1 = svgPercent(a.fromX);
+                  const x2 = svgPercent(a.toX);
+                  const y1 = a.fromY; const y2 = a.toY;
+                  return (
+                    <path key={i}
+                      d={`M ${x1} ${y1} C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`}
+                      fill="none" stroke={a.color + "70"} strokeWidth="1.5" strokeDasharray="4,3"
+                      markerEnd={"url(#arr" + i + ")"}
+                    />
+                  );
+                })}
+              </svg>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── BURNDOWN ───
+function BurnView({ data: bd, stats, weeks, velocityData, sprint, team, mMap }) {
+  const [hoverIdx, setHoverIdx] = useState(null);
+  const [burnMode, setBurnMode] = useState("hours"); // "hours" | "tasks"
+  const svgRef = useRef(null);
+
+  // Build task-based (story point) burndown in parallel
+  const taskBd = useMemo(() => {
+    if (!sprint || bd.length === 0) return [];
+    const today = todayStr();
+    const totalTasks = sprint.tasks.length;
+    const totalDays = Math.max(1, bd.length - 1);
+    return bd.map((pt, d) => {
+      const isInPast = pt.day <= today;
+      let remaining = 0;
+      sprint.tasks.forEach(t => {
+        if (t.status === "complete") {
+          const cd = t.completedAt ? t.completedAt.slice(0, 10) : t.endDate;
+          if (cd > pt.day) remaining++;
+        } else {
+          remaining++;
+        }
+      });
+      const ideal = Math.max(0, Math.round(totalTasks * (1 - d / totalDays) * 10) / 10);
+      return { ...pt, ideal, actual: isInPast ? remaining : null };
+    });
+  }, [bd, sprint]);
+
+  if (bd.length === 0) return <Empty icon="◿" title="No burndown data" subtitle="Add estimated hours to tasks to see the chart." />;
+
+  const activeBd = burnMode === "hours" ? bd : taskBd;
+  const maxVal = Math.max(activeBd[0]?.ideal || 1, ...activeBd.map(d => d.actual ?? 0));
+  const unitLabel = burnMode === "hours" ? "h" : " sp";
+
+  const W = 800, H = 300, pL = 56, pR = 28, pT = 24, pB = 36;
+  const cW = W - pL - pR, cH = H - pT - pB;
+  const x = (i) => pL + (i / Math.max(1, activeBd.length - 1)) * cW;
+  const y = (v) => pT + (1 - clamp(v / maxVal, 0, 1)) * cH;
+
+  const actualPts   = activeBd.map((d, i) => d.actual !== null ? { x: x(i), y: y(d.actual), d } : null).filter(Boolean);
+  // Ideal is a straight line so tension doesn't matter, but 0.4 keeps it pixel-perfect
+  const idealPath   = smoothPath(activeBd.map((d, i) => ({ x: x(i), y: y(d.ideal) })), 0.4);
+  // Actual: lower tension (0.25) so sharp task-completion drops are preserved, not smoothed away
+  const actualPath  = actualPts.length > 1 ? smoothPath(actualPts, 0.25) : null;
+  const xLabels     = activeBd.reduce((acc, d, i) => { if (d.weekMark || i === 0) acc.push({ i, label: d.label }); return acc; }, []);
+  const todayIdx    = activeBd.findIndex(d => d.isToday);
+  const lastActualIdx = activeBd.reduce((acc, d, i) => d.actual !== null ? i : acc, -1);
+
+  // ── Sprint health ──
+  const todayActual = todayIdx >= 0 ? activeBd[todayIdx]?.actual : null;
+  const todayIdeal  = todayIdx >= 0 ? activeBd[todayIdx]?.ideal  : null;
+  let healthStatus = "pending";
+  let healthPct = 0;
+  if (todayActual !== null && todayIdeal > 0) {
+    healthPct = Math.round(((todayActual - todayIdeal) / todayIdeal) * 100);
+    if      (healthPct >  25) healthStatus = "at-risk";
+    else if (healthPct >   5) healthStatus = "behind";
+    else if (healthPct < -10) healthStatus = "ahead";
+    else                      healthStatus = "on-track";
+  }
+  const healthCfg = {
+    "ahead":    { color: T.success, label: "Ahead of Schedule",  icon: "↗", sub: Math.abs(healthPct) + "% under ideal remaining" },
+    "on-track": { color: T.accent,  label: "On Track",            icon: "→", sub: "Burn rate matches ideal trajectory"             },
+    "behind":   { color: T.warning, label: "Behind Schedule",     icon: "↘", sub: healthPct + "% more work than ideal at this point" },
+    "at-risk":  { color: T.danger,  label: "Sprint at Risk",      icon: "⚠", sub: healthPct + "% over ideal — scope review recommended" },
+    "pending":  { color: T.textMuted, label: "Sprint Not Started", icon: "○", sub: "No actual data yet" },
+  }[healthStatus];
+
+  // ── Forecast projection line ──
+  let forecastPath = null;
+  let forecastETA = null;
+  if (lastActualIdx > 1) {
+    const firstActual = activeBd[0]?.actual ?? activeBd[0]?.ideal;
+    const lastVal = activeBd[lastActualIdx].actual;
+    const burnRate = (firstActual - lastVal) / Math.max(1, lastActualIdx);
+    if (burnRate > 0) {
+      const stepsToZero = Math.ceil(lastVal / burnRate);
+      const endIdx = Math.min(activeBd.length - 1, lastActualIdx + stepsToZero);
+      const fPts = [];
+      for (let i = lastActualIdx; i <= endIdx; i++) {
+        fPts.push({ x: x(i), y: y(Math.max(0, lastVal - burnRate * (i - lastActualIdx))) });
+      }
+      if (fPts.length > 1) forecastPath = smoothPath(fPts, 0.35);
+      const etaIdx = lastActualIdx + stepsToZero;
+      if (etaIdx < activeBd.length) {
+        forecastETA = { onTime: true, label: fmt(activeBd[Math.min(etaIdx, activeBd.length - 1)].day) };
+      } else {
+        const overDays = etaIdx - (activeBd.length - 1);
+        forecastETA = { onTime: false, label: "~" + overDays + "d over sprint" };
+      }
+    }
+  }
+
+  // ── Mouse interaction ──
+  const handleMouseMove = (e) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) * (W / rect.width) - pL;
+    const idx = Math.round(clamp(relX / cW, 0, 1) * (activeBd.length - 1));
+    setHoverIdx(idx);
+  };
+
+  const hoverPt     = hoverIdx !== null ? activeBd[hoverIdx] : null;
+  const hoverX      = hoverIdx !== null ? x(hoverIdx) : null;
+  const hoverActual = hoverPt?.actual ?? null;
+  const hoverIdeal  = hoverPt?.ideal  ?? null;
+  const hoverDelta  = (hoverActual !== null && hoverIdeal > 0) ? Math.round(((hoverActual - hoverIdeal) / hoverIdeal) * 100) : null;
+
+  // ── Velocity ──
+  const maxVel = Math.max(...velocityData.map(s => Math.max(s.taskCount, s.doneCount)), 1);
+  const avgVelocity = velocityData.length > 1
+    ? Math.round(velocityData.reduce((s, v) => s + v.doneCount, 0) / velocityData.length * 10) / 10
+    : null;
+
+  return (
+    <div style={{ animation: "fadeUp 0.3s ease", display: "flex", flexDirection: "column", gap: 16 }}>
+
+      {/* ── Sprint Health Banner ── */}
+      <div style={{ background: healthCfg.color + "10", border: "1px solid " + healthCfg.color + "30", borderRadius: T.radiusLg, padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: healthCfg.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, color: healthCfg.color, flexShrink: 0 }}>{healthCfg.icon}</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: healthCfg.color, marginBottom: 2 }}>{healthCfg.label}</div>
+            <div style={{ fontSize: 12, color: T.textMuted }}>{healthCfg.sub}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 20, flexShrink: 0 }}>
+          {forecastETA && (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: forecastETA.onTime ? T.success : T.danger, fontFamily: "'JetBrains Mono'" }}>{forecastETA.label}</div>
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>Forecast Done</div>
+            </div>
+          )}
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.warning, fontFamily: "'JetBrains Mono'" }}>{(todayActual ?? activeBd[0]?.ideal ?? 0)}{unitLabel}</div>
+            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>Remaining</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#4e9fff", fontFamily: "'JetBrains Mono'" }}>{(todayIdeal ?? activeBd[0]?.ideal ?? 0)}{unitLabel}</div>
+            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase" }}>Ideal Today</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 16 }}>
+        {/* ── Chart ── */}
+        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Burndown Chart</span>
+              <div style={{ display: "flex", background: T.bg, borderRadius: 6, padding: 2, gap: 2 }}>
+                {[["hours", "Hours"], ["tasks", "Story Pts"]].map(([m, lbl]) => (
+                  <button key={m} onClick={() => setBurnMode(m)} style={{ ...btnBase, padding: "4px 10px", fontSize: 11, fontWeight: 600, background: burnMode === m ? T.accent : "transparent", color: burnMode === m ? "#fff" : T.textMuted, borderRadius: 4 }}>{lbl}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 14, fontSize: 11, alignItems: "center" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#4e9fff" }}>
+                <svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke="#4e9fff" strokeWidth="2" strokeDasharray="4,3"/></svg>Ideal
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5, color: T.danger }}>
+                <svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke={T.danger} strokeWidth="2"/></svg>Actual
+              </span>
+              {forecastPath && (
+                <span style={{ display: "flex", alignItems: "center", gap: 5, color: T.warning }}>
+                  <svg width="18" height="8"><line x1="0" y1="4" x2="18" y2="4" stroke={T.warning} strokeWidth="2" strokeDasharray="3,3"/></svg>Forecast
+                </span>
+              )}
+            </div>
+          </div>
+
+          <svg ref={svgRef} viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto", display: "block", cursor: "crosshair" }}
+            onMouseMove={handleMouseMove} onMouseLeave={() => setHoverIdx(null)}>
+
+            {/* Y gridlines + labels */}
+            {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
+              const v = burnMode === "hours" ? Math.round(p * maxVal) : Math.round(p * maxVal);
+              return (
+                <g key={i}>
+                  <line x1={pL} y1={y(p * maxVal)} x2={W - pR} y2={y(p * maxVal)} stroke={T.border} strokeWidth={1} />
+                  <text x={pL - 6} y={y(p * maxVal) + 4} textAnchor="end" fill={T.textMuted} fontSize={10} fontFamily="JetBrains Mono">{v}{unitLabel}</text>
+                </g>
+              );
+            })}
+
+            {/* Week separators */}
+            {xLabels.filter(l => l.i > 0).map((l, i) => (
+              <line key={i} x1={x(l.i)} y1={pT} x2={x(l.i)} y2={pT + cH} stroke={T.border} strokeWidth={1} strokeDasharray="2,4" opacity={0.5} />
+            ))}
+
+            {/* X axis labels */}
+            {xLabels.map((l, i) => (
+              <text key={i} x={x(l.i)} y={H - 4} textAnchor="middle" fill={T.textMuted} fontSize={9} fontFamily="JetBrains Mono">{l.label}</text>
+            ))}
+
+            {/* Ideal area + line */}
+            <path d={idealPath + " L" + x(activeBd.length - 1) + "," + (pT + cH) + " L" + x(0) + "," + (pT + cH) + " Z"} fill="#4e9fff08" />
+            <path d={idealPath} fill="none" stroke="#4e9fff" strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />
+
+            {/* Actual area + line */}
+            {actualPath && <>
+              <path d={actualPath + " L" + x(lastActualIdx) + "," + (pT + cH) + " L" + x(0) + "," + (pT + cH) + " Z"} fill={T.danger + "12"} />
+              <path d={actualPath} fill="none" stroke={T.danger} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+            </>}
+
+            {/* Forecast line */}
+            {forecastPath && (
+              <path d={forecastPath} fill="none" stroke={T.warning} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65} />
+            )}
+
+            {/* Today marker */}
+            {todayIdx >= 0 && (
+              <g>
+                <line x1={x(todayIdx)} y1={pT} x2={x(todayIdx)} y2={pT + cH} stroke={T.danger} strokeWidth={1} strokeDasharray="3,3" opacity={0.4} />
+                <rect x={x(todayIdx) - 18} y={pT - 17} width={36} height={14} rx={3} fill={T.danger} opacity={0.85} />
+                <text x={x(todayIdx)} y={pT - 6} textAnchor="middle" fill="#fff" fontSize={8} fontWeight="700" fontFamily="JetBrains Mono">TODAY</text>
+              </g>
+            )}
+
+            {/* Hover crosshair + tooltip */}
+            {hoverIdx !== null && hoverX !== null && hoverPt && (
+              <g>
+                {/* Vertical line */}
+                <line x1={hoverX} y1={pT} x2={hoverX} y2={pT + cH} stroke={T.textMuted} strokeWidth={1} strokeDasharray="2,3" opacity={0.5} />
+
+                {/* Ideal dot */}
+                <circle cx={hoverX} cy={y(hoverIdeal)} r={3.5} fill="#4e9fff" stroke={T.bgCard} strokeWidth={1.5} opacity={0.8} />
+
+                {/* Actual dot */}
+                {hoverActual !== null && (
+                  <circle cx={hoverX} cy={y(hoverActual)} r={5} fill={T.danger} stroke={T.bgCard} strokeWidth={2} />
+                )}
+
+                {/* Tooltip */}
+                {(() => {
+                  const hasActual = hoverActual !== null;
+                  const tipW = 148, tipH = hasActual ? 84 : 52;
+                  const tipX = hoverX > W * 0.62 ? hoverX - tipW - 10 : hoverX + 10;
+                  const tipY = pT + 6;
+                  const deltaColor = hoverDelta === null ? T.textMuted : hoverDelta > 0 ? T.warning : T.success;
+                  return (
+                    <g>
+                      <rect x={tipX} y={tipY} width={tipW} height={tipH} rx={5} fill={T.bgElevated} stroke={T.borderLight} strokeWidth={1} opacity={0.97} />
+                      <text x={tipX + 10} y={tipY + 17} fill={T.text} fontSize={11} fontWeight="700" fontFamily="JetBrains Mono">{hoverPt.label}</text>
+                      <text x={tipX + 10} y={tipY + 34} fill="#4e9fff" fontSize={10} fontFamily="JetBrains Mono">Ideal  {hoverIdeal}{unitLabel}</text>
+                      {hasActual && <>
+                        <text x={tipX + 10} y={tipY + 51} fill={T.danger} fontSize={10} fontFamily="JetBrains Mono">Actual {hoverActual}{unitLabel}</text>
+                        <text x={tipX + 10} y={tipY + 68} fill={deltaColor} fontSize={9} fontFamily="JetBrains Mono">{hoverDelta > 0 ? "▲ " + hoverDelta + "% behind ideal" : hoverDelta < 0 ? "▼ " + Math.abs(hoverDelta) + "% ahead of ideal" : "● exactly on track"}</text>
+                      </>}
+                    </g>
+                  );
+                })()}
+              </g>
+            )}
+
+            {/* Transparent interaction rect (on top) */}
+            <rect x={pL} y={pT} width={cW} height={cH} fill="transparent" />
+          </svg>
+
+          {/* Burn rate footnote */}
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 8, display: "flex", gap: 16 }}>
+            <span>✓ Completed tasks drop instantly · ● Active tasks burn logged hours linearly</span>
+          </div>
+        </div>
+
+        {/* ── Stats sidebar ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[
+            { label: "Capacity",    val: stats.estimated + "h",                                                     color: "#4e9fff" },
+            { label: "Remaining",   val: (todayActual ?? activeBd[0]?.ideal ?? stats.estimated) + (burnMode === "hours" ? "h" : " sp"), color: T.warning },
+            { label: "Logged",      val: stats.logged + "h",                                                        color: T.success },
+            { label: "Tasks Done",  val: stats.doneTasks + "/" + stats.tasks,                                       color: T.accent },
+            { label: "In Progress", val: String(stats.inProgressTasks),                                             color: T.warning },
+          ].map((s, i) => (
+            <div key={i} style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "12px 16px", animation: "fadeUp 0.3s ease " + (i * 0.05) + "s both", borderLeft: "3px solid " + s.color + "60" }}>
+              <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 4, fontWeight: 700 }}>{s.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: s.color, fontFamily: "'JetBrains Mono', monospace" }}>{s.val}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Member Pies */}
+      {sprint && <MemberPies allTasks={sprint.tasks} team={team} stats={stats} />}
+
+      {/* ── Sprint Velocity ── */}
+      {velocityData.length > 0 && (
+        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Sprint Velocity</span>
+              {avgVelocity !== null && (
+                <span style={{ fontSize: 11, background: T.accentBg, color: T.accent, padding: "2px 8px", borderRadius: 10, fontFamily: "'JetBrains Mono'", fontWeight: 600 }}>avg {avgVelocity} sp</span>
+              )}
+            </div>
+            <span style={{ fontSize: 11, color: T.textMuted }}>Story points (tasks) completed per sprint</span>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", height: 130, position: "relative" }}>
+            {/* Average velocity reference line */}
+            {avgVelocity !== null && maxVel > 0 && (
+              <div style={{ position: "absolute", left: 0, right: 0, bottom: 28 + (avgVelocity / maxVel * 80), height: 1, borderTop: "1px dashed " + T.accent + "50", zIndex: 1, pointerEvents: "none" }}>
+                <span style={{ position: "absolute", right: 0, top: -16, fontSize: 9, color: T.accent + "80", fontFamily: "'JetBrains Mono'" }}>avg</span>
+              </div>
+            )}
+            {velocityData.map((s, i) => {
+              const donePct = s.taskCount > 0 ? s.doneCount / s.taskCount : 0;
+              const barH = Math.max(4, s.taskCount / maxVel * 80);
+              return (
+                <Tip key={i} text={s.name + "  ·  " + s.doneCount + "/" + s.taskCount + " tasks  ·  " + s.loggedHours + "h logged"}>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end", cursor: "default" }}>
+                    <span style={{ fontSize: 10, color: T.accent, fontFamily: "'JetBrains Mono'", fontWeight: 700 }}>{s.doneCount}</span>
+                    <div style={{ width: "100%", position: "relative", height: barH }}>
+                      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "100%", background: T.border, borderRadius: "4px 4px 0 0" }} />
+                      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: Math.max(donePct > 0 ? 2 : 0, donePct * barH), background: T.accent, borderRadius: "4px 4px 0 0", transition: "height 0.5s ease" }} />
+                    </div>
+                    <div style={{ width: "100%", height: 1, background: T.borderLight }} />
+                    <span style={{ fontSize: 9, color: T.textMuted, textAlign: "center", maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
+                    <span style={{ fontSize: 9, color: T.textMuted + "80", fontFamily: "'JetBrains Mono'" }}>{s.taskCount}t</span>
+                  </div>
+                </Tip>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 14, marginTop: 12, fontSize: 11, alignItems: "center" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, color: T.accent }}><span style={{ width: 10, height: 10, borderRadius: 2, background: T.accent, display: "inline-block" }} /> Completed SP</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, color: T.textMuted }}><span style={{ width: 10, height: 10, borderRadius: 2, background: T.border, display: "inline-block" }} /> Total SP</span>
+            {avgVelocity !== null && <span style={{ display: "flex", alignItems: "center", gap: 6, color: T.accent + "80" }}><span style={{ display: "inline-block", width: 18, borderTop: "1px dashed " + T.accent + "80" }} /> Avg velocity</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── TEAM ───
+function TeamView({ team, sprint }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, animation: "fadeUp 0.3s ease" }}>
+      {team.map((m, i) => {
+        const tasks = sprint ? sprint.tasks.filter(t => t.assignee === m.id) : [];
+        const est = tasks.reduce((s, t) => s + (t.estimated || 0), 0);
+        const logged = tasks.reduce((s, t) => s + (t.logged || 0), 0);
+        const done = tasks.filter(t => t.status === "complete").length;
+        const pct = tasks.length > 0 ? Math.round(done / tasks.length * 100) : 0;
+        const over = logged > est && est > 0;
+        const maxBar = Math.max(est, logged, 1);
+
+        return (
+          <div key={m.id} style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: 22, animation: "fadeUp 0.3s ease " + (i * 0.06) + "s both" }}>
+            {/* Member header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <RingProgress value={done} max={Math.max(tasks.length, 1)} color={m.color} size={48} stroke={3.5} />
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: m.color, fontFamily: "'Inter', sans-serif" }}>{pct}%</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: "'Inter', sans-serif" }}>{m.name}</div>
+                <div style={{ fontSize: 11, color: T.textMuted }}>{tasks.length} task{tasks.length !== 1 ? "s" : ""} · {done} done</div>
+              </div>
+            </div>
+
+            {/* Hours bar chart */}
+            <div style={{ background: T.bg, borderRadius: T.radius, padding: "12px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 10 }}>Hours</div>
+              {[
+                { label: "Estimated", val: est, color: m.color + "80" },
+                { label: "Logged",    val: logged, color: over ? T.danger : T.success },
+              ].map((row, ri) => (
+                <div key={ri} style={{ marginBottom: ri === 0 ? 8 : 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: T.textSub }}>{row.label}</span>
+                    <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono'", fontWeight: 600, color: row.color }}>{row.val}h</span>
+                  </div>
+                  <div style={{ height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: (row.val / maxBar * 100) + "%", background: row.color, borderRadius: 3, transition: "width 0.5s ease" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Task list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {tasks.map(t => (
+                <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, background: T.bg, fontSize: 11 }}>
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: t.status === "complete" ? T.success : t.status === "in-progress" ? T.warning : T.textMuted }} />
+                  <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: t.status === "complete" ? "line-through" : "none", opacity: t.status === "complete" ? 0.45 : 1, color: T.text }}>{t.name}</span>
+                  <span style={{ color: T.textMuted, fontFamily: "'JetBrains Mono'", fontSize: 10, flexShrink: 0 }}>{t.logged}/{t.estimated}h</span>
+                </div>
+              ))}
+              {tasks.length === 0 && <div style={{ padding: "10px 0", fontSize: 12, color: T.textMuted, textAlign: "center" }}>No tasks assigned</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── MODALS ───
+function NewSprintModal({ open, onClose, onCreate }) {
+  const [name, setName] = useState(""); const [start, setStart] = useState(todayStr());
+  const [weeks, setWeeks] = useState(8); const [weekLen, setWeekLen] = useState(1);
+  const end = addDays(start, weeks * weekLen * 7 - 1);
+  return (
+    <Modal open={open} onClose={onClose} title="Create Sprint" width={440}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div><label style={labelStyle}>Sprint Name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Sprint 2 — Polish" style={inputStyle} autoFocus /></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div><label style={labelStyle}>Start Date</label><input type="date" value={start} onChange={e => setStart(e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>Number of Weeks</label><input type="number" min={1} max={52} value={weeks} onChange={e => setWeeks(parseInt(e.target.value) || 1)} style={inputStyle} /></div>
+        </div>
+        <div>
+          <label style={labelStyle}>Sprint Cycle Length</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[1, 2, 3, 4].map(w => (
+              <button key={w} onClick={() => setWeekLen(w)} style={{ ...btnBase, flex: 1, padding: "10px", fontSize: 12, background: weekLen === w ? T.accentBg : T.bg, color: weekLen === w ? T.accent : T.textSub, border: weekLen === w ? "1px solid " + T.accent + "50" : "1px solid " + T.border, fontWeight: weekLen === w ? 600 : 400 }}>
+                {w} wk{w > 1 ? "s" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ background: T.bg, borderRadius: T.radius, padding: 14, fontSize: 12 }}>
+          <div style={{ color: T.textMuted, marginBottom: 4 }}>Summary</div>
+          <div style={{ color: T.text, fontWeight: 500 }}>{fmtFull(start)} → {fmtFull(end)} · {weeks} periods × {weekLen} wk{weekLen > 1 ? "s" : ""}</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ ...btnBase, flex: 1, padding: 12, background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
+          <button onClick={() => { if (name.trim()) { onCreate({ name: name.trim(), startDate: start, endDate: end, weekLength: weekLen }); setName(""); } }} style={{ ...btnBase, flex: 1, padding: 12, background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Create Sprint</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function NewTaskModal({ open, onClose, onCreate, team, sprint }) {
+  const [name, setName] = useState(""); const [assignee, setAssignee] = useState(team[0]?.id || "");
+  const [start, setStart] = useState(sprint?.startDate || todayStr());
+  const [end, setEnd] = useState(sprint ? addDays(sprint.startDate, 13) : addDays(todayStr(), 13));
+  const [est, setEst] = useState(8);
+  const [selectedDeps, setSelectedDeps] = useState([]);
+  useEffect(() => { if (sprint) { setStart(sprint.startDate); setEnd(addDays(sprint.startDate, 13)); setSelectedDeps([]); } }, [sprint?.id]);
+
+  const toggleDep = (id) => setSelectedDeps(p => p.includes(id) ? p.filter(d => d !== id) : [...p, id]);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add Task">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div><label style={labelStyle}>Task Name</label><input value={name} onChange={e => setName(e.target.value)} placeholder="What needs to be done?" style={inputStyle} autoFocus /></div>
+        <div>
+          <label style={labelStyle}>Assignee</label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {team.map(m => (
+              <button key={m.id} onClick={() => setAssignee(m.id)} style={{ ...btnBase, padding: "7px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 7, background: assignee === m.id ? m.color + "20" : T.bg, color: assignee === m.id ? m.color : T.textSub, border: assignee === m.id ? "1px solid " + m.color + "50" : "1px solid " + T.border }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", background: m.color + "30", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>{m.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div><label style={labelStyle}>Start Date</label><input type="date" value={start} onChange={e => setStart(e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>End Date</label><input type="date" value={end} onChange={e => setEnd(e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>Est. Hours</label><input type="number" min={1} value={est} onChange={e => setEst(parseInt(e.target.value) || 0)} style={inputStyle} /></div>
+        </div>
+        {sprint && sprint.tasks.length > 0 && (
+          <div>
+            <label style={labelStyle}>Dependencies <span style={{ fontWeight: 400, color: T.textMuted, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 120, overflowY: "auto" }}>
+              {sprint.tasks.map(t => (
+                <button key={t.id} onClick={() => toggleDep(t.id)} style={{ ...btnBase, padding: "7px 10px", fontSize: 12, textAlign: "left", background: selectedDeps.includes(t.id) ? T.accentBg : T.bg, color: selectedDeps.includes(t.id) ? T.accent : T.textSub, border: selectedDeps.includes(t.id) ? "1px solid " + T.accent + "40" : "1px solid " + T.border, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12 }}>{selectedDeps.includes(t.id) ? "☑" : "☐"}</span>{t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ ...btnBase, flex: 1, padding: 12, background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
+          <button onClick={() => { if (name.trim()) { onCreate({ name: name.trim(), assignee, startDate: start, endDate: end, estimated: est, logged: 0, status: "not-started", deps: selectedDeps }); setName(""); setEst(8); setSelectedDeps([]); } }} style={{ ...btnBase, flex: 1, padding: 12, background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Add Task</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditTaskModal({ open, onClose, task, allTasks, team, onSave, onDelete }) {
+  const [name, setName] = useState(""); const [assignee, setAssignee] = useState("");
+  const [start, setStart] = useState(""); const [end, setEnd] = useState("");
+  const [est, setEst] = useState(0); const [status, setStatus] = useState("not-started");
+  const [deps, setDeps] = useState([]);
+  useEffect(() => { if (task) { setName(task.name); setAssignee(task.assignee); setStart(task.startDate); setEnd(task.endDate); setEst(task.estimated); setStatus(task.status); setDeps(task.deps || []); } }, [task?.id, open]);
+  if (!task) return null;
+
+  const toggleDep = (id) => setDeps(p => p.includes(id) ? p.filter(d => d !== id) : [...p, id]);
+  const otherTasks = allTasks.filter(t => t.id !== task.id);
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit Task">
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div><label style={labelStyle}>Task Name</label><input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /></div>
+        <div>
+          <label style={labelStyle}>Assignee</label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {team.map(m => (
+              <button key={m.id} onClick={() => setAssignee(m.id)} style={{ ...btnBase, padding: "7px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 7, background: assignee === m.id ? m.color + "20" : T.bg, color: assignee === m.id ? m.color : T.textSub, border: assignee === m.id ? "1px solid " + m.color + "50" : "1px solid " + T.border }}>
+                <div style={{ width: 18, height: 18, borderRadius: "50%", background: m.color + "30", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>{m.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={labelStyle}>Status</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            {["not-started", "in-progress", "complete"].map(s => {
+              const cols = { "not-started": T.textMuted, "in-progress": T.warning, "complete": T.success };
+              const lbls = { "not-started": "To Do", "in-progress": "Active", "complete": "Done" };
+              return <button key={s} onClick={() => setStatus(s)} style={{ ...btnBase, flex: 1, padding: "9px", fontSize: 12, background: status === s ? cols[s] + "18" : T.bg, color: status === s ? cols[s] : T.textMuted, border: status === s ? "1px solid " + cols[s] + "40" : "1px solid " + T.border, fontWeight: status === s ? 600 : 400 }}>{lbls[s]}</button>;
+            })}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div><label style={labelStyle}>Start Date</label><input type="date" value={start} onChange={e => setStart(e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>End Date</label><input type="date" value={end} onChange={e => setEnd(e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>Est. Hours</label><input type="number" min={0} value={est} onChange={e => setEst(parseInt(e.target.value) || 0)} style={inputStyle} /></div>
+        </div>
+        <div style={{ background: T.bg, borderRadius: T.radius, padding: "12px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: T.textMuted }}>Logged:</span>
+          <span style={{ color: T.success, fontWeight: 600, fontFamily: "'JetBrains Mono'" }}>{task.logged}h</span>
+          <span style={{ color: T.textMuted }}>of</span>
+          <span style={{ fontWeight: 600, fontFamily: "'JetBrains Mono'", color: T.text }}>{est}h</span>
+          <div style={{ flex: 1, marginLeft: 6 }}><ProgressBar value={task.logged} max={est} height={4} /></div>
+        </div>
+        {task.completedAt && (
+          <div style={{ background: T.success + "10", border: "1px solid " + T.success + "30", borderRadius: T.radius, padding: "8px 14px", fontSize: 11, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: T.success }}>✓</span>
+            <span style={{ color: T.textSub }}>Completed </span>
+            <span style={{ color: T.success, fontWeight: 600, fontFamily: "'JetBrains Mono'" }}>{fmtDateTime(task.completedAt)}</span>
+            <span style={{ color: T.textMuted, marginLeft: "auto", fontSize: 10 }}>EST</span>
+          </div>
+        )}
+        {otherTasks.length > 0 && (
+          <div>
+            <label style={labelStyle}>Dependencies <span style={{ fontWeight: 400, color: T.textMuted, textTransform: "none", letterSpacing: 0 }}>(this task depends on…)</span></label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 120, overflowY: "auto" }}>
+              {otherTasks.map(t => (
+                <button key={t.id} onClick={() => toggleDep(t.id)} style={{ ...btnBase, padding: "7px 10px", fontSize: 12, textAlign: "left", background: deps.includes(t.id) ? T.accentBg : T.bg, color: deps.includes(t.id) ? T.accent : T.textSub, border: deps.includes(t.id) ? "1px solid " + T.accent + "40" : "1px solid " + T.border, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12 }}>{deps.includes(t.id) ? "☑" : "☐"}</span>{t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => onDelete(task.id)} style={{ ...btnBase, padding: 12, background: T.danger + "15", color: T.danger, fontSize: 13 }}>Delete</button>
+          <div style={{ flex: 1 }} />
+          <button onClick={onClose} style={{ ...btnBase, padding: "12px 20px", background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
+          <button onClick={() => onSave(task.id, { name, assignee, startDate: start, endDate: end, estimated: est, status, deps })} style={{ ...btnBase, padding: "12px 20px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Save</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function LogTimeModal({ open, onClose, onLog, task, mMap }) {
+  const [hours, setHours] = useState(1);
+  if (!task) return null;
+  const m = mMap[task.assignee];
+  return (
+    <Modal open={open} onClose={onClose} title="Log Time" width={380}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ background: T.bg, borderRadius: T.radius, padding: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 4 }}>{task.name}</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>{m?.name} · {task.logged}h of {task.estimated}h logged</div>
+          <ProgressBar value={task.logged} max={task.estimated} color={m?.color || T.accent} height={5} showLabel />
+        </div>
+        <div>
+          <label style={labelStyle}>Hours to Log</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[0.5, 1, 2, 4, 8].map(h => (
+              <button key={h} onClick={() => setHours(h)} style={{ ...btnBase, flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono'", background: hours === h ? T.accentBg : T.bg, color: hours === h ? T.accent : T.textSub, border: hours === h ? "1px solid " + T.accent + "50" : "1px solid " + T.border }}>{h}h</button>
+            ))}
+          </div>
+          <input type="number" min={0.25} step={0.25} value={hours} onChange={e => setHours(parseFloat(e.target.value) || 0)} style={{ ...inputStyle, marginTop: 8, textAlign: "center", fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono'" }} />
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ ...btnBase, flex: 1, padding: 12, background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
+          <button onClick={() => onLog(task.id, hours)} style={{ ...btnBase, flex: 1, padding: 12, background: T.success, color: "#fff", fontSize: 13, fontWeight: 600 }}>Log {hours}h</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditSprintModal({ open, onClose, sprint, onSave }) {
+  const [name, setName] = useState(""); const [start, setStart] = useState(""); const [end, setEnd] = useState(""); const [weekLen, setWeekLen] = useState(1);
+  useEffect(() => { if (sprint) { setName(sprint.name); setStart(sprint.startDate); setEnd(sprint.endDate); setWeekLen(sprint.weekLength || 1); } }, [sprint?.id, open]);
+  if (!sprint) return null;
+  return (
+    <Modal open={open} onClose={onClose} title="Edit Sprint" width={440}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div><label style={labelStyle}>Sprint Name</label><input value={name} onChange={e => setName(e.target.value)} style={inputStyle} autoFocus /></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div><label style={labelStyle}>Start Date</label><input type="date" value={start} onChange={e => setStart(e.target.value)} style={inputStyle} /></div>
+          <div><label style={labelStyle}>End Date</label><input type="date" value={end} onChange={e => setEnd(e.target.value)} style={inputStyle} /></div>
+        </div>
+        <div>
+          <label style={labelStyle}>Sprint Cycle Length</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[1, 2, 3, 4].map(w => (
+              <button key={w} onClick={() => setWeekLen(w)} style={{ ...btnBase, flex: 1, padding: "10px", fontSize: 12, background: weekLen === w ? T.accentBg : T.bg, color: weekLen === w ? T.accent : T.textSub, border: weekLen === w ? "1px solid " + T.accent + "50" : "1px solid " + T.border, fontWeight: weekLen === w ? 600 : 400 }}>
+                {w} wk{w > 1 ? "s" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ background: T.bg, borderRadius: T.radius, padding: 14, fontSize: 12 }}>
+          <div style={{ color: T.textMuted, marginBottom: 4 }}>Summary</div>
+          <div style={{ color: T.text, fontWeight: 500 }}>{fmtFull(start)} → {fmtFull(end)} · {sprint.tasks.length} tasks</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ ...btnBase, flex: 1, padding: 12, background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
+          <button onClick={() => { if (name.trim()) onSave(sprint.id, { name: name.trim(), startDate: start, endDate: end, weekLength: weekLen }); }} style={{ ...btnBase, flex: 1, padding: 12, background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Save</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function SettingsModal({ open, onClose, team, sprints, onUpdateMember, onAddMember, onRemoveMember, onDeleteSprint, onExport, onImport, onReset }) {
+  const [newName, setNewName] = useState(""); const [newColor, setNewColor] = useState("#4e7fff");
+  const colors = ["#ff5270", "#4e9fff", "#2ed09b", "#fbbf24", "#b87fff", "#ec4899", "#14b8a6", "#f97316"];
+  return (
+    <Modal open={open} onClose={onClose} title="Settings" width={520}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <div>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12, fontFamily: "'Inter', sans-serif" }}>Team Members</h4>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {team.map(m => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: T.bg, borderRadius: T.radius }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: m.color + "20", border: "2px solid " + m.color + "60", color: m.color, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{m.initials}</div>
+                <input value={m.name} onChange={e => onUpdateMember(m.id, { name: e.target.value, initials: e.target.value.slice(0, 2).toUpperCase() })} style={{ ...inputStyle, flex: 1, padding: "6px 10px", fontSize: 13 }} />
+                <div style={{ display: "flex", gap: 3 }}>
+                  {colors.map(c => (
+                    <button key={c} onClick={() => onUpdateMember(m.id, { color: c })} style={{ ...btnBase, width: 18, height: 18, borderRadius: "50%", padding: 0, background: c, border: m.color === c ? "2px solid #fff" : "2px solid transparent", transform: m.color === c ? "scale(1.25)" : "scale(1)" }} />
+                  ))}
+                </div>
+                <button onClick={() => onRemoveMember(m.id)} style={{ ...btnBase, background: "none", color: T.textMuted, fontSize: 14, padding: "2px 6px" }}>✕</button>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Add member..." style={{ ...inputStyle, flex: 1, padding: "8px 12px" }}
+              onKeyDown={e => { if (e.key === "Enter" && newName.trim()) { onAddMember({ name: newName.trim(), color: newColor, initials: newName.trim().slice(0, 2).toUpperCase() }); setNewName(""); } }} />
+            <button onClick={() => { if (newName.trim()) { onAddMember({ name: newName.trim(), color: newColor, initials: newName.trim().slice(0, 2).toUpperCase() }); setNewName(""); } }} style={{ ...btnBase, padding: "8px 16px", background: T.accent, color: "#fff", fontSize: 12, fontWeight: 600 }}>Add</button>
+          </div>
+        </div>
+        <div>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12, fontFamily: "'Inter', sans-serif" }}>Sprints</h4>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {sprints.map(s => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: T.bg, borderRadius: T.radius }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{s.name}</div>
+                  <div style={{ fontSize: 11, color: T.textMuted }}>{fmtFull(s.startDate)} → {fmtFull(s.endDate)} · {s.tasks.length} tasks</div>
+                </div>
+                <button onClick={() => { if (confirm('Delete "' + s.name + '"?')) onDeleteSprint(s.id); }} style={{ ...btnBase, padding: "5px 10px", background: T.danger + "15", color: T.danger, fontSize: 11 }}>Delete</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>Data</h4>
+          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>Export a backup before updating the HTML file. Import to restore your data afterward.</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onExport} style={{ ...btnBase, flex: 1, padding: "10px 16px", background: T.accentBg, color: T.accent, fontSize: 12, fontWeight: 600, border: "1px solid " + T.accent + "30" }}>⬇ Export JSON</button>
+            <button onClick={onImport} style={{ ...btnBase, flex: 1, padding: "10px 16px", background: T.bgElevated, color: T.textSub, fontSize: 12, fontWeight: 500, border: "1px solid " + T.border }}>⬆ Import JSON</button>
+          </div>
+        </div>
+        <div style={{ borderTop: "1px solid " + T.border, paddingTop: 16 }}>
+          <button onClick={() => { if (confirm("Reset all data? Cannot be undone.")) onReset(); }} style={{ ...btnBase, padding: "10px 16px", background: T.danger + "15", color: T.danger, fontSize: 12 }}>Reset All Data</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+ReactDOM.render(<App />, document.getElementById("root"));
+</script>
+</body>
+</html>
