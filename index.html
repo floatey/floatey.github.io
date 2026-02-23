@@ -296,7 +296,7 @@ function App() {
   // ── Subscribe to Firestore (real-time sync for all teammates) ──
   useEffect(() => {
     const unsub = docRef.onSnapshot(snap => {
-      if (snap.exists()) {
+      if (snap.exists) {
         const raw = snap.data().payload;
         const migrated = migrate(raw);
         const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
