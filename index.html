@@ -315,6 +315,125 @@ const smoothPath = (pts, tension = 0.4) => {
   return d;
 };
 
+
+// ─── SIDEBAR CLOCK ───
+const TZ_ZONES = [
+  { label: "EST",  tz: "America/New_York",    abbr: ["EST","EDT"] },
+  { label: "CST",  tz: "America/Chicago",     abbr: ["CST","CDT"] },
+  { label: "MST",  tz: "America/Denver",      abbr: ["MST","MDT"] },
+  { label: "PST",  tz: "America/Los_Angeles", abbr: ["PST","PDT"] },
+  { label: "UTC",  tz: "UTC",                 abbr: ["UTC"]       },
+];
+
+function getZoneTime(tz) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit",
+    hour12: true, weekday: "short",
+  }).formatToParts(now);
+  const get = (t) => parts.find(p => p.type === t)?.value || "";
+  const rawHour = get("hour");
+  const min  = get("minute");
+  const sec  = get("second");
+  const ampm = get("dayperiod") || get("dayPeriod") || "";
+  const weekday = get("weekday");
+  // derive offset label
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" });
+  const tzName = fmt.formatToParts(now).find(p => p.type === "timeZoneName")?.value || tz;
+  return { time: rawHour + ":" + min, sec, ampm: ampm.toLowerCase(), weekday, tzName };
+}
+
+function SidebarClock() {
+  const [tick, setTick] = useState(0);
+  const [hover, setHover] = useState(false);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const primary = getZoneTime("America/New_York");
+
+  return (
+    <div
+      style={{ padding: "10px 12px", borderTop: "1px solid " + T.border, position: "relative" }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {/* Primary display — EST */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+        background: hover ? T.bgElevated : "transparent",
+        borderRadius: 7, cursor: "default", transition: "background 0.15s",
+      }}>
+        <span style={{ fontSize: 13, opacity: 0.5 }}>🕐</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: T.text, fontFamily: "'JetBrains Mono'", letterSpacing: "-0.5px" }}>
+              {primary.time}
+            </span>
+            <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono'" }}>
+              {primary.sec}
+            </span>
+            <span style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase" }}>
+              {primary.ampm}
+            </span>
+          </div>
+          <div style={{ fontSize: 9, color: T.textMuted, letterSpacing: "0.5px", textTransform: "uppercase", marginTop: 1 }}>
+            {primary.weekday} · {primary.tzName}
+          </div>
+        </div>
+      </div>
+
+      {/* Hover panel — all zones */}
+      {hover && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: 10, right: 10,
+          background: T.bgElevated, border: "1px solid " + T.borderLight,
+          borderRadius: T.radiusLg, padding: "10px 12px",
+          boxShadow: "0 16px 48px #000000b0, 0 0 0 1px " + T.border,
+          animation: "fadeUp 0.12s ease",
+          zIndex: 200,
+        }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8 }}>Team Timezones</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {TZ_ZONES.map((z, i) => {
+              const info = getZoneTime(z.tz);
+              const isEst = i === 0;
+              const isCst = i === 1;
+              return (
+                <div key={z.label} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "5px 8px", borderRadius: 6,
+                  background: isEst ? T.accent + "12" : isCst ? T.accent + "07" : "transparent",
+                  border: isEst ? "1px solid " + T.accent + "25" : "1px solid transparent",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.5px",
+                      color: isEst ? T.accent : isCst ? T.textSub : T.textMuted,
+                      minWidth: 28,
+                    }}>{z.label}</span>
+                    <span style={{ fontSize: 9, color: T.textMuted }}>{info.tzName}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
+                    <span style={{
+                      fontSize: 13, fontWeight: isEst ? 700 : 500,
+                      color: isEst ? T.text : isCst ? T.textSub : T.textMuted,
+                      fontFamily: "'JetBrains Mono'",
+                    }}>{info.time}</span>
+                    <span style={{ fontSize: 9, color: T.textMuted, fontFamily: "'JetBrains Mono'" }}>{info.sec}</span>
+                    <span style={{ fontSize: 9, color: T.textMuted, textTransform: "uppercase" }}>{info.ampm}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MAIN APP ───
 function App() {
   // ── ALL hooks must be declared before any conditional return ──
@@ -681,6 +800,9 @@ function App() {
             <button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "7px 10px", fontSize: 12, textAlign: "left", background: "transparent", color: T.accent, borderRadius: 7, border: "1px dashed " + T.border + "99", marginTop: 4, opacity: 0.7 }}>+ New Sprint</button>
           </div>
         </div>
+
+        {/* Clock */}
+        <SidebarClock />
 
         {/* Settings */}
         <div style={{ padding: "10px 12px", borderTop: "1px solid " + T.border }}>
