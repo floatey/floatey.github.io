@@ -80,15 +80,17 @@ const fsDelete  = () => window._deleteDoc(window._docRef);
 // Migrate old data format
 const migrate = (data) => {
   if (!data) return null;
+  if (!Array.isArray(data.sprints) || !Array.isArray(data.team)) return null;
   return {
     ...data,
+    team: data.team,
     sprints: data.sprints.map(s => ({
       ...s,
-      tasks: s.tasks.map(t => ({
+      tasks: Array.isArray(s.tasks) ? s.tasks.map(t => ({
         deps: [],
         completedAt: t.status === "complete" ? (t.completedAt || t.endDate) : null,
         ...t,
-      }))
+      })) : [],
     }))
   };
 };
@@ -318,6 +320,7 @@ function App() {
   const [toast, setToast] = useState(null);
   const isRemoteUpdate = useRef(false);
   const saveTimer = useRef(null);
+  const dataRef = useRef(null);         // always holds the latest data for the save closure
   const fileInputRef = useRef(null);
 
   // ── Firestore subscription ──
@@ -330,6 +333,12 @@ function App() {
           const migrated = migrate(raw);
           const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
           if (resolved) {
+            // If we have a pending local save in-flight, skip this snapshot —
+            // our save will complete and trigger a fresh snapshot with the correct state.
+            if (saveTimer.current !== null) {
+              setFbReady(true);
+              return;
+            }
             isRemoteUpdate.current = true;
             setData(resolved);
             setActiveSprint(a => a || resolved.sprints[0]?.id || null);
@@ -359,14 +368,19 @@ function App() {
     }
   }, []);
 
+  // ── Keep dataRef in sync so the save timer always sends the latest state ──
+  useEffect(() => { dataRef.current = data; }, [data]);
+
   // ── Debounced save to Firestore ──
   useEffect(() => {
     if (!data || !fbReady) return;
     if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
     clearTimeout(saveTimer.current);
+    saveTimer.current = null;
     saveTimer.current = setTimeout(() => {
-      fsSave(data).catch(err => console.error("Save failed:", err));
-    }, 800);
+      saveTimer.current = null;   // clear flag BEFORE saving so incoming snapshot isn't blocked
+      fsSave(dataRef.current).catch(err => console.error("Save failed:", err));
+    }, 500);
   }, [data, fbReady]);
 
   // ── Derived data (all useMemo/useCallback before any return) ──
