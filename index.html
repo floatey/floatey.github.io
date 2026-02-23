@@ -77,7 +77,7 @@ const fsListen  = (cb, err) => window._onSnapshot(window._docRef, cb, err);
 const fsSave    = (data) => window._setDoc(window._docRef, { payload: data });
 const fsDelete  = () => window._deleteDoc(window._docRef);
 
-// Migrate old data format
+// Migrate old data format — also initialises v2 fields (timeLogs, statusHistory, notes)
 const migrate = (data) => {
   if (!data) return null;
   if (!Array.isArray(data.sprints) || !Array.isArray(data.team)) return null;
@@ -86,11 +86,23 @@ const migrate = (data) => {
     team: data.team,
     sprints: data.sprints.map(s => ({
       ...s,
-      tasks: Array.isArray(s.tasks) ? s.tasks.map(t => ({
-        deps: [],
-        completedAt: t.status === "complete" ? (t.completedAt || t.endDate) : null,
-        ...t,
-      })) : [],
+      notes: s.notes || "",
+      tasks: Array.isArray(s.tasks) ? s.tasks.map(t => {
+        const existingLogs = Array.isArray(t.timeLogs) ? t.timeLogs : (
+          (t.logged > 0) ? [{ id: uid(), hours: t.logged, loggedAt: t.completedAt || t.endDate || todayStr(), note: "Migrated from total" }] : []
+        );
+        const existingHistory = Array.isArray(t.statusHistory) ? t.statusHistory : (
+          t.status !== "not-started" ? [{ status: t.status, changedAt: t.completedAt || t.startDate || todayStr() }] : []
+        );
+        return {
+          deps: [],
+          completedAt: t.status === "complete" ? (t.completedAt || t.endDate) : null,
+          notes: "",
+          ...t,
+          timeLogs: existingLogs,
+          statusHistory: existingHistory,
+        };
+      }) : [],
     }))
   };
 };
@@ -477,7 +489,13 @@ function App() {
       tasks: s.tasks.map(t => {
         if (t.id !== tid) return t;
         const next = order[(order.indexOf(t.status) + 1) % 3];
-        return { ...t, status: next, completedAt: next === "complete" ? nowESTiso() : null };
+        const histEntry = { status: next, changedAt: nowESTiso() };
+        return {
+          ...t,
+          status: next,
+          completedAt: next === "complete" ? nowESTiso() : null,
+          statusHistory: [...(t.statusHistory || []), histEntry],
+        };
       })
     }));
   }, [sprint, uSprint]);
@@ -490,7 +508,14 @@ function App() {
 
   const addTask = useCallback((task) => {
     if (!sprint) return;
-    uSprint(sprint.id, s => ({ ...s, tasks: [...s.tasks, { ...task, id: uid(), deps: task.deps || [] }] }));
+    uSprint(sprint.id, s => ({ ...s, tasks: [...s.tasks, {
+      notes: "",
+      timeLogs: [],
+      statusHistory: [],
+      ...task,
+      id: uid(),
+      deps: task.deps || [],
+    }] }));
     setShowNewTask(false); notify("Task added!");
   }, [sprint, uSprint, notify]);
 
@@ -499,9 +524,17 @@ function App() {
     uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, ...u } : t) }));
   }, [sprint, uSprint]);
 
-  const logTime = useCallback((tid, hrs) => {
+  const logTime = useCallback((tid, hrs, note = "") => {
     if (!sprint) return;
-    uSprint(sprint.id, s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? { ...t, logged: (t.logged || 0) + hrs } : t) }));
+    const entry = { id: uid(), hours: hrs, loggedAt: nowESTiso(), note };
+    uSprint(sprint.id, s => ({
+      ...s,
+      tasks: s.tasks.map(t => t.id === tid ? {
+        ...t,
+        logged: (t.logged || 0) + hrs,
+        timeLogs: [...(t.timeLogs || []), entry],
+      } : t)
+    }));
     setShowLogTime(null); notify("Logged " + hrs + "h ✓");
   }, [sprint, uSprint, notify]);
 
@@ -532,11 +565,26 @@ function App() {
 
   const exportData = useCallback(() => {
     if (!data) return;
-    const json = JSON.stringify(data, null, 2);
+    const totalTasks = data.sprints.reduce((n, s) => n + s.tasks.length, 0);
+    const totalLogs  = data.sprints.reduce((n, s) => n + s.tasks.reduce((m, t) => m + (t.timeLogs||[]).length, 0), 0);
+    const meta = {
+      version: 2,
+      exportedAt: nowESTiso(),
+      appName: "TMCC",
+      summary: {
+        sprints: data.sprints.length,
+        tasks: totalTasks,
+        teamMembers: data.team.length,
+        timeLogEntries: totalLogs,
+      },
+      data,
+    };
+    const json = JSON.stringify(meta, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url;
-    a.download = "tmcc-backup-" + todayStr() + ".json";
+    const ts = nowESTiso().replace("T", "_").replace(":", "-").slice(0, 16);
+    a.download = "tmcc-backup-v2_" + ts + ".json";
     a.click(); URL.revokeObjectURL(url); notify("Data exported!");
   }, [data, notify]);
 
@@ -546,10 +594,13 @@ function App() {
     reader.onload = (ev) => {
       try {
         const parsed = JSON.parse(ev.target.result);
-        if (parsed.team && parsed.sprints) {
-          const migrated = migrate(parsed);
+        // Support v2 wrapped format { version, data: {...} } and legacy v1 { team, sprints }
+        const raw = (parsed.version && parsed.data) ? parsed.data : parsed;
+        if (raw.team && raw.sprints) {
+          const migrated = migrate(raw);
           setData(migrated); setActiveSprint(migrated.sprints[0]?.id || null);
-          notify("Data imported!");
+          const v = parsed.version ? " (v" + parsed.version + ")" : " (legacy)";
+          notify("Data imported" + v + "!");
         } else { notify("Invalid file format"); }
       } catch { notify("Failed to parse file"); }
     };
@@ -1531,15 +1582,16 @@ function EditTaskModal({ open, onClose, task, allTasks, team, onSave, onDelete }
   const [name, setName] = useState(""); const [assignee, setAssignee] = useState("");
   const [start, setStart] = useState(""); const [end, setEnd] = useState("");
   const [est, setEst] = useState(0); const [status, setStatus] = useState("not-started");
-  const [deps, setDeps] = useState([]);
-  useEffect(() => { if (task) { setName(task.name); setAssignee(task.assignee); setStart(task.startDate); setEnd(task.endDate); setEst(task.estimated); setStatus(task.status); setDeps(task.deps || []); } }, [task?.id, open]);
+  const [deps, setDeps] = useState([]); const [notes, setNotes] = useState("");
+  useEffect(() => { if (task) { setName(task.name); setAssignee(task.assignee); setStart(task.startDate); setEnd(task.endDate); setEst(task.estimated); setStatus(task.status); setDeps(task.deps || []); setNotes(task.notes || ""); } }, [task?.id, open]);
   if (!task) return null;
 
   const toggleDep = (id) => setDeps(p => p.includes(id) ? p.filter(d => d !== id) : [...p, id]);
   const otherTasks = allTasks.filter(t => t.id !== task.id);
+  const logs = task.timeLogs || [];
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit Task">
+    <Modal open={open} onClose={onClose} title="Edit Task" width={520}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div><label style={labelStyle}>Task Name</label><input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /></div>
         <div>
@@ -1582,6 +1634,25 @@ function EditTaskModal({ open, onClose, task, allTasks, team, onSave, onDelete }
             <span style={{ color: T.textMuted, marginLeft: "auto", fontSize: 10 }}>EST</span>
           </div>
         )}
+        <div>
+          <label style={labelStyle}>Notes / Description</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add context, links, blockers…" rows={3}
+            style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+        </div>
+        {logs.length > 0 && (
+          <div>
+            <label style={labelStyle}>Time Log History <span style={{ fontWeight: 400, color: T.textMuted, textTransform: "none", letterSpacing: 0 }}>({logs.length} entr{logs.length === 1 ? "y" : "ies"})</span></label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 140, overflowY: "auto" }}>
+              {[...logs].reverse().map(l => (
+                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: T.bg, borderRadius: T.radius, fontSize: 12 }}>
+                  <span style={{ color: T.success, fontWeight: 700, fontFamily: "'JetBrains Mono'", minWidth: 36 }}>{l.hours}h</span>
+                  <span style={{ color: T.textMuted, fontFamily: "'JetBrains Mono'", fontSize: 10, minWidth: 110 }}>{fmtDateTime(l.loggedAt)}</span>
+                  {l.note && <span style={{ color: T.textSub, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.note}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {otherTasks.length > 0 && (
           <div>
             <label style={labelStyle}>Dependencies <span style={{ fontWeight: 400, color: T.textMuted, textTransform: "none", letterSpacing: 0 }}>(this task depends on…)</span></label>
@@ -1598,7 +1669,7 @@ function EditTaskModal({ open, onClose, task, allTasks, team, onSave, onDelete }
           <button onClick={() => onDelete(task.id)} style={{ ...btnBase, padding: 12, background: T.danger + "15", color: T.danger, fontSize: 13 }}>Delete</button>
           <div style={{ flex: 1 }} />
           <button onClick={onClose} style={{ ...btnBase, padding: "12px 20px", background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
-          <button onClick={() => onSave(task.id, { name, assignee, startDate: start, endDate: end, estimated: est, status, deps })} style={{ ...btnBase, padding: "12px 20px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Save</button>
+          <button onClick={() => onSave(task.id, { name, assignee, startDate: start, endDate: end, estimated: est, status, deps, notes })} style={{ ...btnBase, padding: "12px 20px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Save</button>
         </div>
       </div>
     </Modal>
@@ -1607,6 +1678,7 @@ function EditTaskModal({ open, onClose, task, allTasks, team, onSave, onDelete }
 
 function LogTimeModal({ open, onClose, onLog, task, mMap }) {
   const [hours, setHours] = useState(1);
+  const [note, setNote] = useState("");
   if (!task) return null;
   const m = mMap[task.assignee];
   return (
@@ -1626,9 +1698,13 @@ function LogTimeModal({ open, onClose, onLog, task, mMap }) {
           </div>
           <input type="number" min={0.25} step={0.25} value={hours} onChange={e => setHours(parseFloat(e.target.value) || 0)} style={{ ...inputStyle, marginTop: 8, textAlign: "center", fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono'" }} />
         </div>
+        <div>
+          <label style={labelStyle}>Note <span style={{ fontWeight: 400, color: T.textMuted, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="What did you work on?" style={inputStyle} />
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ ...btnBase, flex: 1, padding: 12, background: T.bgElevated, color: T.textSub, fontSize: 13 }}>Cancel</button>
-          <button onClick={() => onLog(task.id, hours)} style={{ ...btnBase, flex: 1, padding: 12, background: T.success, color: "#fff", fontSize: 13, fontWeight: 600 }}>Log {hours}h</button>
+          <button onClick={() => { onLog(task.id, hours, note); setNote(""); }} style={{ ...btnBase, flex: 1, padding: 12, background: T.success, color: "#fff", fontSize: 13, fontWeight: 600 }}>Log {hours}h</button>
         </div>
       </div>
     </Modal>
@@ -1713,8 +1789,34 @@ function SettingsModal({ open, onClose, team, sprints, onUpdateMember, onAddMemb
           </div>
         </div>
         <div>
-          <h4 style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>Data</h4>
-          <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>Export a backup before updating the HTML file. Import to restore your data afterward.</div>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>Data Backup</h4>
+          {(() => {
+            const totalTasks  = sprints.reduce((n, s) => n + s.tasks.length, 0);
+            const totalLogs   = sprints.reduce((n, s) => n + s.tasks.reduce((m, t) => m + (t.timeLogs||[]).length, 0), 0);
+            const totalHours  = sprints.reduce((n, s) => n + s.tasks.reduce((m, t) => m + (t.logged||0), 0), 0);
+            const totalNoted  = sprints.reduce((n, s) => n + s.tasks.filter(t => t.notes?.trim()).length, 0);
+            const stats = [
+              { label: "Sprints",        val: sprints.length },
+              { label: "Tasks",          val: totalTasks },
+              { label: "Team members",   val: team.length },
+              { label: "Time log entries", val: totalLogs },
+              { label: "Hours logged",   val: totalHours + "h" },
+              { label: "Tasks with notes", val: totalNoted },
+            ];
+            return (
+              <div style={{ background: T.bg, borderRadius: T.radius, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 10 }}>What gets saved</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px 10px" }}>
+                  {stats.map(s => (
+                    <div key={s.label} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'JetBrains Mono'" }}>{s.val}</span>
+                      <span style={{ fontSize: 10, color: T.textMuted }}>{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onExport} style={{ ...btnBase, flex: 1, padding: "10px 16px", background: T.accentBg, color: T.accent, fontSize: 12, fontWeight: 600, border: "1px solid " + T.accent + "30" }}>⬇ Export JSON</button>
             <button onClick={onImport} style={{ ...btnBase, flex: 1, padding: "10px 16px", background: T.bgElevated, color: T.textSub, fontSize: 12, fontWeight: 500, border: "1px solid " + T.border }}>⬆ Import JSON</button>
