@@ -24,12 +24,16 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const docRef = doc(db, "tmcc", "state");
+  const lbRef  = doc(db, "tmcc", "uma_lb"); // separate doc — per-player merge writes only
 
-  // Expose to window so the Babel/React script can access them
-  window._docRef = docRef;
-  window._onSnapshot = onSnapshot;
-  window._setDoc = setDoc;
-  window._deleteDoc = deleteDoc;
+  window._docRef      = docRef;
+  window._lbRef       = lbRef;
+  window._onSnapshot  = onSnapshot;
+  window._setDoc      = setDoc;
+  window._deleteDoc   = deleteDoc;
+  // Leaderboard writes are always merge:true — each player only touches their own key
+  window._saveLbEntry = (name, entry) => setDoc(lbRef, { [name]: entry }, { merge: true });
+  window._listenLb    = (cb, err)     => onSnapshot(lbRef, cb, err);
   window._firebaseReady = true;
 
   // Dispatch event so React knows Firebase is ready
@@ -77,11 +81,13 @@ const todayStr = () => { const d = toEST(); return d.getFullYear() + "-" + Strin
 const nowESTiso = () => { const d = toEST(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0") + "T" + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); };
 const fmtDateTime = (iso) => { if (!iso) return ""; const [date, time] = iso.split("T"); const dt = new Date(date + "T00:00:00"); const d = dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); return time ? d + " at " + time : d; };
 
-// ── Storage: Firestore modular SDK (via window globals set by type=module script) ──
-const docRef    = () => window._docRef;
-const fsListen  = (cb, err) => window._onSnapshot(window._docRef, cb, err);
-const fsSave    = (data) => window._setDoc(window._docRef, { payload: data });
-const fsDelete  = () => window._deleteDoc(window._docRef);
+// ── Storage helpers ──
+const fsListen    = (cb, err)       => window._onSnapshot(window._docRef, cb, err);
+const fsSave      = (data)          => window._setDoc(window._docRef, { payload: data });
+const fsDelete    = ()              => window._deleteDoc(window._docRef);
+// Leaderboard — separate document, merge writes so players never overwrite each other
+const fsLbListen  = (cb, err)       => window._listenLb(cb, err);
+const fsLbSave    = (name, entry)   => window._saveLbEntry(name, entry);
 
 // Migrate old data format — also initialises v2 fields (timeLogs, statusHistory, notes)
 const migrate = (data) => {
@@ -986,26 +992,17 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     if (!player) return;
     const src = pdOverride || pd;
     if (!src) return;
-    // Only count successful (non-failed) completed runs
-    const goodRuns = src.veterans.filter(v => !v.failed);
-    if (goodRuns.length === 0) return; // nothing meaningful to publish yet
-    const best = goodRuns.sort((a, b) => b.total - a.total)[0];
+    const goodRuns = (src.veterans || []).filter(v => !v.failed);
+    if (goodRuns.length === 0) return;
+    const best = [...goodRuns].sort((a, b) => b.total - a.total)[0];
     const entry = {
-      rating: best.total || 0,
-      grade:  best.grade  || "D",
+      rating: best.total   || 0,
+      grade:  best.grade   || "D",
       girl:   best.girlName || "?",
       runs:   goodRuns.length,
     };
-    // Merge, stripping any stale undefined/zero entries
-    const lb = {};
-    Object.entries(umaData?.leaderboard || {}).forEach(([k, v]) => {
-      if (v && typeof v === "object" && (v.runs || 0) > 0) {
-        lb[k] = { rating: v.rating || 0, grade: v.grade || "D", girl: v.girl || "?", runs: v.runs || 0 };
-      }
-    });
-    lb[player.name] = entry;
-    onSyncLeaderboard({ leaderboard: lb });
-  }, [player, pd, umaData, onSyncLeaderboard]);
+    onSyncLeaderboard(player.name, entry); // Firestore merge:true handles isolation
+  }, [player, pd, onSyncLeaderboard]);
 
   const career = pd?.currentCareer;
   const girl = career ? UMA_ROSTER.find(g => g.id === career.girlId) : null;
@@ -1179,7 +1176,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
 
   // ── RENDER: Player Select ──
   if (!player) {
-    const lb = umaData?.leaderboard || {};
+    const lb = umaData || {};
     return (
       <div style={{ maxWidth: 700, margin: "0 auto", animation: "fadeUp 0.3s ease" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
@@ -1611,69 +1608,78 @@ function App() {
   const [showEditSprint, setShowEditSprint] = useState(false);
   const [filterMember, setFilterMember] = useState(null);
   const [toast, setToast] = useState(null);
-  const isRemoteUpdate = useRef(false);
-  const saveTimer = useRef(null);
-  const dataRef = useRef(null);         // always holds the latest data for the save closure
+  const [umaLb, setUmaLb] = useState({});   // leaderboard from its own Firestore doc
+
+  // Refs — never cause re-renders, safe to read inside closures
+  const saveTimer    = useRef(null);   // debounce handle
+  const savingRef    = useRef(false);  // true while a Firestore write is in-flight
+  const dataRef      = useRef(null);   // mirror of `data` state — always latest
   const fileInputRef = useRef(null);
 
-  // ── Firestore subscription ──
-  useEffect(() => {
-    const subscribe = () => {
-      const unsub = fsListen(snap => {
-        const snapData = snap.exists() ? snap.data() : null;
-        if (snapData && snapData.payload) {
-          const raw = snapData.payload;
-          const migrated = migrate(raw);
-          const resolved = (migrated && migrated.team && migrated.sprints) ? migrated : null;
-          if (resolved) {
-            // If we have a pending local save in-flight, skip this snapshot —
-            // our save will complete and trigger a fresh snapshot with the correct state.
-            if (saveTimer.current !== null) {
-              setFbReady(true);
-              return;
-            }
-            isRemoteUpdate.current = true;
-            setData(resolved);
-            setActiveSprint(a => a || resolved.sprints[0]?.id || null);
-            setFbReady(true);
-          }
-        } else {
-          const team = DEFAULT_TEAM;
-          const fresh = { team, sprints: [makeDefaultSprint(team)] };
-          fsSave(fresh);
-          setData(fresh);
-          setActiveSprint(fresh.sprints[0]?.id || null);
-          setFbReady(true);
-        }
-      }, err => {
-        console.error("Firestore error:", err);
-        setFbReady(true);
-      });
-      return unsub;
-    };
-    if (window._firebaseReady) {
-      return subscribe();
-    } else {
-      let unsub = null;
-      const handler = () => { unsub = subscribe(); };
-      window.addEventListener("firebaseReady", handler, { once: true });
-      return () => { window.removeEventListener("firebaseReady", handler); if (unsub) unsub(); };
-    }
-  }, []);
-
-  // ── Keep dataRef in sync so the save timer always sends the latest state ──
+  // ── Keep dataRef in sync ──
   useEffect(() => { dataRef.current = data; }, [data]);
 
-  // ── Debounced save to Firestore ──
+  // ── Subscribe to Uma leaderboard doc (separate, merge-write doc) ──
+  useEffect(() => {
+    const go = () => fsLbListen(snap => {
+      if (snap.exists()) setUmaLb(snap.data() || {});
+    }, err => console.warn("LB listen:", err));
+    if (window._firebaseReady) return go();
+    let unsub = null;
+    const h = () => { unsub = go(); };
+    window.addEventListener("firebaseReady", h, { once: true });
+    return () => { window.removeEventListener("firebaseReady", h); if (unsub) unsub(); };
+  }, []);
+
+  // ── Subscribe to main state doc ──
+  useEffect(() => {
+    const go = () => fsListen(snap => {
+      setFbReady(true);
+      // If WE are mid-save, ignore this snapshot — it's either our own echo
+      // or a concurrent change that our completing save will overtake anyway.
+      if (savingRef.current) return;
+      if (!snap.exists() || !snap.data()?.payload) {
+        // Bootstrap empty database
+        const team = DEFAULT_TEAM;
+        const fresh = { team, sprints: [makeDefaultSprint(team)], uma: { ...DEFAULT_UMA } };
+        fsSave(fresh);
+        setData(fresh);
+        setActiveSprint(fresh.sprints[0]?.id || null);
+        return;
+      }
+      const raw = snap.data().payload;
+      const resolved = migrate(raw);
+      if (resolved?.team && resolved?.sprints) {
+        setData(resolved);
+        setActiveSprint(a => a || resolved.sprints[0]?.id || null);
+      }
+    }, err => { console.error("Firestore error:", err); setFbReady(true); });
+    if (window._firebaseReady) return go();
+    let unsub = null;
+    const h = () => { unsub = go(); };
+    window.addEventListener("firebaseReady", h, { once: true });
+    return () => { window.removeEventListener("firebaseReady", h); if (unsub) unsub(); };
+  }, []);
+
+  // ── Debounced save — fires 1500ms after last local change ──
+  // Only triggered by local edits; remote snapshots set data through setData
+  // but savingRef will be false when they do, so no extra save fires.
+  const localChangeRef = useRef(false); // flag: was this data change local?
   useEffect(() => {
     if (!data || !fbReady) return;
-    if (isRemoteUpdate.current) { isRemoteUpdate.current = false; return; }
+    if (!localChangeRef.current) { localChangeRef.current = true; return; } // skip first mount
     clearTimeout(saveTimer.current);
-    saveTimer.current = null;
     saveTimer.current = setTimeout(() => {
-      saveTimer.current = null;   // clear flag BEFORE saving so incoming snapshot isn't blocked
-      fsSave(dataRef.current).catch(err => console.error("Save failed:", err));
-    }, 500);
+      savingRef.current = true;
+      // Snapshot data right now — dataRef.current has the absolute latest
+      const payload = { ...dataRef.current };
+      // Strip leaderboard from main payload — it lives in its own doc
+      if (payload.uma) payload.uma = { ...payload.uma, leaderboard: {} };
+      fsSave(payload)
+        .then(() => { savingRef.current = false; })
+        .catch(err => { savingRef.current = false; console.error("Save failed:", err); });
+    }, 1500);
+    return () => clearTimeout(saveTimer.current);
   }, [data, fbReady]);
 
   // ── Derived data (all useMemo/useCallback before any return) ──
@@ -1888,11 +1894,11 @@ function App() {
     reader.readAsText(file); e.target.value = "";
   }, [notify]);
 
-  // ── Uma Musume: only syncs the leaderboard to Firebase ──
-  const syncUmaLeaderboard = useCallback((umaUpdate) => {
-    if (!data) return;
-    setData(p => ({ ...p, uma: { ...p.uma, ...umaUpdate } }));
-  }, [data]);
+  // ── Uma leaderboard: writes ONLY to the separate lb doc via merge, never touches main state ──
+  const syncUmaLeaderboard = useCallback((playerName, entry) => {
+    if (!playerName || !entry) return;
+    fsLbSave(playerName, entry).catch(err => console.error("LB save failed:", err));
+  }, []);
 
   const NAV = [
     { id: "dashboard", label: "Dashboard", icon: "▦" },
@@ -2025,7 +2031,7 @@ function App() {
         {/* View Content */}
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
           {view === "tomo"
-            ? <UmaMusumeView umaData={data.uma} team={team} onSyncLeaderboard={syncUmaLeaderboard} />
+            ? <UmaMusumeView umaData={umaLb} team={team} onSyncLeaderboard={syncUmaLeaderboard} />
             : !sprint
             ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
             : view === "dashboard"
