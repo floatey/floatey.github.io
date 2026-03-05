@@ -551,20 +551,23 @@ function savePlayerData(name, d) {
 // ─── UMA MUSUME VIEW ───────────────────────────────────────────────────────
 
 function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
-  const [player, setPlayer] = useState(null);     // selected team member
+  const [player, _setPlayer] = useState(null);     // selected team member
   const [pd, setPd] = useState(null);              // player data { veterans, currentCareer }
   const [eventMsg, setEventMsg] = useState(null);
   const [raceResult, setRaceResult] = useState(null);
   const saveRef = useRef(null);
 
-  // Load player data from localStorage when player changes
-  useEffect(() => {
-    if (!player) return;
-    const data = loadPlayerData(player.name);
-    setPd(data);
-    setEventMsg(null);
-    setRaceResult(null);
-  }, [player?.id]);
+  // Wrap setPlayer to load data synchronously — avoids null pd between renders
+  const setPlayer = useCallback((m) => {
+    if (m) {
+      setPd(loadPlayerData(m.name));
+      setEventMsg(null);
+      setRaceResult(null);
+    } else {
+      setPd(null);
+    }
+    _setPlayer(m);
+  }, []);
 
   // Auto-save locally every 5 seconds when in career
   useEffect(() => {
@@ -579,7 +582,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
 
   const pushLeaderboard = useCallback(() => {
     if (!player || !pd) return;
-    const best = pd.veterans.sort((a, b) => b.totalStats - a.totalStats)[0];
+    const best = [...pd.veterans].sort((a, b) => b.totalStats - a.totalStats)[0];
     const entry = best ? { bestRating: best.totalStats, bestGrade: best.grade, bestGirl: best.girlName, totalRuns: pd.veterans.length } : { bestRating: 0, bestGrade: "–", bestGirl: "–", totalRuns: 0 };
     const newLB = { ...(umaData?.leaderboard || {}), [player.name]: entry };
     onSyncLeaderboard({ leaderboard: newLB });
@@ -589,6 +592,9 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
   const girl = career ? UMA_ROSTER.find(g => g.id === career.girlId) : null;
   const currentRace = career ? RACE_TURNS.find(r => r.turn === career.turn) : null;
   const totalStats = career ? STAT_KEYS.reduce((s, k) => s + career.stats[k], 0) : 0;
+
+  // Safety: if player selected but pd not yet loaded, show nothing
+  if (player && !pd) return null;
 
   // ── Actions ──
   const doTrain = (stat) => {
