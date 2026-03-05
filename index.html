@@ -759,22 +759,29 @@ function GachaCaseOpening({ winner, onDone }) {
   const [sliding, setSliding] = useState(false);
   const [landed, setLanded] = useState(false);
 
-  // Build the strip: shuffled roster repeated, winner placed at WINNER_IDX
+  // Build the strip safely — no while-loop, no infinite hang
   const strip = useMemo(() => {
-    const pool = [...UMA_ROSTER, ...UMA_ROSTER, ...UMA_ROSTER];
-    const out = [];
-    let pi = 0;
+    // Make a large shuffled pool of all girls (excluding winner), looped to fill 24 slots
+    const others = UMA_ROSTER.filter(g => g.id !== winner.id);
+    const shuffled = [];
+    // Fisher-Yates shuffle repeated pool
+    const pool = [...others, ...others, ...others];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
     for (let i = 0; i < 24; i++) {
-      if (i === WINNER_IDX) { out.push(winner); }
+      if (i === WINNER_IDX) { shuffled.push(winner); }
       else {
-        // avoid same girl twice in a row
-        let g = pool[pi % pool.length];
-        while (g.id === (out[out.length-1]?.id) || g.id === winner.id) pi++;
-        g = pool[pi % pool.length];
-        out.push(g); pi++;
+        // Pick next from pool that isn't the same as the previous card
+        let pick = pool[i % pool.length];
+        if (pick.id === (shuffled[shuffled.length - 1]?.id)) {
+          pick = pool[(i + 1) % pool.length]; // just skip one — no loop
+        }
+        shuffled.push(pick);
       }
     }
-    return out;
+    return shuffled;
   }, []);
 
   // Random offset so it doesn't land perfectly dead-center every time
@@ -980,8 +987,17 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     const src = pdOverride || pd;
     if (!src) return;
     const best = [...src.veterans].sort((a, b) => b.total - a.total)[0];
-    const entry = best ? { rating: best.total, grade: best.grade, girl: best.girlName, runs: src.veterans.length } : { rating: 0, grade: "–", girl: "–", runs: 0 };
-    onSyncLeaderboard({ leaderboard: { ...(umaData?.leaderboard || {}), [player.name]: entry } });
+    // Guard: never write undefined into Firestore
+    const entry = best
+      ? { rating: best.total || 0, grade: best.grade || "D", girl: best.girlName || "?", runs: src.veterans.length || 0 }
+      : { rating: 0, grade: "D", girl: "—", runs: 0 };
+    const lb = {};
+    // Merge existing leaderboard, stripping any undefined values
+    Object.entries(umaData?.leaderboard || {}).forEach(([k, v]) => {
+      if (v && typeof v === "object") lb[k] = { rating: v.rating || 0, grade: v.grade || "D", girl: v.girl || "—", runs: v.runs || 0 };
+    });
+    lb[player.name] = entry;
+    onSyncLeaderboard({ leaderboard: lb });
   }, [player, pd, umaData, onSyncLeaderboard]);
 
   const career = pd?.currentCareer;
