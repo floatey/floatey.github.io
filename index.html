@@ -84,7 +84,7 @@ const migrate = (data) => {
   return {
     ...data,
     team: data.team,
-    pet: data.pet ? data.pet : { ...DEFAULT_PET, createdAt: todayStr(), updatedAt: nowESTiso() },
+    clicker: data.clicker ? data.clicker : { ...DEFAULT_CLICKER, createdAt: todayStr(), lastTick: nowESTiso() },
     sprints: data.sprints.map(s => ({
       ...s,
       notes: s.notes || "",
@@ -108,15 +108,19 @@ const migrate = (data) => {
   };
 };
 
-const DEFAULT_PET = {
-  name: "Tomochi",
-  hunger: 80,
-  happiness: 80,
-  updatedAt: null,
-  lastFedBy: null,
-  lastPlayedBy: null,
-  totalFeeds: 0,
-  totalPlays: 0,
+const DEFAULT_CLICKER = {
+  carrots: 0,
+  totalCarrots: 0,
+  cps: 0,              // carrots per second (from upgrades)
+  lastTick: null,       // ISO string for offline accumulation
+  clickerBy: {},        // { memberName: clickCount }
+  upgrades: {
+    trainer:    { count: 0, baseCost: 15,   cpsEach: 0.1,  label: "Trainer",       icon: "🏋️", desc: "A gentle trainer. +0.1 cps" },
+    track:      { count: 0, baseCost: 100,  cpsEach: 0.5,  label: "Training Track", icon: "🏟️", desc: "A turf practice track. +0.5 cps" },
+    nutritionist:{ count: 0, baseCost: 500, cpsEach: 2,    label: "Nutritionist",  icon: "🥕", desc: "Optimized carrot diet. +2 cps" },
+    fanclub:    { count: 0, baseCost: 2000, cpsEach: 8,    label: "Fan Club",      icon: "📣", desc: "Cheering fans boost morale. +8 cps" },
+    stadium:    { count: 0, baseCost: 10000,cpsEach: 30,   label: "Stadium",       icon: "🏆", desc: "A grand racing stadium. +30 cps" },
+  },
   createdAt: null,
 };
 
@@ -448,179 +452,200 @@ function SidebarClock() {
 }
 
 
-// ─── TOMODACHI ──────────────────────────────────────────────────────────────
-const TOMO_MOODS = {
-  ecstatic: {
-    frames: [
-      ["  /\\_/\\  ", " ( ★‿★ ) ", "  ( ♥ )  "],
-      ["  /\\_/\\  ", " ( ★‿★ ) ", " ~( ♥ )~ "],
-    ],
-    label: "ECSTATIC", color: "#fbbf24",
-    texts: ["life is perfect. cannot complain.", "absolutely thriving rn.", "peak happiness achieved.", "this is the good life."],
-  },
-  happy: {
-    frames: [
-      ["  /\\_/\\  ", " ( ◕‿◕ ) ", "  ( v )  "],
-      ["  /\\_/\\  ", " ( ◕‿◕ ) ", " ~( v )~ "],
-    ],
-    label: "HAPPY", color: "#2ed09b",
-    texts: ["doing great actually.", "things are good. no notes.", "genuinely content.", "vibes are immaculate."],
-  },
-  content: {
-    frames: [
-      ["  /\\_/\\  ", " ( -‿- ) ", "  ( . )  "],
-      ["  /\\_/\\  ", " ( -.- ) ", "  ( . )  "],
-    ],
-    label: "OKAY", color: "#4e9fff",
-    texts: ["vibing. nothing major.", "existing comfortably.", "fine. everything is fine.", "could be worse honestly."],
-  },
-  hungry: {
-    frames: [
-      ["  /\\_/\\  ", " ( >◇< ) ", "  ( . )  "],
-      ["  /\\_/\\  ", " ( >o< ) ", "  ( . )  "],
-    ],
-    label: "HUNGRY", color: "#f97316",
-    texts: ["would appreciate food rn.", "hello? snacks?", "thinking about eating.", "a snack would be great."],
-  },
-  sad: {
-    frames: [
-      ["  /\\_/\\  ", " ( ╥_╥ ) ", "  ( . )  "],
-      ["  /\\_/\\  ", " ( ;_; ) ", "  ( . )  "],
-    ],
-    label: "SAD", color: "#b87fff",
-    texts: ["could use some attention.", "a bit lonely ngl.", "anyone there?", "just hanging out... alone..."],
-  },
-  miserable: {
-    frames: [
-      ["  /\\_/\\  ", " ( x_x ) ", "  ( . )  "],
-      ["  /\\_/\\  ", " ( X_X ) ", "  ( . )  "],
-    ],
-    label: "SUFFERING", color: "#ff4d6d",
-    texts: ["this is a cry for help.", "hello?? HELLO??", "pls.", "someone. anyone."],
-  },
-};
+// ─── UMAMUSUME COOKIE CLICKER ──────────────────────────────────────────────
 
-function getMood(hunger, happiness) {
-  if (hunger > 75 && happiness > 75) return "ecstatic";
-  if (hunger > 50 && happiness > 50) return "happy";
-  if (hunger > 30 && happiness > 30) return "content";
-  if (hunger <= 20 && happiness <= 20) return "miserable";
-  if (hunger <= 30) return "hungry";
-  return "sad";
+const UMA_RANKS = [
+  { min: 0,       label: "Unranked",  color: T.textMuted, icon: "🌱" },
+  { min: 100,     label: "Debut",     color: "#4e9fff",   icon: "🐴" },
+  { min: 1000,    label: "G3",        color: "#2ed09b",   icon: "🏅" },
+  { min: 10000,   label: "G2",        color: "#fbbf24",   icon: "🥈" },
+  { min: 100000,  label: "G1",        color: "#f97316",   icon: "🥇" },
+  { min: 1000000, label: "Triple Crown", color: "#ff5270", icon: "👑" },
+];
+
+function getUmaRank(total) {
+  let rank = UMA_RANKS[0];
+  for (const r of UMA_RANKS) { if (total >= r.min) rank = r; }
+  return rank;
 }
 
-function StatBar({ label, value, color }) {
-  const pct = Math.round(value);
-  const segments = 20;
-  const filled = Math.round(pct / 100 * segments);
-  const bar = Array.from({ length: segments }, (_, i) => i < filled ? "█" : "░").join("");
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", minWidth: 70, fontFamily: "'Inter'" }}>{label}</span>
-      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12, color, letterSpacing: "1px", flex: 1 }}>{bar}</span>
-      <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, color, minWidth: 36, textAlign: "right" }}>{pct}%</span>
-    </div>
-  );
+function getNextRank(total) {
+  for (const r of UMA_RANKS) { if (total < r.min) return r; }
+  return null;
 }
 
-function TomoView({ pet, team, computePetStats, onFeed, onPlay, onRename }) {
+function fmtNum(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return Math.floor(n).toString();
+}
+
+function getUpgradeCost(baseCost, count) {
+  return Math.floor(baseCost * Math.pow(1.15, count));
+}
+
+function computeCPS(upgrades) {
+  if (!upgrades) return 0;
+  let cps = 0;
+  Object.values(upgrades).forEach(u => { cps += u.count * u.cpsEach; });
+  return cps;
+}
+
+function accumulateOffline(clicker) {
+  if (!clicker || !clicker.lastTick) return clicker;
+  const nowMs = new Date().getTime();
+  const lastMs = new Date(clicker.lastTick).getTime();
+  const elapsed = Math.max(0, (nowMs - lastMs) / 1000);
+  const cps = computeCPS(clicker.upgrades);
+  const earned = cps * elapsed;
+  return {
+    ...clicker,
+    carrots: (clicker.carrots || 0) + earned,
+    totalCarrots: (clicker.totalCarrots || 0) + earned,
+    lastTick: nowESTiso(),
+  };
+}
+
+// Horse-girl ASCII frames that animate
+const UMA_FRAMES = [
+  ["     🏇      ", "   ╱|‾‾|╲    ", "  ╱ |  | ╲   ", " ◇  ‾‾‾‾  ◇ "],
+  ["      🏇     ", "   ╱|‾‾|╲    ", "  ╱ |  | ╲   ", "  ◇ ‾‾‾‾ ◇  "],
+];
+
+function UmaClickerView({ clicker, team, onClick, onBuyUpgrade, onReset }) {
   const [tick, setTick] = useState(0);
   const [actingAs, setActingAs] = useState(team[0]?.id || null);
-  const [renaming, setRenaming] = useState(false);
-  const [nameInput, setNameInput] = useState("");
+  const [clickFx, setClickFx] = useState([]);
+  const [displayCarrots, setDisplayCarrots] = useState(clicker?.carrots || 0);
 
+  // Tick for CPS accumulation display + animation
   useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 900);
+    const id = setInterval(() => setTick(t => t + 1), 500);
     return () => clearInterval(id);
   }, []);
 
-  if (!pet) return null;
+  // Smooth carrot counter
+  useEffect(() => {
+    if (!clicker) return;
+    const cps = computeCPS(clicker.upgrades);
+    const id = setInterval(() => {
+      setDisplayCarrots(prev => {
+        const target = clicker.carrots + cps * ((new Date().getTime() - new Date(clicker.lastTick || new Date()).getTime()) / 1000);
+        return prev + (target - prev) * 0.15;
+      });
+    }, 50);
+    return () => clearInterval(id);
+  }, [clicker]);
 
-  const { hunger, happiness } = computePetStats(pet);
-  const moodKey = getMood(hunger, happiness);
-  const mood    = TOMO_MOODS[moodKey];
-  const frame   = mood.frames[tick % mood.frames.length];
-  const flavor  = mood.texts[tick % mood.texts.length];
+  if (!clicker) return null;
 
-  const actor  = team.find(m => m.id === actingAs);
-  const fedM   = pet.lastFedBy;
-  const playM  = pet.lastPlayedBy;
+  const cps = computeCPS(clicker.upgrades);
+  const rank = getUmaRank(clicker.totalCarrots || 0);
+  const nextRank = getNextRank(clicker.totalCarrots || 0);
+  const rankPct = nextRank ? Math.min(1, (clicker.totalCarrots - rank.min) / (nextRank.min - rank.min)) : 1;
+  const actor = team.find(m => m.id === actingAs);
 
-  // Days alive
-  const daysAlive = pet.createdAt
-    ? Math.max(1, Math.round((new Date() - new Date(pet.createdAt + (pet.createdAt.includes("T") ? "" : "T00:00:00"))) / 86400000))
+  const handleClick = () => {
+    if (!actor) return;
+    onClick(actor.name);
+    // Floating +1 effect
+    const id = uid();
+    const xOff = (Math.random() - 0.5) * 60;
+    setClickFx(prev => [...prev, { id, x: xOff }]);
+    setTimeout(() => setClickFx(prev => prev.filter(f => f.id !== id)), 800);
+  };
+
+  // Leaderboard
+  const leaders = Object.entries(clicker.clickerBy || {})
+    .map(([name, clicks]) => ({ name, clicks }))
+    .sort((a, b) => b.clicks - a.clicks);
+
+  const daysAlive = clicker.createdAt
+    ? Math.max(1, Math.round((new Date() - new Date(clicker.createdAt + (clicker.createdAt.includes("T") ? "" : "T00:00:00"))) / 86400000))
     : 1;
 
-  const isHurt = hunger < 20 || happiness < 20;
-
   return (
-    <div style={{ maxWidth: 560, margin: "0 auto", padding: "8px 0", animation: "fadeUp 0.3s ease" }}>
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "8px 0", animation: "fadeUp 0.3s ease" }}>
 
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          {renaming ? (
-            <div style={{ display: "flex", gap: 8, flex: 1 }}>
-              <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { onRename(nameInput); setRenaming(false); } if (e.key === "Escape") setRenaming(false); }}
-                style={{ ...inputStyle, fontSize: 20, fontWeight: 800, flex: 1 }} />
-              <button onClick={() => { onRename(nameInput); setRenaming(false); }} style={{ ...btnBase, padding: "8px 16px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600 }}>Save</button>
-              <button onClick={() => setRenaming(false)} style={{ ...btnBase, padding: "8px 14px", background: T.bgElevated, color: T.textSub, fontSize: 13 }}>✕</button>
-            </div>
-          ) : (
-            <>
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Inter'", letterSpacing: "-0.5px" }}>{pet.name}</h2>
-              <button onClick={() => { setNameInput(pet.name); setRenaming(true); }}
-                style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, fontSize: 10, padding: "3px 8px", borderRadius: 5 }}>rename</button>
-            </>
-          )}
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Inter'", letterSpacing: "-0.5px" }}>🏇 Uma Training Camp</h2>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase",
+            color: rank.color, background: rank.color + "18", border: "1px solid " + rank.color + "30",
+            padding: "3px 12px", borderRadius: 20,
+          }}>{rank.icon} {rank.label}</span>
         </div>
         <div style={{ fontSize: 12, color: T.textMuted }}>
-          age {daysAlive} day{daysAlive !== 1 ? "s" : ""} · shared team pet · {pet.totalFeeds || 0} feeds · {pet.totalPlays || 0} play sessions
+          day {daysAlive} · shared team clicker · {fmtNum(clicker.totalCarrots || 0)} total carrots earned
         </div>
       </div>
 
-      {/* ASCII creature */}
+      {/* Main Clicker Area */}
       <div style={{
-        background: T.bgCard, border: "1px solid " + (isHurt ? mood.color + "50" : T.border),
+        background: T.bgCard, border: "1px solid " + T.border,
         borderRadius: T.radiusXl, padding: "32px 24px", marginBottom: 20,
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 0,
-        boxShadow: isHurt ? "0 0 32px " + mood.color + "18" : "none",
-        transition: "box-shadow 0.5s ease, border-color 0.5s ease",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        position: "relative", overflow: "hidden",
       }}>
-        {/* Mood badge */}
-        <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase",
-            color: mood.color, background: mood.color + "18", border: "1px solid " + mood.color + "30",
-            padding: "3px 12px", borderRadius: 20,
-          }}>{mood.label}</span>
+        {/* Animated background shimmer */}
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, " + rank.color + "05 0%, transparent 50%, " + rank.color + "08 100%)", pointerEvents: "none" }} />
+
+        {/* Carrot counter */}
+        <div style={{ fontSize: 42, fontWeight: 800, color: T.text, fontFamily: "'JetBrains Mono'", letterSpacing: "-2px", marginBottom: 4, zIndex: 1 }}>
+          {fmtNum(displayCarrots)} 🥕
+        </div>
+        <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 24, zIndex: 1 }}>
+          {cps > 0 ? fmtNum(cps) + " carrots per second" : "click to start training!"}
         </div>
 
-        {/* ASCII art */}
-        <pre style={{
-          fontFamily: "'JetBrains Mono'", fontSize: 22, lineHeight: 1.6,
-          color: mood.color, textAlign: "center", margin: 0,
-          textShadow: "0 0 24px " + mood.color + "60",
-          userSelect: "none",
-        }}>{frame.join("\n")}</pre>
-
-        {/* Flavor text */}
-        <div style={{
-          marginTop: 20, fontSize: 13, color: T.textMuted, fontStyle: "italic",
-          textAlign: "center", minHeight: 20, fontFamily: "'Inter'",
-          transition: "opacity 0.3s ease",
-        }}>"{flavor}"</div>
-
-        {/* Stat bars */}
-        <div style={{
-          marginTop: 24, width: "100%", maxWidth: 380,
-          background: T.bg, borderRadius: T.radius, padding: "14px 16px",
-          display: "flex", flexDirection: "column", gap: 10,
-        }}>
-          <StatBar label="Hunger" value={hunger} color={hunger < 30 ? T.danger : hunger < 60 ? T.warning : T.success} />
-          <StatBar label="Happiness" value={happiness} color={happiness < 30 ? T.danger : happiness < 60 ? "#b87fff" : T.accent} />
+        {/* Click button */}
+        <div style={{ position: "relative", marginBottom: 24, zIndex: 1 }}>
+          {clickFx.map(f => (
+            <div key={f.id} style={{
+              position: "absolute", top: -10, left: "50%", transform: "translateX(" + f.x + "px)",
+              fontSize: 18, fontWeight: 800, color: "#fbbf24", pointerEvents: "none",
+              animation: "fadeUp 0.8s ease forwards", zIndex: 10,
+              textShadow: "0 0 12px #fbbf2480",
+            }}>+1</div>
+          ))}
+          <button onClick={handleClick} disabled={!actingAs} style={{
+            ...btnBase, width: 140, height: 140, borderRadius: "50%", fontSize: 52,
+            background: "radial-gradient(circle at 35% 35%, #ff924c 0%, #ff6b2b 50%, #e04800 100%)",
+            border: "4px solid #fbbf2440",
+            boxShadow: "0 8px 32px #ff6b2b50, 0 0 0 6px " + T.bgCard + ", 0 0 0 8px #ff6b2b30",
+            transition: "transform 0.08s, box-shadow 0.08s",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: actingAs ? "pointer" : "not-allowed",
+            userSelect: "none",
+          }}
+          onMouseDown={e => { e.currentTarget.style.transform = "scale(0.93)"; }}
+          onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+          >🥕</button>
         </div>
+
+        {/* Rank progress */}
+        {nextRank && (
+          <div style={{ width: "100%", maxWidth: 340, zIndex: 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: rank.color, letterSpacing: "0.6px" }}>{rank.icon} {rank.label}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: nextRank.color, letterSpacing: "0.6px" }}>{nextRank.icon} {nextRank.label}</span>
+            </div>
+            <div style={{ height: 8, background: T.border, borderRadius: 4, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: (rankPct * 100) + "%", borderRadius: 4,
+                background: "linear-gradient(90deg, " + rank.color + ", " + nextRank.color + ")",
+                transition: "width 0.5s ease",
+              }} />
+            </div>
+            <div style={{ textAlign: "center", fontSize: 10, color: T.textMuted, marginTop: 4 }}>
+              {fmtNum(nextRank.min - (clicker.totalCarrots || 0))} carrots to next rank
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Acting as */}
@@ -641,42 +666,89 @@ function TomoView({ pet, team, computePetStats, onFeed, onPlay, onRename }) {
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
-        <button onClick={() => actor && onFeed(actor.name)} disabled={!actingAs} style={{
-          ...btnBase, flex: 1, padding: "14px 0", fontSize: 14, fontWeight: 700,
-          background: actingAs ? T.success + "18" : T.bgCard, color: actingAs ? T.success : T.textMuted,
-          border: "1px solid " + (actingAs ? T.success + "40" : T.border),
-          borderRadius: T.radiusLg,
-        }}>
-          🍖  Feed
-        </button>
-        <button onClick={() => actor && onPlay(actor.name)} disabled={!actingAs} style={{
-          ...btnBase, flex: 1, padding: "14px 0", fontSize: 14, fontWeight: 700,
-          background: actingAs ? T.accent + "18" : T.bgCard, color: actingAs ? T.accent : T.textMuted,
-          border: "1px solid " + (actingAs ? T.accent + "40" : T.border),
-          borderRadius: T.radiusLg,
-        }}>
-          🎮  Play
-        </button>
+      {/* Upgrades */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 10, fontFamily: "'Inter'" }}>Upgrades</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {Object.entries(clicker.upgrades || {}).map(([key, up]) => {
+            const cost = getUpgradeCost(up.baseCost, up.count);
+            const canBuy = clicker.carrots >= cost;
+            return (
+              <div key={key} style={{
+                display: "flex", alignItems: "center", gap: 14, padding: "14px 18px",
+                background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg,
+                opacity: canBuy ? 1 : 0.5, transition: "opacity 0.2s, border-color 0.2s",
+                borderColor: canBuy ? T.accent + "40" : T.border,
+              }}>
+                <div style={{ fontSize: 28, flexShrink: 0, width: 40, textAlign: "center" }}>{up.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{up.label}</span>
+                    {up.count > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: "'JetBrains Mono'", background: T.accentBg, padding: "1px 7px", borderRadius: 10 }}>x{up.count}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.textMuted }}>{up.desc}</div>
+                </div>
+                <button onClick={() => canBuy && onBuyUpgrade(key)} disabled={!canBuy} style={{
+                  ...btnBase, padding: "10px 18px", fontSize: 13, fontWeight: 700,
+                  background: canBuy ? T.accent : T.bgElevated,
+                  color: canBuy ? "#fff" : T.textMuted,
+                  border: "none",
+                  cursor: canBuy ? "pointer" : "not-allowed",
+                  whiteSpace: "nowrap",
+                  boxShadow: canBuy ? "0 4px 12px " + T.accent + "40" : "none",
+                }}>
+                  🥕 {fmtNum(cost)}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Last activity */}
-      <div style={{ background: T.bgCard, borderRadius: T.radius, padding: "12px 16px", display: "flex", gap: 20 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 4, fontFamily: "'Inter'" }}>Last Fed By</div>
-          <div style={{ fontSize: 13, color: fedM ? T.success : T.textMuted, fontWeight: fedM ? 600 : 400 }}>{fedM || "no one yet"}</div>
+      {/* Leaderboard + Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+        {/* Click Leaderboard */}
+        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px 18px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 12, fontFamily: "'Inter'" }}>Click Leaderboard</div>
+          {leaders.length === 0
+            ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No clicks yet — get tapping!</div>
+            : leaders.map((l, i) => {
+              const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
+              const m = team.find(t => t.name === l.name);
+              return (
+                <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: i < leaders.length - 1 ? "1px solid " + T.border : "none" }}>
+                  <span style={{ fontSize: 14, width: 24, textAlign: "center" }}>{medal}</span>
+                  {m && <div style={{ width: 22, height: 22, borderRadius: "50%", background: m.color + "20", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + m.color + "40", flexShrink: 0 }}>{m.initials}</div>}
+                  <span style={{ flex: 1, fontSize: 13, color: T.text, fontWeight: i === 0 ? 700 : 400 }}>{l.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.accent, fontFamily: "'JetBrains Mono'" }}>{fmtNum(l.clicks)}</span>
+                </div>
+              );
+            })
+          }
         </div>
-        <div style={{ width: 1, background: T.border }} />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: "0.6px", textTransform: "uppercase", marginBottom: 4, fontFamily: "'Inter'" }}>Last Played By</div>
-          <div style={{ fontSize: 13, color: playM ? T.accent : T.textMuted, fontWeight: playM ? 600 : 400 }}>{playM || "no one yet"}</div>
+
+        {/* Stats */}
+        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px 18px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 12, fontFamily: "'Inter'" }}>Training Stats</div>
+          {[
+            { label: "Carrots/sec", val: cps > 0 ? cps.toFixed(1) : "0", color: T.success },
+            { label: "Total Earned", val: fmtNum(clicker.totalCarrots || 0), color: "#fbbf24" },
+            { label: "Total Clicks", val: fmtNum(leaders.reduce((s, l) => s + l.clicks, 0)), color: T.accent },
+            { label: "Upgrades Owned", val: Object.values(clicker.upgrades || {}).reduce((s, u) => s + u.count, 0), color: "#b87fff" },
+            { label: "Current Rank", val: rank.label, color: rank.color },
+            { label: "Camp Age", val: daysAlive + "d", color: T.textSub },
+          ].map((s, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < 5 ? "1px solid " + T.border : "none" }}>
+              <span style={{ fontSize: 12, color: T.textMuted }}>{s.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: s.color, fontFamily: "'JetBrains Mono'" }}>{s.val}</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Decay hint */}
-      <div style={{ marginTop: 12, fontSize: 11, color: T.textMuted, textAlign: "center", fontStyle: "italic" }}>
-        hunger drains ~3%/hr · happiness drains ~2%/hr · shared between your whole team
+      {/* Hint */}
+      <div style={{ fontSize: 11, color: T.textMuted, textAlign: "center", fontStyle: "italic" }}>
+        carrots auto-accumulate from upgrades · synced across your whole team in real time
       </div>
 
     </div>
@@ -975,40 +1047,36 @@ function App() {
     reader.readAsText(file); e.target.value = "";
   }, [notify]);
 
-  // ── Pet helpers ──
-  const computePetStats = useCallback((pet) => {
-    if (!pet) return { hunger: 0, happiness: 0 };
-    const nowMs  = new Date().getTime();
-    const lastMs = pet.updatedAt ? new Date(pet.updatedAt).getTime() : nowMs;
-    const hours  = Math.max(0, (nowMs - lastMs) / 3600000);
-    return {
-      hunger:    Math.round(Math.max(0, Math.min(100, (pet.hunger    || 0) - hours * 3))),
-      happiness: Math.round(Math.max(0, Math.min(100, (pet.happiness || 0) - hours * 2))),
-    };
-  }, []);
+  // ── Clicker helpers ──
+  const clickCarrot = useCallback((memberName) => {
+    if (!data?.clicker) return;
+    const updated = accumulateOffline(data.clicker);
+    const newClickerBy = { ...updated.clickerBy };
+    newClickerBy[memberName] = (newClickerBy[memberName] || 0) + 1;
+    setData(p => ({ ...p, clicker: {
+      ...updated,
+      carrots: updated.carrots + 1,
+      totalCarrots: updated.totalCarrots + 1,
+      clickerBy: newClickerBy,
+      lastTick: nowESTiso(),
+    }}));
+  }, [data]);
 
-  const feedPet = useCallback((memberName) => {
-    if (!data?.pet) return;
-    const cur = computePetStats(data.pet);
-    const next = { ...data.pet, hunger: Math.min(100, cur.hunger + 35), happiness: Math.min(100, cur.happiness + 5),
-      updatedAt: nowESTiso(), lastFedBy: memberName, totalFeeds: (data.pet.totalFeeds || 0) + 1 };
-    setData(p => ({ ...p, pet: next }));
-    notify(memberName + " fed Tomochi! 🍖");
-  }, [data, computePetStats, notify]);
-
-  const playWithPet = useCallback((memberName) => {
-    if (!data?.pet) return;
-    const cur = computePetStats(data.pet);
-    const next = { ...data.pet, happiness: Math.min(100, cur.happiness + 35), hunger: Math.max(0, cur.hunger - 8),
-      updatedAt: nowESTiso(), lastPlayedBy: memberName, totalPlays: (data.pet.totalPlays || 0) + 1 };
-    setData(p => ({ ...p, pet: next }));
-    notify(memberName + " played with Tomochi! 🎮");
-  }, [data, computePetStats, notify]);
-
-  const renamePet = useCallback((name) => {
-    if (!data?.pet || !name.trim()) return;
-    setData(p => ({ ...p, pet: { ...p.pet, name: name.trim() } }));
-    notify("Renamed to " + name.trim() + "!");
+  const buyUpgrade = useCallback((upgradeKey) => {
+    if (!data?.clicker) return;
+    const updated = accumulateOffline(data.clicker);
+    const up = updated.upgrades[upgradeKey];
+    if (!up) return;
+    const cost = getUpgradeCost(up.baseCost, up.count);
+    if (updated.carrots < cost) return;
+    const newUpgrades = { ...updated.upgrades, [upgradeKey]: { ...up, count: up.count + 1 } };
+    setData(p => ({ ...p, clicker: {
+      ...updated,
+      carrots: updated.carrots - cost,
+      upgrades: newUpgrades,
+      lastTick: nowESTiso(),
+    }}));
+    notify("Bought " + up.label + "! 🥕");
   }, [data, notify]);
 
   const NAV = [
@@ -1016,7 +1084,7 @@ function App() {
     { id: "gantt",     label: "Timeline",  icon: "▤" },
     { id: "burndown",  label: "Burndown",  icon: "◿" },
     { id: "team",      label: "Team",      icon: "◉" },
-    { id: "tomo",      label: "Tomochi",   icon: "ᘛ" },
+    { id: "tomo",      label: "Uma Clicker", icon: "🏇" },
   ];
 
   // ── Loading screen (only conditional return, comes after ALL hooks) ──
@@ -1142,7 +1210,7 @@ function App() {
         {/* View Content */}
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
           {view === "tomo"
-            ? <TomoView pet={data.pet} team={team} computePetStats={computePetStats} onFeed={feedPet} onPlay={playWithPet} onRename={renamePet} />
+            ? <UmaClickerView clicker={accumulateOffline(data.clicker)} team={team} onClick={clickCarrot} onBuyUpgrade={buyUpgrade} />
             : !sprint
             ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
             : view === "dashboard"
