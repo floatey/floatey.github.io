@@ -52,6 +52,9 @@
   @keyframes gachaSpin { 0% { transform: rotateY(0deg) scale(1); } 50% { transform: rotateY(90deg) scale(1.1); } 100% { transform: rotateY(0deg) scale(1); } }
   @keyframes gacha-flash { 0% { opacity: 0; transform: scale(0.5) rotate(-10deg); } 60% { opacity: 1; transform: scale(1.1) rotate(2deg); } 100% { opacity: 1; transform: scale(1) rotate(0deg); } }
   @keyframes sparkle { 0%,100% { opacity: 0; transform: scale(0); } 50% { opacity: 1; transform: scale(1); } }
+  @keyframes caseGlow { 0%,100% { box-shadow: 0 0 12px #fbbf2460; } 50% { box-shadow: 0 0 28px #fbbf24cc, 0 0 60px #fbbf2440; } }
+  @keyframes winnerPulse { 0% { transform: scale(1); } 50% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  @keyframes statPop { 0% { opacity:0; transform: translateY(8px) scale(0.8); } 70% { transform: translateY(-3px) scale(1.05); } 100% { opacity:1; transform: translateY(0) scale(1); } }
   ::selection { background: #4e7fff30; color: #e0e4f7; }
   .drag-over { outline: 2px solid #4e7fff55 !important; background: #4e7fff08 !important; }
   .dragging { opacity: 0.4; }
@@ -470,12 +473,111 @@ const MOOD_COLORS = { awful: T.danger, bad: "#f97316", normal: T.textSub, good: 
 const DIST_LABELS = { short: "Short", mile: "Mile", mid: "Medium", long: "Long" };
 const STYLE_LABELS = { runner: "Front Runner", leader: "Stalker", chaser: "Chaser", closer: "Closer" };
 
+// ── ASCII Art portraits (monospace, 6 lines × 12 chars) ──
+const UMA_ASCII = {
+  special_week: [
+    "  _{ }_  ",
+    " (≧◡≦)  ",
+    "  |♪|♪  ",
+    "  //\\\\  ",
+    " SPEEED! ",
+  ],
+  silence_suzuka: [
+    "  -∧_∧-  ",
+    " (•ω• )→ ",
+    "  /|\\ ~~  ",
+    "  | |    ",
+    "  ...    ",
+  ],
+  tokai_teio: [
+    "  /∧\\♛  ",
+    " ( ^ω^)  ",
+    "  |♔|   ",
+    "  |•|   ",
+    "  I'm#1 ",
+  ],
+  mejiro_mcqueen: [
+    " ≋≋≋≋≋  ",
+    " (◕ᴗ◕)  ",
+    "  |||   ",
+    "  ≡≡≡   ",
+    "  ♕Lady ",
+  ],
+  vodka: [
+    "  _∧_   ",
+    " (-ω-)  ",
+    "  [♠]   ",
+    "  |||   ",
+    " ..cool ",
+  ],
+  gold_ship: [
+    " ₊✦₊✦₊ ",
+    "(⊙▽⊙)! ",
+    " /|+|\\ ",
+    " CHAOS! ",
+    " AHAHA! ",
+  ],
+  daiwa_scarlet: [
+    "  _∧_   ",
+    " (>//<) ",
+    "  |♥|   ",
+    "  ///   ",
+    "  HMPH! ",
+  ],
+  sakura_bakushin: [
+    " *✸*✸*  ",
+    " (>◡<)  ",
+    "  |★|   ",
+    "  |||   ",
+    " ZOOM!! ",
+  ],
+  rice_shower: [
+    "  ~~~~  ",
+    " (;ω;)  ",
+    "  |~|   ",
+    "  /\\/  ",
+    " ..ok.. ",
+  ],
+  haru_urara: [
+    "  ○~○~  ",
+    " (≧▽≦) ",
+    "  |♡|   ",
+    "  \\|/  ",
+    " VAMOS! ",
+  ],
+  oguri_cap: [
+    " [🍖]→  ",
+    " (●ω●) ",
+    "  |=|   ",
+    "  |||   ",
+    " NOM~!! ",
+  ],
+  symboli_rudolf: [
+    "   ♚♚   ",
+    " (¬_¬)  ",
+    "  |≡|   ",
+    "  |||   ",
+    "  RULE! ",
+  ],
+};
+
+// ── Learnable Skills ──
+const UMA_SKILLS = [
+  { id: "natural_gift",  name: "Natural Gift",  icon: "✨", desc: "+15% training gains",         cost: 50,  effect: "trainBoost" },
+  { id: "iron_heart",    name: "Iron Heart",    icon: "🛡", desc: "Training failures halved",      cost: 35,  effect: "ironHeart" },
+  { id: "race_brain",    name: "Race Brain",    icon: "🧩", desc: "+10% race score",               cost: 55,  effect: "raceBrain" },
+  { id: "second_wind",   name: "Second Wind",   icon: "💨", desc: "Rest recovers +30% more",       cost: 40,  effect: "secondWind" },
+];
+
 const TOTAL_TURNS = 24;
 const RACE_SCHEDULE = [
-  { turn: 6,  name: "Maiden Race",   grade: "Debut", threshold: 220 },
-  { turn: 12, name: "Open Class",    grade: "OP",    threshold: 360 },
-  { turn: 18, name: "Tennou Sho",    grade: "G1",    threshold: 480 },
-  { turn: 23, name: "URA Finals",    grade: "URA",   threshold: 600 },
+  { turn: 6,  name: "Maiden Race",    grade: "Debut", threshold: 220 },
+  { turn: 9,  name: "Junior Stakes",  grade: "OP",    threshold: 290, optional: true, gemReward: 40 },
+  { turn: 12, name: "Open Class",     grade: "OP",    threshold: 360 },
+  { turn: 15, name: "Spring Stakes",  grade: "G3",    threshold: 430, optional: true, gemReward: 60 },
+  { turn: 18, name: "Tennou Sho",     grade: "G1",    threshold: 490 },
+  { turn: 21, name: "Arima Kinen",    grade: "G1",    threshold: 555, optional: true, gemReward: 80 },
+  { turn: 23, name: "URA Finals",     grade: "URA",   threshold: 610 },
 ];
 
 const GACHA_COST = 100;
@@ -602,20 +704,42 @@ function newCareer(girlId) {
   const girl = UMA_ROSTER.find(g => g.id === girlId);
   const stats = { speed: 30, stamina: 30, power: 30, guts: 30, wit: 30 };
   if (girl) stats[girl.bonus] += 20;
-  return { girlId, turn: 0, energy: 100, mood: "good", stats, skillPts: 0, raceResults: [], finished: false, failed: false };
+  return { girlId, turn: 0, energy: 100, mood: "good", stats, skillPts: 0, skills: [], raceResults: [], optRacesRun: [], finished: false, failed: false };
 }
 
 function calcTrainGain(stat, career, girl) {
-  const base = stat === girl.bonus ? 18 : 14;
-  return Math.round(base * (MOOD_MULT[career.mood] || 1) * (0.85 + Math.random() * 0.3));
+  const base = stat === girl.bonus ? 19 : 14;
+  const moodMult = MOOD_MULT[career.mood] || 1;
+  // Diminishing returns: over 100 → ×0.80, over 140 → ×0.60
+  const v = career.stats[stat];
+  const dimMult = v >= 140 ? 0.60 : v >= 100 ? 0.80 : 1.0;
+  // Skill: natural gift
+  const skillMult = career.skills.includes("natural_gift") ? 1.15 : 1.0;
+  return Math.round(base * moodMult * dimMult * skillMult * (0.85 + Math.random() * 0.3));
 }
 
 function raceScore(career, girl) {
   const s = career.stats;
-  const w = { short: [.4,.05,.3,.1,.15], mile: [.3,.15,.25,.1,.2], mid: [.25,.25,.2,.15,.15], long: [.2,.3,.15,.2,.15] };
+  // Base weights by distance
+  const w = {
+    short: [.40,.05,.30,.10,.15],
+    mile:  [.30,.15,.25,.10,.20],
+    mid:   [.25,.25,.20,.15,.15],
+    long:  [.20,.30,.15,.20,.15],
+  };
   const wt = w[girl.dist] || [.2,.2,.2,.2,.2];
   let score = s.speed*wt[0] + s.stamina*wt[1] + s.power*wt[2] + s.guts*wt[3] + s.wit*wt[4];
-  return Math.round(score * (0.92 + Math.random() * 0.16) * 7);
+  // Running style modifier
+  const styleBonus = {
+    runner:  s.speed  * 0.06,   // front runners get a speed edge
+    leader:  s.wit    * 0.04,   // stalkers read the race well
+    chaser:  s.power  * 0.05,   // chasers surge with power
+    closer:  s.guts   * 0.06,   // closers gut it out
+  };
+  score += styleBonus[girl.style] || 0;
+  // Skill: race brain
+  const skillMult = career.skills.includes("race_brain") ? 1.10 : 1.0;
+  return Math.round(score * skillMult * (0.90 + Math.random() * 0.20) * 7);
 }
 
 const LS_KEY = (name) => "tmcc_uma_" + name.replace(/\s+/g, "_");
@@ -625,6 +749,108 @@ function savePD(name, d) { try { localStorage.setItem(LS_KEY(name), JSON.stringi
 // ── NPC names for races ──
 const NPC_NAMES = ["Agnes Tachyon","Grass Wonder","El Condor Pasa","Narita Brian","T.M. Opera O","Matikanefukukitaru","Air Groove","Tamamo Cross","Seiun Sky","Sweep Tosho"];
 function pickNPCs(count, exclude) { const pool = NPC_NAMES.filter(n => n !== exclude); const out = []; while (out.length < count && pool.length) out.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]); return out; }
+
+// ── CSGO-style Case Opening Component ──
+function GachaCaseOpening({ winner, onDone }) {
+  const CARD_W = 80;
+  const VISIBLE = 7;
+  const containerW = CARD_W * VISIBLE;
+  const WINNER_IDX = 19;
+  const [sliding, setSliding] = useState(false);
+  const [landed, setLanded] = useState(false);
+
+  // Build the strip: shuffled roster repeated, winner placed at WINNER_IDX
+  const strip = useMemo(() => {
+    const pool = [...UMA_ROSTER, ...UMA_ROSTER, ...UMA_ROSTER];
+    const out = [];
+    let pi = 0;
+    for (let i = 0; i < 24; i++) {
+      if (i === WINNER_IDX) { out.push(winner); }
+      else {
+        // avoid same girl twice in a row
+        let g = pool[pi % pool.length];
+        while (g.id === (out[out.length-1]?.id) || g.id === winner.id) pi++;
+        g = pool[pi % pool.length];
+        out.push(g); pi++;
+      }
+    }
+    return out;
+  }, []);
+
+  // Random offset so it doesn't land perfectly dead-center every time
+  const offsetRef = useRef(Math.floor(Math.random() * 24) - 12);
+  const finalX = -(WINNER_IDX * CARD_W - containerW / 2 + CARD_W / 2) + offsetRef.current;
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setSliding(true), 150);
+    const t2 = setTimeout(() => { setLanded(true); setTimeout(onDone, 900); }, 4200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 10, textAlign: "center" }}>
+        ✦ SCOUTING... ✦
+      </div>
+
+      {/* Case strip container */}
+      <div style={{ position: "relative", width: containerW, margin: "0 auto", borderRadius: 10, overflow: "hidden", border: "2px solid #fbbf2460", animation: "caseGlow 1.5s ease infinite" }}>
+        {/* Center highlight window */}
+        <div style={{
+          position: "absolute", top: 0, bottom: 0, left: "50%",
+          transform: "translateX(-50%)", width: CARD_W,
+          border: "3px solid #fbbf24", zIndex: 10, pointerEvents: "none",
+          boxShadow: "0 0 20px #fbbf2480 inset, 0 0 8px #fbbf2480",
+          borderRadius: 6,
+        }} />
+        {/* Fade masks on sides */}
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, #07090fff 0%, transparent 18%, transparent 82%, #07090fff 100%)", zIndex: 9, pointerEvents: "none" }} />
+
+        {/* The scrolling strip */}
+        <div style={{
+          display: "flex",
+          transform: sliding ? `translateX(${finalX}px)` : "translateX(0px)",
+          transition: sliding ? "transform 4s cubic-bezier(0.05, 0.9, 0.25, 1)" : "none",
+          willChange: "transform",
+        }}>
+          {strip.map((g, i) => {
+            const isWinner = i === WINNER_IDX && landed;
+            const ascii = UMA_ASCII[g.id];
+            return (
+              <div key={i} style={{
+                width: CARD_W, flexShrink: 0, height: 110,
+                background: isWinner ? g.color + "30" : T.bgCard,
+                borderRight: "1px solid " + T.border,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                padding: "4px 2px",
+                animation: isWinner ? "winnerPulse 0.6s ease infinite" : "none",
+                transition: "background 0.3s",
+              }}>
+                <div style={{ width: "100%", height: 3, background: g.accent, marginBottom: 4 }} />
+                {ascii ? (
+                  <pre style={{
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 6.5, lineHeight: 1.35,
+                    color: isWinner ? g.accent : T.textMuted, margin: 0, textAlign: "center",
+                    transition: "color 0.3s",
+                  }}>{ascii.join("\n")}</pre>
+                ) : (
+                  <div style={{ fontSize: 16, fontWeight: 800, color: isWinner ? g.accent : T.textMuted }}>{g.name.split(" ").map(w=>w[0]).join("")}</div>
+                )}
+                <div style={{ fontSize: 7, color: isWinner ? g.accent : T.textMuted, marginTop: 3, fontWeight: 700 }}>{"★".repeat(g.star)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {landed && (
+        <div style={{ textAlign: "center", marginTop: 10, fontSize: 11, color: "#fbbf24", fontWeight: 700, animation: "fadeUp 0.3s ease" }}>
+          🎉 {winner.name} SCOUTED!
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Race Animation Component ──
 function RaceAnimation({ girl, score, threshold, onFinish }) {
@@ -749,10 +975,12 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
   }, [player, pd]);
   useEffect(() => { return () => { if (player && pd) savePD(player.name, pd); }; }, [player, pd]);
 
-  const pushLB = useCallback(() => {
-    if (!player || !pd) return;
-    const best = [...pd.veterans].sort((a, b) => b.total - a.total)[0];
-    const entry = best ? { rating: best.total, grade: best.grade, girl: best.girlName, runs: pd.veterans.length } : { rating: 0, grade: "–", girl: "–", runs: 0 };
+  const pushLB = useCallback((pdOverride) => {
+    if (!player) return;
+    const src = pdOverride || pd;
+    if (!src) return;
+    const best = [...src.veterans].sort((a, b) => b.total - a.total)[0];
+    const entry = best ? { rating: best.total, grade: best.grade, girl: best.girlName, runs: src.veterans.length } : { rating: 0, grade: "–", girl: "–", runs: 0 };
     onSyncLeaderboard({ leaderboard: { ...(umaData?.leaderboard || {}), [player.name]: entry } });
   }, [player, pd, umaData, onSyncLeaderboard]);
 
@@ -782,9 +1010,15 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     const g = getGrade(t);
     const gems = gradeGems(g.letter);
     const vet = { girlId: c.girlId, girlName: girl.name, girlColor: girl.accent, stats: { ...c.stats }, total: t, grade: g.letter, failed: c.failed, date: todayStr() };
-    setPd(prev => { const next = { ...prev, veterans: [...prev.veterans, vet], currentCareer: null, gems: (prev.gems || 0) + gems }; savePD(player.name, next); return next; });
+    let freshPd = null;
+    setPd(prev => {
+      const next = { ...prev, veterans: [...prev.veterans, vet], currentCareer: null, gems: (prev.gems || 0) + gems };
+      savePD(player.name, next);
+      freshPd = next; // capture synchronously for pushLB
+      return next;
+    });
     setDialogue(c.failed ? getDlg(girl, "raceLose") + "\n\n💎 +" + gems + " gems earned" : "🏆 Career Complete!\n\n" + getDlg(girl, "raceWin") + "\n\n💎 +" + gems + " gems earned");
-    setTimeout(pushLB, 200);
+    setTimeout(() => pushLB(freshPd), 100); // pass fresh pd directly — bypasses stale closure
   };
 
   // ── Actions ──
@@ -792,17 +1026,29 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     if (!career || career.energy < 15 || curRace || racing) return;
     const gain = calcTrainGain(stat, career, girl);
     const cost = 15 + Math.floor(Math.random() * 8);
-    const failChance = career.energy < 30 ? 0.2 : 0;
+    const ironHeart = career.skills.includes("iron_heart");
+    const failChance = career.energy < 30 ? (ironHeart ? 0.10 : 0.20) : 0;
     const failed = Math.random() < failChance;
     let next = { ...career, turn: career.turn + 1, energy: Math.max(0, career.energy - cost) };
+    let dlg = "";
     if (failed) {
       next.mood = MOOD_LEVELS[Math.max(0, MOOD_LEVELS.indexOf(next.mood) - 1)];
-      setDialogue("⚠️ Training failed! Too exhausted...\n" + girl.name + ": \"Ugh... my legs gave out...\"");
+      dlg = "⚠️ Training failed! Too exhausted...\n" + girl.name + ": \"Ugh... my legs gave out...\"";
     } else {
       next.stats = { ...next.stats, [stat]: next.stats[stat] + gain };
-      next.skillPts += Math.floor(gain / 3);
-      setDialogue(STAT_ICONS[stat] + " +" + gain + " " + stat + "!\n\n" + girl.name + ": \"" + getDlg(girl, "train", stat) + "\"");
+      next.skillPts += Math.floor(gain / 2.5);
+      dlg = STAT_ICONS[stat] + " +" + gain + " " + stat + "!\n" + girl.name + ": \"" + getDlg(girl, "train", stat) + "\"";
+      // Group training bonus: 22% chance — another stat gets a small boost
+      if (Math.random() < 0.22) {
+        const others = STAT_KEYS.filter(k => k !== stat);
+        const bonusStat = others[Math.floor(Math.random() * others.length)];
+        const bonusAmt = 3 + Math.floor(Math.random() * 5);
+        next.stats = { ...next.stats, [bonusStat]: next.stats[bonusStat] + bonusAmt };
+        next.mood = MOOD_LEVELS[Math.min(4, MOOD_LEVELS.indexOf(next.mood) + 1)];
+        dlg += "\n👥 Group training bonus! +" + bonusAmt + " " + bonusStat + "! Mood ↑";
+      }
     }
+    setDialogue(dlg);
     next = applyEvent(next);
     if (next.turn >= TOTAL_TURNS) { finishCareer(next); return; }
     setPd(p => ({ ...p, currentCareer: next }));
@@ -810,9 +1056,14 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
 
   const doRest = () => {
     if (!career || curRace || racing) return;
-    const gain = 30 + Math.floor(Math.random() * 25);
-    let next = { ...career, turn: career.turn + 1, energy: Math.min(100, career.energy + gain) };
-    setDialogue("💤 Energy +" + gain + "\n\n" + girl.name + ": \"" + getDlg(girl, "rest") + "\"");
+    const secondWind = career.skills.includes("second_wind");
+    const base = 30 + Math.floor(Math.random() * 25);
+    const gain = secondWind ? Math.round(base * 1.3) : base;
+    // Mood recovers if bad
+    let moodIdx = MOOD_LEVELS.indexOf(career.mood);
+    if (moodIdx < 2) moodIdx = Math.min(4, moodIdx + 1);
+    let next = { ...career, turn: career.turn + 1, energy: Math.min(100, career.energy + gain), mood: MOOD_LEVELS[moodIdx] };
+    setDialogue("💤 Energy +" + gain + (secondWind ? " (Second Wind!)" : "") + "\n" + girl.name + ": \"" + getDlg(girl, "rest") + "\"");
     next = applyEvent(next);
     if (next.turn >= TOTAL_TURNS) { finishCareer(next); return; }
     setPd(p => ({ ...p, currentCareer: next }));
@@ -823,10 +1074,25 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     const ot = OUTING_TYPES[Math.floor(Math.random() * OUTING_TYPES.length)];
     let next = { ...career, turn: career.turn + 1, mood: MOOD_LEVELS[Math.min(4, MOOD_LEVELS.indexOf(career.mood) + ot.moodGain)], energy: Math.min(100, career.energy + ot.energyGain) };
     if (ot.statGain) { const k = STAT_KEYS[Math.floor(Math.random()*5)]; next.stats = { ...next.stats, [k]: next.stats[k] + ot.statGain }; }
-    setDialogue(ot.icon + " " + ot.name + "! Mood ↑\n\n" + girl.name + ": \"" + getDlg(girl, "outing") + "\"");
+    setDialogue(ot.icon + " " + ot.name + "! Mood ↑\n" + girl.name + ": \"" + getDlg(girl, "outing") + "\"");
     next = applyEvent(next);
     if (next.turn >= TOTAL_TURNS) { finishCareer(next); return; }
     setPd(p => ({ ...p, currentCareer: next }));
+  };
+
+  const doLearnSkill = (skillId) => {
+    if (!career || racing) return;
+    const skill = UMA_SKILLS.find(s => s.id === skillId);
+    if (!skill || career.skills.includes(skillId) || career.skillPts < skill.cost) return;
+    const next = { ...career, skillPts: career.skillPts - skill.cost, skills: [...career.skills, skillId] };
+    setDialogue("🎓 Learned: " + skill.icon + " " + skill.name + "!\n" + girl.name + ": \"Just watch — I'll use this well!\"");
+    setPd(p => ({ ...p, currentCareer: next }));
+  };
+
+  const doOptionalRace = (race) => {
+    if (!career || racing) return;
+    const sc = raceScore(career, girl);
+    setRacing({ score: sc, threshold: race.threshold, optionalRace: race });
   };
 
   const doRace = () => {
@@ -837,24 +1103,29 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
 
   const onRaceFinish = () => {
     const won = racing.score >= racing.threshold;
-    const rr = { name: curRace.name, grade: curRace.grade, won, score: racing.score };
-    let next = { ...career, turn: career.turn + 1, raceResults: [...career.raceResults, rr], energy: Math.max(0, career.energy - 10) };
+    const isOpt = !!racing.optionalRace;
+    const raceRef = isOpt ? racing.optionalRace : curRace;
+    const rr = { name: raceRef.name, grade: raceRef.grade, won, score: racing.score, optional: isOpt };
+    let next = { ...career, raceResults: [...career.raceResults, rr], energy: Math.max(0, career.energy - 10) };
+    if (!isOpt) next.turn = career.turn + 1; // mandatory races advance turn
+    else next.optRacesRun = [...(career.optRacesRun || []), raceRef.turn]; // mark optional as run
     if (won) {
       const bk1 = STAT_KEYS[Math.floor(Math.random()*5)];
       const bk2 = STAT_KEYS[Math.floor(Math.random()*5)];
       next.stats = { ...next.stats, [bk1]: next.stats[bk1] + 12, [bk2]: next.stats[bk2] + 8 };
       next.skillPts += 30;
-      next.energy = Math.min(100, next.energy + 15); // Victory energy boost
-      setDialogue("🏆 " + curRace.name + " — WON!\n\n" + girl.name + ": \"" + getDlg(girl, "raceWin") + "\"");
+      next.energy = Math.min(100, next.energy + 15);
+      const gemBonus = isOpt ? (raceRef.gemReward || 40) : 0;
+      if (isOpt && gemBonus) setPd(p => ({ ...p, gems: (p.gems || 0) + gemBonus }));
+      setDialogue("🏆 " + raceRef.name + " — WON!" + (isOpt && gemBonus ? "\n💎 +" + gemBonus + " gems!" : "") + "\n" + girl.name + ": \"" + getDlg(girl, "raceWin") + "\"");
     } else {
-      if (curRace.grade === "URA") {
+      if (!isOpt && raceRef.grade === "URA") {
         next.failed = true;
       }
-      const loseDlg = getDlg(girl, "raceLose");
-      setDialogue("💔 " + curRace.name + " — Lost...\n\n" + girl.name + ": \"" + loseDlg + "\"" + (curRace.grade === "URA" ? "\n\n(Career ended — better luck next time!)" : "\n\n— Keep training, you'll get 'em next time!"));
+      setDialogue("💔 " + raceRef.name + " — Lost...\n" + girl.name + ": \"" + getDlg(girl, "raceLose") + "\"" + (!isOpt && raceRef.grade === "URA" ? "\n\n(Career ended — better luck next time!)" : "\n— Keep training!"));
     }
     setRacing(null);
-    if (next.failed || next.turn >= TOTAL_TURNS) { finishCareer(next); return; }
+    if (next.failed || (!isOpt && next.turn >= TOTAL_TURNS)) { finishCareer(next); return; }
     setPd(p => ({ ...p, currentCareer: next }));
   };
 
@@ -865,15 +1136,12 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     if (!pd || (pd.gems || 0) < GACHA_COST || gachaSpinning) return;
     const locked = UMA_ROSTER.filter(g => !(pd.unlockedGirls || []).includes(g.id));
     let result;
-    if (locked.length > 0 && Math.random() < 0.7) {
-      result = locked[Math.floor(Math.random() * locked.length)];
-    } else if (locked.length > 0) {
+    if (locked.length > 0) {
       result = locked[Math.floor(Math.random() * locked.length)];
     } else {
-      // All unlocked — bonus gems (still animate)
       result = { dupe: true };
     }
-    // Deduct gems immediately, start spin animation
+    // Deduct gems, unlock girl, start animation immediately
     setPd(p => {
       const gemCost = result.dupe ? GACHA_COST - 50 : GACHA_COST;
       const newUnlocked = result.dupe ? (p.unlockedGirls || []) : [...(p.unlockedGirls || []), result.id];
@@ -881,12 +1149,9 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
       savePD(player.name, n);
       return n;
     });
+    // gachaResult holds the winner — GachaCaseOpening reads it, then onDone flips gachaSpinning→false to show reveal
+    setGachaResult(result);
     setGachaSpinning(true);
-    setGachaResult(null);
-    setTimeout(() => {
-      setGachaSpinning(false);
-      setGachaResult(result);
-    }, 2200);
   };
 
   // ── RENDER: Player Select ──
@@ -990,49 +1255,36 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
         {tab === "gacha" && (
           <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "24px", textAlign: "center" }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.text, marginBottom: 4 }}>🎰 Pretty Derby Scout</div>
-            <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 20 }}>Spend gems to scout new trainees! · 💎 {GACHA_COST} per pull</div>
+            <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 16 }}>Spend gems to scout new trainees! · 💎 {GACHA_COST} per pull</div>
             <div style={{ fontSize: 24, fontWeight: 800, color: "#fbbf24", marginBottom: 16 }}>💎 {pd.gems || 0}</div>
 
-            {/* Gacha spinning animation */}
-            {gachaSpinning && (
-              <div style={{ marginBottom: 16, padding: "28px", background: "linear-gradient(135deg, #fbbf2415, #f9731615)", border: "2px solid #fbbf2440", borderRadius: T.radiusXl }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 16 }}>🌟 SCOUTING...</div>
-                <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 14 }}>
-                  {["🏇","⭐","🏇","💎","🏇"].map((icon, i) => (
-                    <div key={i} style={{
-                      width: 44, height: 44, borderRadius: "50%",
-                      background: "linear-gradient(135deg, #fbbf24, #f97316)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 20,
-                      animation: "gachaSpin 0.6s ease-in-out infinite",
-                      animationDelay: (i * 0.12) + "s",
-                    }}>{icon}</div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 12, color: T.textMuted, animation: "fadeIn 0.5s ease infinite alternate" }}>Searching for a new trainee...</div>
+            {/* CSGO Case Opening */}
+            {gachaSpinning && gachaResult && !gachaResult.dupe && (
+              <GachaCaseOpening winner={gachaResult} onDone={() => setGachaSpinning(false)} />
+            )}
+            {gachaSpinning && gachaResult && gachaResult.dupe && (
+              <div style={{ marginBottom: 16, padding: "20px", border: "1px solid " + T.border, borderRadius: T.radiusLg }}>
+                <div style={{ fontSize: 22 }}>💎</div>
+                <div style={{ fontSize: 12, color: T.textMuted, marginTop: 8 }}>All trainees scouted — returning gems...</div>
               </div>
             )}
 
-            {/* New trainee result */}
-            {gachaResult && !gachaResult.dupe && (
+            {/* Result reveal (after animation) */}
+            {!gachaSpinning && gachaResult && !gachaResult.dupe && (
               <div style={{ background: gachaResult.accent + "15", border: "2px solid " + gachaResult.accent, borderRadius: T.radiusXl, padding: "24px", marginBottom: 16, animation: "gacha-flash 0.5s cubic-bezier(0.34,1.56,0.64,1)" }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 8 }}>✨ NEW TRAINEE SCOUTED ✨</div>
-                <div style={{
-                  width: 68, height: 68, borderRadius: "50%",
-                  background: "linear-gradient(135deg, " + gachaResult.color + "40, " + gachaResult.accent + "30)",
-                  border: "3px solid " + gachaResult.accent,
-                  margin: "0 auto 12px",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 22, fontWeight: 800, color: gachaResult.accent,
-                  boxShadow: "0 0 24px " + gachaResult.accent + "60",
-                }}>{gachaResult.name.split(" ").map(w=>w[0]).join("")}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", letterSpacing: "1px", textTransform: "uppercase", marginBottom: 12 }}>✨ NEW TRAINEE SCOUTED ✨</div>
+                {UMA_ASCII[gachaResult.id] && (
+                  <pre style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, lineHeight: 1.5, color: gachaResult.accent, margin: "0 auto 14px", textAlign: "center", display: "inline-block", background: gachaResult.accent+"10", padding: "12px 20px", borderRadius: 10, border: "1px solid " + gachaResult.accent+"30", animation: "statPop 0.5s ease" }}>
+                    {UMA_ASCII[gachaResult.id].join("\n")}
+                  </pre>
+                )}
                 <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 4 }}>{gachaResult.name}</div>
                 <div style={{ fontSize: 11, color: gachaResult.accent, marginBottom: 4 }}>{"★".repeat(gachaResult.star)} · {DIST_LABELS[gachaResult.dist]} · {STYLE_LABELS[gachaResult.style]}</div>
-                <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 12 }}>Bonus stat: {STAT_ICONS[gachaResult.bonus]} {gachaResult.bonus}</div>
+                <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 14 }}>Bonus stat: {STAT_ICONS[gachaResult.bonus]} {gachaResult.bonus}</div>
                 <button onClick={() => setGachaResult(null)} style={{ ...btnBase, padding: "8px 24px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 700 }}>Start Training! 🏇</button>
               </div>
             )}
-            {gachaResult && gachaResult.dupe && (
+            {!gachaSpinning && gachaResult && gachaResult.dupe && (
               <div style={{ background: T.accentBg, border: "1px solid " + T.accent + "30", borderRadius: T.radiusLg, padding: "20px", marginBottom: 16, animation: "gacha-flash 0.4s ease" }}>
                 <div style={{ fontSize: 24, marginBottom: 8 }}>💎</div>
                 <div style={{ fontSize: 13, color: T.accent, fontWeight: 600 }}>All trainees already scouted!</div>
@@ -1041,13 +1293,15 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
               </div>
             )}
 
-            <button onClick={doGacha} disabled={(pd.gems||0) < GACHA_COST || gachaSpinning} style={{
-              ...btnBase, padding: "16px 40px", fontSize: 16, fontWeight: 800,
-              background: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "linear-gradient(135deg, #fbbf24, #f97316)" : T.bgElevated,
-              color: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "#fff" : T.textMuted,
-              cursor: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "pointer" : "not-allowed",
-              boxShadow: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "0 6px 24px #fbbf2440" : "none",
-            }}>{gachaSpinning ? "Scouting..." : "Scout! (💎 " + GACHA_COST + ")"}</button>
+            {!gachaResult && (
+              <button onClick={doGacha} disabled={(pd.gems||0) < GACHA_COST || gachaSpinning} style={{
+                ...btnBase, padding: "16px 40px", fontSize: 16, fontWeight: 800,
+                background: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "linear-gradient(135deg, #fbbf24, #f97316)" : T.bgElevated,
+                color: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "#fff" : T.textMuted,
+                cursor: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "pointer" : "not-allowed",
+                boxShadow: ((pd.gems||0) >= GACHA_COST && !gachaSpinning) ? "0 6px 24px #fbbf2440" : "none",
+              }}>Scout! (💎 {GACHA_COST})</button>
+            )}
 
             <div style={{ marginTop: 20, fontSize: 10, color: T.textMuted, textAlign: "left" }}>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>Unlocked: {unlocked.length}/{UMA_ROSTER.length}</div>
@@ -1143,17 +1397,38 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.warning, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6 }}>🏁 {curRace.name} ({curRace.grade})</div>
                 <div style={{ fontSize: 12, color: T.text, marginBottom: 2 }}>Target score: ~{curRace.threshold}pt</div>
                 <div style={{ fontSize: 11, color: totalStats * 7 / 5 >= curRace.threshold ? T.success : T.warning, marginBottom: 12 }}>
-                  {totalStats * 7 / 5 >= curRace.threshold ? "✓ Looking strong! You should win this." : totalStats * 7 / 5 >= curRace.threshold * 0.85 ? "⚡ Could go either way — depends on race RNG!" : "⚠ Underprepared — it'll be tough but not impossible!"}
+                  {totalStats * 7 / 5 >= curRace.threshold ? "✓ Looking strong! You should win this." : totalStats * 7 / 5 >= curRace.threshold * 0.85 ? "⚡ Could go either way — depends on race RNG!" : "⚠ Underprepared — tough but possible!"}
                 </div>
                 <button onClick={doRace} style={{ ...btnBase, width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, background: "linear-gradient(135deg, "+T.warning+", "+T.danger+")", color: "#fff", borderRadius: T.radius }}>🏇 Race!</button>
               </div>
             ) : (
-              <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "14px 18px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* Optional race banner */}
+                {(() => {
+                  const optRace = RACE_SCHEDULE.find(r => r.optional && r.turn === career.turn && !(career.optRacesRun || []).includes(r.turn));
+                  if (!optRace) return null;
+                  const strength = totalStats * 7 / 5;
+                  const hint = strength >= optRace.threshold ? "✓ Good odds!" : strength >= optRace.threshold * 0.8 ? "⚡ 50/50" : "⚠ Risky";
+                  return (
+                    <div style={{ background: T.bgCard, border: "1px solid " + T.accent + "50", borderRadius: T.radiusLg, padding: "12px 14px" }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: T.accent, textTransform: "uppercase", marginBottom: 4 }}>⭐ Optional Race Available</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 2 }}>{optRace.name} ({optRace.grade})</div>
+                      <div style={{ fontSize: 10, color: T.textMuted, marginBottom: 8 }}>~{optRace.threshold}pt · Win: +{optRace.gemReward}💎 + stat boosts · {hint}</div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => doOptionalRace(optRace)} style={{ ...btnBase, flex: 1, padding: "8px", fontSize: 11, fontWeight: 700, background: T.accent, color: "#fff" }}>🏇 Enter Race!</button>
+                        <button onClick={() => setPd(p => ({ ...p, currentCareer: { ...p.currentCareer, optRacesRun: [...(p.currentCareer.optRacesRun||[]), optRace.turn] } }))} style={{ ...btnBase, padding: "8px 12px", fontSize: 11, background: T.bgElevated, color: T.textMuted }}>Skip</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "14px 18px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8 }}>Choose Action</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 6 }}>
                   {STAT_KEYS.map(k => {
-                    const expectedBase = k === girl.bonus ? 18 : 14;
-                    const expectedGain = Math.round(expectedBase * (MOOD_MULT[career.mood] || 1));
+                    const expectedBase = k === girl.bonus ? 19 : 14;
+                    const skillMult = career.skills.includes("natural_gift") ? 1.15 : 1.0;
+                    const dimMult = career.stats[k] >= 140 ? 0.60 : career.stats[k] >= 100 ? 0.80 : 1.0;
+                    const expectedGain = Math.round(expectedBase * (MOOD_MULT[career.mood] || 1) * dimMult * skillMult);
                     const isBonus = k === girl.bonus;
                     return (
                       <button key={k} onClick={() => doTrain(k)} disabled={career.energy < 15} style={{
@@ -1185,6 +1460,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
                   </button>
                 </div>
                 {career.energy < 15 && <div style={{ fontSize: 10, color: T.danger, textAlign: "center" }}>⚠ Not enough energy to train — Rest or Outing!</div>}
+                </div>
               </div>
             )}
 
@@ -1198,15 +1474,20 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
 
           {/* Right sidebar */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {/* Girl card */}
-            <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "14px" }}>
+            {/* Girl card with ASCII art */}
+            <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "12px 14px", borderLeft: "3px solid " + girl.accent }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 34, height: 34, borderRadius: "50%", background: girl.color+"30", border: "2px solid "+girl.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: girl.accent }}>{girl.name.split(" ").map(w=>w[0]).join("")}</div>
+                <div style={{ width: 30, height: 30, borderRadius: "50%", background: girl.color+"30", border: "2px solid "+girl.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: girl.accent, flexShrink: 0 }}>{girl.name.split(" ").map(w=>w[0]).join("")}</div>
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.text }}>{girl.name}</div>
                   <div style={{ fontSize: 9, color: T.textMuted }}>{STYLE_LABELS[girl.style]} · {DIST_LABELS[girl.dist]}</div>
                 </div>
               </div>
+              {UMA_ASCII[girl.id] && (
+                <pre style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, lineHeight: 1.5, color: girl.accent, margin: 0, textAlign: "center", background: girl.accent+"08", padding: "6px 4px", borderRadius: 6 }}>
+                  {UMA_ASCII[girl.id].join("\n")}
+                </pre>
+              )}
             </div>
 
             {/* Energy + Mood */}
@@ -1247,12 +1528,37 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
                 <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", marginBottom: 6 }}>Races</div>
                 {career.raceResults.map((r,i) => (
                   <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 10 }}>
-                    <span style={{ color: T.text }}>{r.name}</span>
+                    <span style={{ color: T.text }}>{r.name}{r.optional ? " ★" : ""}</span>
                     <span style={{ fontWeight: 700, color: r.won ? T.success : T.danger }}>{r.won ? "WIN" : "LOSE"}</span>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Skills panel */}
+            <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "12px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, textTransform: "uppercase" }}>Skills</div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: T.warning, fontFamily: "'JetBrains Mono'" }}>{career.skillPts}sp</span>
+              </div>
+              {UMA_SKILLS.map(sk => {
+                const learned = career.skills.includes(sk.id);
+                const canAfford = career.skillPts >= sk.cost;
+                return (
+                  <div key={sk.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, padding: "5px 6px", borderRadius: 6, background: learned ? sk.id === "natural_gift" ? "#4e9fff12" : T.bgElevated : T.bg, border: "1px solid " + (learned ? T.accent+"30" : T.border) }}>
+                    <span style={{ fontSize: 12 }}>{sk.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: learned ? T.text : T.textSub }}>{sk.name}</div>
+                      <div style={{ fontSize: 8, color: T.textMuted }}>{sk.desc}</div>
+                    </div>
+                    {learned
+                      ? <span style={{ fontSize: 8, color: T.success, fontWeight: 700 }}>✓</span>
+                      : <button onClick={() => doLearnSkill(sk.id)} disabled={!canAfford} style={{ ...btnBase, fontSize: 8, padding: "2px 6px", background: canAfford ? T.warning+"20" : T.bgElevated, color: canAfford ? T.warning : T.textMuted, border: "1px solid " + (canAfford ? T.warning+"40" : T.border), cursor: canAfford ? "pointer" : "not-allowed", flexShrink: 0 }}>{sk.cost}sp</button>
+                    }
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
