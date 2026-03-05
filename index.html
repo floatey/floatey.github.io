@@ -108,6 +108,47 @@ const migrate = (data) => {
   };
 };
 
+const DEFAULT_TEAM = [
+  { id: uid(), name: "Tarro", color: "#ff5270", initials: "TA" },
+  { id: uid(), name: "Nathan", color: "#4e9fff", initials: "NA" },
+  { id: uid(), name: "Damian", color: "#2ed09b", initials: "DA" },
+  { id: uid(), name: "Harrison", color: "#fbbf24", initials: "HA" },
+  { id: uid(), name: "Nick", color: "#b87fff", initials: "NI" },
+];
+
+const makeDefaultSprint = (team) => {
+  const start = todayStr();
+  const end = addDays(start, 55);
+  const t1id = uid(), t2id = uid(), t3id = uid(), t4id = uid(), t5id = uid();
+  return {
+    id: uid(), name: "Sprint 1", startDate: start, endDate: end, weekLength: 1,
+    tasks: [
+      { id: t1id, name: "Core Systems Architecture", assignee: team[0].id, startDate: start, endDate: addDays(start, 13), estimated: 24, logged: 0, status: "not-started", deps: [] },
+      { id: t2id, name: "UI Framework & HUD", assignee: team[1].id, startDate: start, endDate: addDays(start, 20), estimated: 28, logged: 0, status: "not-started", deps: [] },
+      { id: t3id, name: "Character Controller", assignee: team[2].id, startDate: addDays(start, 7), endDate: addDays(start, 20), estimated: 20, logged: 0, status: "not-started", deps: [t1id] },
+      { id: t4id, name: "Level Design – Zone A", assignee: team[3].id, startDate: start, endDate: addDays(start, 27), estimated: 32, logged: 0, status: "not-started", deps: [] },
+      { id: t5id, name: "Weapon Systems & FX", assignee: team[4].id, startDate: start, endDate: addDays(start, 20), estimated: 24, logged: 0, status: "not-started", deps: [t3id] },
+    ],
+  };
+};
+
+// ─── DESIGN TOKENS ───
+const T = {
+  bg: "#07090f", bgCard: "#0b0f1a", bgElevated: "#10141f", bgHover: "#141929",
+  border: "#181d2e", borderLight: "#1e2438",
+  text: "#dde1f0", textSub: "#7880a0", textMuted: "#454c68",
+  accent: "#4e7fff", accentHover: "#6b94ff", accentBg: "#4e7fff12",
+  success: "#2ed09b", warning: "#f5a623", danger: "#ff4d6d",
+  radius: "8px", radiusLg: "12px", radiusXl: "16px",
+};
+
+const btnBase = { border: "none", cursor: "pointer", borderRadius: T.radius, fontWeight: 500, transition: "all 0.15s" };
+const inputStyle = {
+  width: "100%", padding: "10px 12px", background: T.bg, border: "1px solid " + T.border,
+  borderRadius: T.radius, color: T.text, fontSize: 13, outline: "none", transition: "border-color 0.15s",
+};
+const labelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6, display: "block", fontFamily: "'Inter', sans-serif" };
+
 // ─── UMA GIRLS ROSTER ───
 const UMA_GIRLS = [
   // Tier 1 — Debut
@@ -149,51 +190,10 @@ const DEFAULT_CLICKER = {
   carrots: 0,
   totalCarrots: 0,
   lastTick: null,
-  clickerBy: {},        // { memberName: clickCount }
-  girls: {},            // { girlId: level }  — level 0 = not scouted
+  clickerBy: {},
+  girls: {},
   createdAt: null,
 };
-
-const DEFAULT_TEAM = [
-  { id: uid(), name: "Tarro", color: "#ff5270", initials: "TA" },
-  { id: uid(), name: "Nathan", color: "#4e9fff", initials: "NA" },
-  { id: uid(), name: "Damian", color: "#2ed09b", initials: "DA" },
-  { id: uid(), name: "Harrison", color: "#fbbf24", initials: "HA" },
-  { id: uid(), name: "Nick", color: "#b87fff", initials: "NI" },
-];
-
-const makeDefaultSprint = (team) => {
-  const start = todayStr();
-  const end = addDays(start, 55);
-  const t1id = uid(), t2id = uid(), t3id = uid(), t4id = uid(), t5id = uid();
-  return {
-    id: uid(), name: "Sprint 1", startDate: start, endDate: end, weekLength: 1,
-    tasks: [
-      { id: t1id, name: "Core Systems Architecture", assignee: team[0].id, startDate: start, endDate: addDays(start, 13), estimated: 24, logged: 0, status: "not-started", deps: [] },
-      { id: t2id, name: "UI Framework & HUD", assignee: team[1].id, startDate: start, endDate: addDays(start, 20), estimated: 28, logged: 0, status: "not-started", deps: [] },
-      { id: t3id, name: "Character Controller", assignee: team[2].id, startDate: addDays(start, 7), endDate: addDays(start, 20), estimated: 20, logged: 0, status: "not-started", deps: [t1id] },
-      { id: t4id, name: "Level Design – Zone A", assignee: team[3].id, startDate: start, endDate: addDays(start, 27), estimated: 32, logged: 0, status: "not-started", deps: [] },
-      { id: t5id, name: "Weapon Systems & FX", assignee: team[4].id, startDate: start, endDate: addDays(start, 20), estimated: 24, logged: 0, status: "not-started", deps: [t3id] },
-    ],
-  };
-};
-
-// ─── DESIGN TOKENS ───
-const T = {
-  bg: "#07090f", bgCard: "#0b0f1a", bgElevated: "#10141f", bgHover: "#141929",
-  border: "#181d2e", borderLight: "#1e2438",
-  text: "#dde1f0", textSub: "#7880a0", textMuted: "#454c68",
-  accent: "#4e7fff", accentHover: "#6b94ff", accentBg: "#4e7fff12",
-  success: "#2ed09b", warning: "#f5a623", danger: "#ff4d6d",
-  radius: "8px", radiusLg: "12px", radiusXl: "16px",
-};
-
-const btnBase = { border: "none", cursor: "pointer", borderRadius: T.radius, fontWeight: 500, transition: "all 0.15s" };
-const inputStyle = {
-  width: "100%", padding: "10px 12px", background: T.bg, border: "1px solid " + T.border,
-  borderRadius: T.radius, color: T.text, fontSize: 13, outline: "none", transition: "border-color 0.15s",
-};
-const labelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6, display: "block", fontFamily: "'Inter', sans-serif" };
 
 // ─── TOOLTIP ───
 function Tip({ children, text }) {
