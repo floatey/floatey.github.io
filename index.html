@@ -714,7 +714,7 @@ function calcTrainGain(stat, career, girl) {
   const v = career.stats[stat];
   const dimMult = v >= 140 ? 0.60 : v >= 100 ? 0.80 : 1.0;
   // Skill: natural gift
-  const skillMult = career.skills.includes("natural_gift") ? 1.15 : 1.0;
+  const skillMult = ( career.skills || [] ).includes("natural_gift") ? 1.15 : 1.0;
   return Math.round(base * moodMult * dimMult * skillMult * (0.85 + Math.random() * 0.3));
 }
 
@@ -738,7 +738,7 @@ function raceScore(career, girl) {
   };
   score += styleBonus[girl.style] || 0;
   // Skill: race brain
-  const skillMult = career.skills.includes("race_brain") ? 1.10 : 1.0;
+  const skillMult = ( career.skills || [] ).includes("race_brain") ? 1.10 : 1.0;
   return Math.round(score * skillMult * (0.90 + Math.random() * 0.20) * 7);
 }
 
@@ -1026,7 +1026,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     if (!career || career.energy < 15 || curRace || racing) return;
     const gain = calcTrainGain(stat, career, girl);
     const cost = 15 + Math.floor(Math.random() * 8);
-    const ironHeart = career.skills.includes("iron_heart");
+    const ironHeart = ( career.skills || [] ).includes("iron_heart");
     const failChance = career.energy < 30 ? (ironHeart ? 0.10 : 0.20) : 0;
     const failed = Math.random() < failChance;
     let next = { ...career, turn: career.turn + 1, energy: Math.max(0, career.energy - cost) };
@@ -1056,7 +1056,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
 
   const doRest = () => {
     if (!career || curRace || racing) return;
-    const secondWind = career.skills.includes("second_wind");
+    const secondWind = ( career.skills || [] ).includes("second_wind");
     const base = 30 + Math.floor(Math.random() * 25);
     const gain = secondWind ? Math.round(base * 1.3) : base;
     // Mood recovers if bad
@@ -1083,8 +1083,8 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
   const doLearnSkill = (skillId) => {
     if (!career || racing) return;
     const skill = UMA_SKILLS.find(s => s.id === skillId);
-    if (!skill || career.skills.includes(skillId) || career.skillPts < skill.cost) return;
-    const next = { ...career, skillPts: career.skillPts - skill.cost, skills: [...career.skills, skillId] };
+    if (!skill || ( career.skills || [] ).includes(skillId) || career.skillPts < skill.cost) return;
+    const next = { ...career, skillPts: career.skillPts - skill.cost, skills: [...( career.skills || [] ), skillId] };
     setDialogue("🎓 Learned: " + skill.icon + " " + skill.name + "!\n" + girl.name + ": \"Just watch — I'll use this well!\"");
     setPd(p => ({ ...p, currentCareer: next }));
   };
@@ -1426,7 +1426,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 6 }}>
                   {STAT_KEYS.map(k => {
                     const expectedBase = k === girl.bonus ? 19 : 14;
-                    const skillMult = career.skills.includes("natural_gift") ? 1.15 : 1.0;
+                    const skillMult = ( career.skills || [] ).includes("natural_gift") ? 1.15 : 1.0;
                     const dimMult = career.stats[k] >= 140 ? 0.60 : career.stats[k] >= 100 ? 0.80 : 1.0;
                     const expectedGain = Math.round(expectedBase * (MOOD_MULT[career.mood] || 1) * dimMult * skillMult);
                     const isBonus = k === girl.bonus;
@@ -1542,7 +1542,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
                 <span style={{ fontSize: 10, fontWeight: 700, color: T.warning, fontFamily: "'JetBrains Mono'" }}>{career.skillPts}sp</span>
               </div>
               {UMA_SKILLS.map(sk => {
-                const learned = career.skills.includes(sk.id);
+                const learned = ( career.skills || [] ).includes(sk.id);
                 const canAfford = career.skillPts >= sk.cost;
                 return (
                   <div key={sk.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, padding: "5px 6px", borderRadius: 6, background: learned ? sk.id === "natural_gift" ? "#4e9fff12" : T.bgElevated : T.bg, border: "1px solid " + (learned ? T.accent+"30" : T.border) }}>
