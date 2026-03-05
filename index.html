@@ -84,7 +84,7 @@ const migrate = (data) => {
   return {
     ...data,
     team: data.team,
-    clicker: data.clicker ? { ...DEFAULT_CLICKER, ...data.clicker, girls: data.clicker.girls || {} } : { ...DEFAULT_CLICKER, createdAt: todayStr(), lastTick: nowESTiso() },
+    uma: data.uma ? data.uma : { ...DEFAULT_UMA },
     sprints: data.sprints.map(s => ({
       ...s,
       notes: s.notes || "",
@@ -149,51 +149,8 @@ const inputStyle = {
 };
 const labelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6, display: "block", fontFamily: "'Inter', sans-serif" };
 
-// ─── UMA GIRLS ROSTER ───
-const UMA_GIRLS = [
-  // Tier 1 — Debut
-  { id: "haru_urara",     name: "Haru Urara",       tier: 1, baseCost: 15,    cpsEach: 0.2,  color: "#ffb3d9", accent: "#ff69b4", quote: "I'll try my best again today!",         trait: "Never gives up" },
-  { id: "sakura_bakushin", name: "Sakura Bakushin O", tier: 1, baseCost: 25,   cpsEach: 0.4,  color: "#ff8fa3", accent: "#ff4d6d", quote: "Speed is everything! Let's GO!",        trait: "Pure speed" },
-  { id: "nice_nature",     name: "Nice Nature",      tier: 1, baseCost: 40,    cpsEach: 0.6,  color: "#93e1d8", accent: "#2ed09b", quote: "It's okay, we'll do fine~",              trait: "Gentle heart" },
-  // Tier 2 — Pre-OP
-  { id: "silence_suzuka",  name: "Silence Suzuka",   tier: 2, baseCost: 120,   cpsEach: 1.5,  color: "#b4d7ff", accent: "#4e9fff", quote: "...I just want to run far ahead.",      trait: "Lone frontrunner" },
-  { id: "daiwa_scarlet",   name: "Daiwa Scarlet",    tier: 2, baseCost: 200,   cpsEach: 2.5,  color: "#ff9e9e", accent: "#ff5270", quote: "D-Don't get the wrong idea!",            trait: "Tsundere rival" },
-  { id: "vodka",           name: "Vodka",            tier: 2, baseCost: 300,   cpsEach: 3.5,  color: "#a8c5ff", accent: "#6b94ff", quote: "I'm not cute, I'm COOL!",               trait: "Tomboy spirit" },
-  // Tier 3 — Open
-  { id: "tokai_teio",      name: "Tokai Teio",       tier: 3, baseCost: 1200,  cpsEach: 10,   color: "#fff3b0", accent: "#fbbf24", quote: "I am the Teio! Watch me shine!",         trait: "Miracle comeback" },
-  { id: "mejiro_mcqueen",  name: "Mejiro McQueen",   tier: 3, baseCost: 2000,  cpsEach: 16,   color: "#d4c5ff", accent: "#b87fff", quote: "Elegance is a way of life.",             trait: "Noble queen" },
-  { id: "gold_ship",       name: "Gold Ship",        tier: 3, baseCost: 3200,  cpsEach: 24,   color: "#ffd700", accent: "#f5a623", quote: "AHAHA! Bet you didn't see THAT coming!", trait: "Chaos incarnate" },
-  // Tier 4 — G1
-  { id: "special_week",    name: "Special Week",     tier: 4, baseCost: 12000, cpsEach: 80,   color: "#a0e8af", accent: "#2ed09b", quote: "I want to be the best horse girl ever!", trait: "Heart of a champion" },
-  { id: "rice_shower",     name: "Rice Shower",      tier: 4, baseCost: 20000, cpsEach: 120,  color: "#c8b0ff", accent: "#9b72cf", quote: "Am I… really allowed to win?",           trait: "Cursed beauty" },
-  { id: "symboli_rudolf",  name: "Symboli Rudolf",   tier: 4, baseCost: 32000, cpsEach: 180,  color: "#ffa3a3", accent: "#e04800", quote: "As student council president, I approve.", trait: "Emperor" },
-  // Tier 5 — Legendary
-  { id: "oguri_cap",       name: "Oguri Cap",        tier: 5, baseCost: 150000, cpsEach: 600, color: "#ffe4b5", accent: "#f97316", quote: "*eating noises*  …Is there more?",      trait: "Bottomless appetite" },
-  { id: "kitasan_black",   name: "Kitasan Black",    tier: 5, baseCost: 350000, cpsEach: 1400, color: "#87ceeb", accent: "#4e9fff", quote: "Singing keeps my spirit high!",        trait: "Idol champion" },
-];
-
-const TIER_LABELS = { 1: "Debut", 2: "Pre-OP", 3: "Open Class", 4: "G1 Champions", 5: "Legendary" };
-const TIER_COLORS = { 1: T.textSub, 2: "#4e9fff", 3: "#fbbf24", 4: "#f97316", 5: "#ff5270" };
-
-const UMA_RANKS = [
-  { min: 0,         label: "Unranked",      color: T.textMuted, icon: "🌱" },
-  { min: 50,        label: "Training Start", color: "#4e9fff",  icon: "🏃" },
-  { min: 500,       label: "Debut Race",    color: "#2ed09b",   icon: "🐴" },
-  { min: 5000,      label: "G3 Winner",     color: "#fbbf24",   icon: "🏅" },
-  { min: 50000,     label: "G2 Winner",     color: "#f5a623",   icon: "🥈" },
-  { min: 500000,    label: "G1 Winner",     color: "#f97316",   icon: "🥇" },
-  { min: 5000000,   label: "Triple Crown",  color: "#ff5270",   icon: "👑" },
-  { min: 50000000,  label: "Legend",         color: "#b87fff",   icon: "⭐" },
-];
-
-const DEFAULT_CLICKER = {
-  carrots: 0,
-  totalCarrots: 0,
-  lastTick: null,
-  clickerBy: {},
-  girls: {},
-  createdAt: null,
-};
+// ─── UMA MUSUME GAME DATA ───
+const DEFAULT_UMA = { leaderboard: {} };
 
 // ─── TOOLTIP ───
 function Tip({ children, text }) {
@@ -482,492 +439,611 @@ function SidebarClock() {
 }
 
 
-// ─── UMA MUSUME CLICKER ───────────────────────────────────────────────────
+// ─── UMA MUSUME: PRETTY DERBY (SIMPLIFIED) ─────────────────────────────────
 
-function getUmaRank(total) {
-  let rank = UMA_RANKS[0];
-  for (const r of UMA_RANKS) { if (total >= r.min) rank = r; }
-  return rank;
-}
-function getNextRank(total) {
-  for (const r of UMA_RANKS) { if (total < r.min) return r; }
-  return null;
-}
-function fmtNum(n) {
-  if (n >= 1e12) return (n / 1e12).toFixed(2) + "T";
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
-  return Math.floor(n).toString();
-}
-function getGirlCost(baseCost, level) {
-  return Math.floor(baseCost * Math.pow(1.15, level));
-}
-function computeCPS(girls) {
-  let cps = 0;
-  UMA_GIRLS.forEach(g => { const lvl = (girls && girls[g.id]) || 0; if (lvl > 0) cps += g.cpsEach * lvl; });
-  return cps;
-}
-function accumulateOffline(clicker) {
-  if (!clicker || !clicker.lastTick) return clicker;
-  const nowMs = new Date().getTime();
-  const lastMs = new Date(clicker.lastTick).getTime();
-  const elapsed = Math.max(0, (nowMs - lastMs) / 1000);
-  const cps = computeCPS(clicker.girls);
-  const earned = cps * elapsed;
-  return { ...clicker, carrots: (clicker.carrots || 0) + earned, totalCarrots: (clicker.totalCarrots || 0) + earned, lastTick: nowESTiso() };
+const UMA_ROSTER = [
+  { id: "special_week",    name: "Special Week",      color: "#a0e8af", accent: "#2ed09b", quote: "I want to be the best horse girl ever!", dist: "long",  style: "chaser",  bonus: "power",   star: 3 },
+  { id: "silence_suzuka",  name: "Silence Suzuka",    color: "#b4d7ff", accent: "#4e9fff", quote: "...I just want to run far ahead.",      dist: "mile",  style: "runner",  bonus: "speed",   star: 3 },
+  { id: "tokai_teio",      name: "Tokai Teio",        color: "#fff3b0", accent: "#fbbf24", quote: "I am the Teio! Watch me shine!",         dist: "mid",   style: "leader",  bonus: "guts",    star: 3 },
+  { id: "mejiro_mcqueen",  name: "Mejiro McQueen",    color: "#d4c5ff", accent: "#b87fff", quote: "Elegance is a way of life.",             dist: "long",  style: "leader",  bonus: "stamina", star: 3 },
+  { id: "vodka",           name: "Vodka",             color: "#a8c5ff", accent: "#6b94ff", quote: "I'm not cute, I'm COOL!",               dist: "mile",  style: "chaser",  bonus: "power",   star: 2 },
+  { id: "gold_ship",       name: "Gold Ship",         color: "#ffd700", accent: "#f5a623", quote: "AHAHA! Bet you didn't see THAT!",       dist: "long",  style: "closer",  bonus: "guts",    star: 3 },
+  { id: "daiwa_scarlet",   name: "Daiwa Scarlet",     color: "#ff9e9e", accent: "#ff5270", quote: "D-Don't get the wrong idea!",            dist: "mile",  style: "leader",  bonus: "speed",   star: 2 },
+  { id: "sakura_bakushin", name: "Sakura Bakushin O", color: "#ff8fa3", accent: "#ff4d6d", quote: "Speed is everything! Let's GO!",        dist: "short", style: "runner",  bonus: "speed",   star: 2 },
+  { id: "rice_shower",     name: "Rice Shower",       color: "#c8b0ff", accent: "#9b72cf", quote: "Am I… really allowed to win?",           dist: "long",  style: "leader",  bonus: "stamina", star: 2 },
+  { id: "haru_urara",      name: "Haru Urara",        color: "#ffb3d9", accent: "#ff69b4", quote: "I'll try my best again today!",         dist: "short", style: "closer",  bonus: "guts",    star: 1 },
+  { id: "oguri_cap",       name: "Oguri Cap",         color: "#ffe4b5", accent: "#f97316", quote: "*eating noises* …Is there more?",       dist: "mid",   style: "chaser",  bonus: "stamina", star: 3 },
+  { id: "symboli_rudolf",  name: "Symboli Rudolf",    color: "#ffa3a3", accent: "#e04800", quote: "As president, I approve.",               dist: "mid",   style: "leader",  bonus: "wit",     star: 3 },
+];
+
+const STAT_KEYS  = ["speed","stamina","power","guts","wit"];
+const STAT_ICONS = { speed: "⚡", stamina: "♥", power: "💪", guts: "🔥", wit: "🧠" };
+const STAT_COLORS = { speed: "#4e9fff", stamina: "#2ed09b", power: "#f97316", guts: "#ff4d6d", wit: "#b87fff" };
+const MOOD_LEVELS = ["very_bad","bad","normal","good","very_good"];
+const MOOD_LABELS = { very_bad: "Very Bad", bad: "Bad", normal: "Normal", good: "Good", very_good: "Very Good" };
+const MOOD_EMOJI  = { very_bad: "😫", bad: "😟", normal: "😐", good: "🙂", very_good: "😄" };
+const MOOD_MULT   = { very_bad: 0.6, bad: 0.8, normal: 1.0, good: 1.1, very_good: 1.2 };
+const MOOD_COLORS = { very_bad: T.danger, bad: "#f97316", normal: T.textSub, good: T.accent, very_good: T.success };
+
+const DIST_LABELS = { short: "Short (1200m)", mile: "Mile (1600m)", mid: "Medium (2000m)", long: "Long (2400m)" };
+const STYLE_LABELS = { runner: "Front Runner", leader: "Stalker", chaser: "Chaser", closer: "Closer" };
+
+const TOTAL_TURNS = 24;
+// Races happen at these turns (0-indexed): Debut(5), Pre-OP(11), G2(17), URA Finals(23)
+const RACE_TURNS = [
+  { turn: 5,  name: "Debut Race",  grade: "Debut", required: 120, dist: "any" },
+  { turn: 11, name: "Pre-OP Race", grade: "Pre-OP", required: 250, dist: "any" },
+  { turn: 17, name: "G2 Race",     grade: "G2",     required: 420, dist: "pref" },
+  { turn: 23, name: "URA Finals",  grade: "URA",    required: 580, dist: "pref" },
+];
+
+const EVENTS = [
+  { text: "🎤 Winning Live concert raised spirits!",   mood: 1, stat: null, amount: 0 },
+  { text: "☀️ Summer camp special training!",           mood: 0, stat: "random", amount: 12 },
+  { text: "🌧️ Rainy day… motivation dropped.",          mood: -1, stat: null, amount: 0 },
+  { text: "🥕 Extra carrots at lunch! Energy up!",      mood: 0, stat: null, amount: 0, energy: 15 },
+  { text: "💪 Your girl pushed through a tough drill!",  mood: 0, stat: "random", amount: 8 },
+  { text: "😴 Overslept… lost a training opportunity.",  mood: 0, stat: null, amount: 0, energy: -10 },
+  { text: "🎉 Fan meet boosted confidence!",             mood: 1, stat: "random", amount: 5 },
+  { text: "🤕 Slight strain. Need to be careful.",       mood: -1, stat: null, amount: 0, energy: -10 },
+  { text: "📺 Your girl appeared on TV! Fans went wild!", mood: 1, stat: null, amount: 0 },
+  { text: "🌸 Cherry blossoms are beautiful today.",      mood: 1, stat: null, amount: 0 },
+];
+
+function getGrade(total) {
+  if (total >= 3000) return { letter: "S+", color: "#ffd700" };
+  if (total >= 2500) return { letter: "S",  color: "#fbbf24" };
+  if (total >= 2000) return { letter: "A+", color: "#f97316" };
+  if (total >= 1600) return { letter: "A",  color: "#ff5270" };
+  if (total >= 1200) return { letter: "B+", color: "#b87fff" };
+  if (total >= 900)  return { letter: "B",  color: "#4e9fff" };
+  if (total >= 600)  return { letter: "C",  color: "#2ed09b" };
+  if (total >= 300)  return { letter: "D",  color: T.textSub };
+  return { letter: "F", color: T.textMuted };
 }
 
-// ── Girl portrait: initials + colored ring ──
-function GirlAvatar({ girl, level, size = 48 }) {
-  const initials = girl.name.split(" ").map(w => w[0]).join("").slice(0, 2);
-  const owned = level > 0;
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: "50%", flexShrink: 0,
-      background: owned ? girl.color + "30" : T.bgElevated,
-      border: "2.5px solid " + (owned ? girl.accent : T.border),
-      display: "flex", alignItems: "center", justifyContent: "center",
-      position: "relative", transition: "all 0.2s",
-      boxShadow: owned ? "0 0 16px " + girl.accent + "25" : "none",
-    }}>
-      <span style={{ fontSize: size * 0.32, fontWeight: 800, color: owned ? girl.accent : T.textMuted, fontFamily: "'Inter'" }}>{initials}</span>
-      {level > 0 && (
-        <div style={{
-          position: "absolute", bottom: -3, right: -3,
-          background: girl.accent, color: "#fff", fontSize: 8, fontWeight: 800,
-          width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-          border: "2px solid " + T.bgCard, fontFamily: "'JetBrains Mono'",
-        }}>{level}</div>
-      )}
-    </div>
-  );
+function newCareer(girlId) {
+  const girl = UMA_ROSTER.find(g => g.id === girlId);
+  const stats = { speed: 50, stamina: 50, power: 50, guts: 50, wit: 50 };
+  if (girl) stats[girl.bonus] += 20; // starter bonus
+  return {
+    girlId, turn: 0, energy: 100, mood: "good",
+    stats, skillPts: 0, raceResults: [], events: [],
+    failed: false, finished: false,
+  };
 }
 
-// ── Girl card in the scout shop ──
-function GirlShopCard({ girl, level, carrots, onBuy }) {
-  const cost = getGirlCost(girl.baseCost, level);
-  const canBuy = carrots >= cost;
-  const owned = level > 0;
-  const cpsTotal = girl.cpsEach * level;
-  const cpsNext = girl.cpsEach * (level + 1);
-  const tierColor = TIER_COLORS[girl.tier];
+function calcTrainGain(stat, career, girl) {
+  const base = stat === girl.bonus ? 14 : 10;
+  const moodMult = MOOD_MULT[career.mood] || 1;
+  const rng = 0.85 + Math.random() * 0.3; // 0.85–1.15
+  return Math.round(base * moodMult * rng);
+}
 
-  return (
-    <div style={{
-      background: T.bgCard, border: "1px solid " + (canBuy ? girl.accent + "40" : T.border),
-      borderRadius: T.radiusLg, padding: "16px", transition: "all 0.2s",
-      opacity: canBuy ? 1 : 0.55,
-      borderTop: owned ? "2px solid " + girl.accent + "80" : "2px solid transparent",
-    }}>
-      <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
-        <GirlAvatar girl={girl} level={level} size={50} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{girl.name}</span>
-          </div>
-          <div style={{ fontSize: 10, color: tierColor, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: 3 }}>{TIER_LABELS[girl.tier]}</div>
-          <div style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>"{girl.quote}"</div>
-        </div>
-      </div>
+function calcRaceScore(career, race, girl) {
+  const s = career.stats;
+  // Different distances weight stats differently
+  const spd = s.speed, sta = s.stamina, pow = s.power, gut = s.guts, wit = s.wit;
+  let score;
+  const d = race.dist === "pref" ? girl.dist : "any";
+  if (d === "short")     score = spd * 0.4 + pow * 0.3 + wit * 0.15 + gut * 0.1 + sta * 0.05;
+  else if (d === "mile") score = spd * 0.3 + sta * 0.15 + pow * 0.25 + wit * 0.2 + gut * 0.1;
+  else if (d === "mid")  score = spd * 0.25 + sta * 0.25 + pow * 0.2 + gut * 0.15 + wit * 0.15;
+  else if (d === "long") score = sta * 0.3 + spd * 0.2 + gut * 0.2 + pow * 0.15 + wit * 0.15;
+  else score = (spd + sta + pow + gut + wit) / 5;
+  // Aptitude bonus — if running preferred distance
+  if (race.dist === "pref") score *= 1.1;
+  // RNG factor
+  score *= (0.9 + Math.random() * 0.2);
+  return Math.round(score);
+}
 
-      {/* Stats row */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <div style={{ background: T.bg, borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>
-          <span style={{ color: T.textMuted }}>trait </span>
-          <span style={{ color: girl.accent, fontWeight: 600 }}>{girl.trait}</span>
-        </div>
-        {owned && <div style={{ background: T.bg, borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>
-          <span style={{ color: T.textMuted }}>cps </span>
-          <span style={{ color: T.success, fontWeight: 700, fontFamily: "'JetBrains Mono'" }}>{cpsTotal.toFixed(1)}</span>
-          <span style={{ color: T.textMuted }}> → </span>
-          <span style={{ color: "#fbbf24", fontWeight: 700, fontFamily: "'JetBrains Mono'" }}>{cpsNext.toFixed(1)}</span>
-        </div>}
-        {!owned && <div style={{ background: T.bg, borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>
-          <span style={{ color: T.textMuted }}>produces </span>
-          <span style={{ color: T.success, fontWeight: 700, fontFamily: "'JetBrains Mono'" }}>+{girl.cpsEach}/s</span>
-        </div>}
-      </div>
-
-      {/* Buy button */}
-      <button onClick={() => canBuy && onBuy(girl.id)} disabled={!canBuy} style={{
-        ...btnBase, width: "100%", padding: "9px 14px", fontSize: 12, fontWeight: 700,
-        background: canBuy ? "linear-gradient(135deg, " + girl.accent + " 0%, " + girl.color + " 100%)" : T.bgElevated,
-        color: canBuy ? "#fff" : T.textMuted,
-        border: "none", cursor: canBuy ? "pointer" : "not-allowed",
-        boxShadow: canBuy ? "0 4px 16px " + girl.accent + "35" : "none",
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-      }}>
-        {owned ? "🏋️ Train" : "🔍 Scout"} — 🥕 {fmtNum(cost)}
-      </button>
-    </div>
-  );
+const LS_KEY = (name) => "tmcc_uma_" + name.replace(/\s+/g, "_");
+function loadPlayerData(name) {
+  try { const d = JSON.parse(localStorage.getItem(LS_KEY(name))); return d || { veterans: [], currentCareer: null }; }
+  catch { return { veterans: [], currentCareer: null }; }
+}
+function savePlayerData(name, d) {
+  try { localStorage.setItem(LS_KEY(name), JSON.stringify(d)); } catch {}
 }
 
 
-// ── Main UmaClickerView: LOCAL-FIRST state, periodic Firebase sync ──
-function UmaClickerView({ clicker, team, onSync }) {
-  // LOCAL state — clicks and CPS accumulate here instantly, never touching Firebase directly
-  const [local, setLocal] = useState(() => accumulateOffline(clicker));
-  const [actingAs, setActingAs] = useState(team[0]?.id || null);
-  const [clickFx, setClickFx] = useState([]);
-  const [tab, setTab] = useState("girls"); // "girls" | "stats"
-  const localRef = useRef(local);
-  const lastSyncRef = useRef(Date.now());
+// ─── UMA MUSUME VIEW ───────────────────────────────────────────────────────
 
-  // Keep ref in sync
-  useEffect(() => { localRef.current = local; }, [local]);
+function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
+  const [player, setPlayer] = useState(null);     // selected team member
+  const [pd, setPd] = useState(null);              // player data { veterans, currentCareer }
+  const [eventMsg, setEventMsg] = useState(null);
+  const [raceResult, setRaceResult] = useState(null);
+  const saveRef = useRef(null);
 
-  // ── Merge incoming Firebase data (from other users) ──
+  // Load player data from localStorage when player changes
   useEffect(() => {
-    if (!clicker) return;
-    setLocal(prev => {
-      // Take the MAX of local and remote totals, merge clicks additively, take remote girls if higher
-      const remoteCPS = computeCPS(clicker.girls);
-      const remote = accumulateOffline(clicker);
-      const mergedGirls = { ...(prev.girls || {}) };
-      Object.entries(remote.girls || {}).forEach(([gid, lvl]) => {
-        mergedGirls[gid] = Math.max(mergedGirls[gid] || 0, lvl);
+    if (!player) return;
+    const data = loadPlayerData(player.name);
+    setPd(data);
+    setEventMsg(null);
+    setRaceResult(null);
+  }, [player?.id]);
+
+  // Auto-save locally every 5 seconds when in career
+  useEffect(() => {
+    if (!player || !pd) return;
+    clearInterval(saveRef.current);
+    saveRef.current = setInterval(() => savePlayerData(player.name, pd), 5000);
+    return () => clearInterval(saveRef.current);
+  }, [player, pd]);
+
+  // Save on unmount
+  useEffect(() => { return () => { if (player && pd) savePlayerData(player.name, pd); }; }, [player, pd]);
+
+  const pushLeaderboard = useCallback(() => {
+    if (!player || !pd) return;
+    const best = pd.veterans.sort((a, b) => b.totalStats - a.totalStats)[0];
+    const entry = best ? { bestRating: best.totalStats, bestGrade: best.grade, bestGirl: best.girlName, totalRuns: pd.veterans.length } : { bestRating: 0, bestGrade: "–", bestGirl: "–", totalRuns: 0 };
+    const newLB = { ...(umaData?.leaderboard || {}), [player.name]: entry };
+    onSyncLeaderboard({ leaderboard: newLB });
+  }, [player, pd, umaData, onSyncLeaderboard]);
+
+  const career = pd?.currentCareer;
+  const girl = career ? UMA_ROSTER.find(g => g.id === career.girlId) : null;
+  const currentRace = career ? RACE_TURNS.find(r => r.turn === career.turn) : null;
+  const totalStats = career ? STAT_KEYS.reduce((s, k) => s + career.stats[k], 0) : 0;
+
+  // ── Actions ──
+  const doTrain = (stat) => {
+    if (!career || career.energy < 20 || currentRace) return;
+    const gain = calcTrainGain(stat, career, girl);
+    const energyCost = 18 + Math.floor(Math.random() * 10);
+    const failChance = career.energy < 35 ? 0.25 : 0;
+    const failed = Math.random() < failChance;
+    let next = { ...career, turn: career.turn + 1, energy: Math.max(0, career.energy - energyCost) };
+    if (failed) {
+      next.mood = MOOD_LEVELS[Math.max(0, MOOD_LEVELS.indexOf(next.mood) - 1)];
+      setEventMsg("⚠️ Training failed! Energy was too low…");
+    } else {
+      next.stats = { ...next.stats, [stat]: next.stats[stat] + gain };
+      next.skillPts += Math.floor(gain / 3);
+      setEventMsg("+" + gain + " " + STAT_ICONS[stat] + " " + stat.charAt(0).toUpperCase() + stat.slice(1) + "!");
+    }
+    next = maybeEvent(next);
+    checkFinish(next);
+  };
+
+  const doRest = () => {
+    if (!career || currentRace) return;
+    const gain = 35 + Math.floor(Math.random() * 25);
+    let next = { ...career, turn: career.turn + 1, energy: Math.min(100, career.energy + gain) };
+    setEventMsg("💤 Rested! Energy +" + gain);
+    next = maybeEvent(next);
+    checkFinish(next);
+  };
+
+  const doOuting = () => {
+    if (!career || currentRace) return;
+    const mIdx = MOOD_LEVELS.indexOf(career.mood);
+    const newMood = MOOD_LEVELS[Math.min(4, mIdx + 1)];
+    let next = { ...career, turn: career.turn + 1, mood: newMood, energy: Math.min(100, career.energy + 10) };
+    setEventMsg("🎀 Outing! Mood → " + MOOD_LABELS[newMood] + " " + MOOD_EMOJI[newMood]);
+    next = maybeEvent(next);
+    checkFinish(next);
+  };
+
+  const doRace = () => {
+    if (!career || !currentRace) return;
+    const score = calcRaceScore(career, currentRace, girl);
+    const won = score >= currentRace.required;
+    const rr = { name: currentRace.name, grade: currentRace.grade, score, required: currentRace.required, won };
+    let next = {
+      ...career, turn: career.turn + 1,
+      raceResults: [...career.raceResults, rr],
+      skillPts: career.skillPts + (won ? 30 : 10),
+      energy: Math.max(0, career.energy - 15),
+    };
+    // Race win boosts stats slightly
+    if (won) {
+      const bStat = STAT_KEYS[Math.floor(Math.random() * 5)];
+      next.stats = { ...next.stats, [bStat]: next.stats[bStat] + 8 };
+    }
+    if (!won) { next.failed = true; }
+    setRaceResult(rr);
+    setEventMsg(null);
+    checkFinish(next);
+  };
+
+  const maybeEvent = (c) => {
+    if (Math.random() > 0.35) return c;
+    const evt = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+    let next = { ...c, events: [...c.events, evt.text] };
+    if (evt.mood) {
+      const mi = MOOD_LEVELS.indexOf(next.mood);
+      next.mood = MOOD_LEVELS[Math.max(0, Math.min(4, mi + evt.mood))];
+    }
+    if (evt.stat) {
+      const sk = evt.stat === "random" ? STAT_KEYS[Math.floor(Math.random() * 5)] : evt.stat;
+      next.stats = { ...next.stats, [sk]: next.stats[sk] + evt.amount };
+    }
+    if (evt.energy) next.energy = Math.max(0, Math.min(100, next.energy + evt.energy));
+    setEventMsg(prev => prev ? prev + "\n" + evt.text : evt.text);
+    return next;
+  };
+
+  const checkFinish = (c) => {
+    if (c.turn >= TOTAL_TURNS || c.failed) {
+      c.finished = true;
+      const ts = STAT_KEYS.reduce((s, k) => s + c.stats[k], 0);
+      const grade = getGrade(ts);
+      const vet = {
+        girlId: c.girlId, girlName: girl.name, girlColor: girl.accent,
+        stats: { ...c.stats }, totalStats: ts, grade: grade.letter,
+        raceResults: c.raceResults, failed: c.failed,
+        date: todayStr(),
+      };
+      setPd(prev => {
+        const next = { ...prev, veterans: [...prev.veterans, vet], currentCareer: null };
+        savePlayerData(player.name, next);
+        return next;
       });
-      // Keep the higher carrot count — if remote is ahead, adopt it
-      const remoteCarrots = remote.carrots || 0;
-      const localCarrots = prev.carrots || 0;
-      const carrots = Math.max(remoteCarrots, localCarrots);
-      const totalCarrots = Math.max(remote.totalCarrots || 0, prev.totalCarrots || 0);
-      // Merge clickerBy
-      const mergedClicks = { ...(prev.clickerBy || {}) };
-      Object.entries(remote.clickerBy || {}).forEach(([name, c]) => {
-        mergedClicks[name] = Math.max(mergedClicks[name] || 0, c);
-      });
-      return { ...prev, carrots, totalCarrots, girls: mergedGirls, clickerBy: mergedClicks, createdAt: remote.createdAt || prev.createdAt };
+      // Push leaderboard on completion
+      setTimeout(() => pushLeaderboard(), 200);
+      return;
+    }
+    setPd(prev => { const next = { ...prev, currentCareer: c }; return next; });
+  };
+
+  const startCareer = (girlId) => {
+    const c = newCareer(girlId);
+    setPd(prev => {
+      const next = { ...prev, currentCareer: c };
+      savePlayerData(player.name, next);
+      return next;
     });
-  }, [clicker?.carrots, clicker?.totalCarrots, JSON.stringify(clicker?.girls), JSON.stringify(clicker?.clickerBy)]);
-
-  // ── CPS tick: accumulate locally every 100ms ──
-  useEffect(() => {
-    const id = setInterval(() => {
-      setLocal(prev => {
-        const cps = computeCPS(prev.girls);
-        if (cps <= 0) return prev;
-        const gain = cps * 0.1;
-        return { ...prev, carrots: prev.carrots + gain, totalCarrots: prev.totalCarrots + gain, lastTick: nowESTiso() };
-      });
-    }, 100);
-    return () => clearInterval(id);
-  }, []);
-
-  // ── Periodic Firebase sync: every 3 seconds, push local state up ──
-  useEffect(() => {
-    const id = setInterval(() => {
-      onSync(localRef.current);
-      lastSyncRef.current = Date.now();
-    }, 3000);
-    return () => clearInterval(id);
-  }, [onSync]);
-
-  // Sync on unmount / tab switch away
-  useEffect(() => {
-    return () => onSync(localRef.current);
-  }, [onSync]);
-
-  const actor = team.find(m => m.id === actingAs);
-  const cps = computeCPS(local.girls);
-  const rank = getUmaRank(local.totalCarrots || 0);
-  const nextRank = getNextRank(local.totalCarrots || 0);
-  const rankPct = nextRank ? Math.min(1, (local.totalCarrots - rank.min) / (nextRank.min - rank.min)) : 1;
-  const ownedGirls = UMA_GIRLS.filter(g => (local.girls[g.id] || 0) > 0);
-  const totalLevels = Object.values(local.girls || {}).reduce((s, v) => s + v, 0);
-
-  const handleClick = () => {
-    if (!actor) return;
-    setLocal(prev => ({
-      ...prev,
-      carrots: prev.carrots + 1,
-      totalCarrots: prev.totalCarrots + 1,
-      clickerBy: { ...prev.clickerBy, [actor.name]: (prev.clickerBy[actor.name] || 0) + 1 },
-    }));
-    const fxId = uid();
-    const xOff = (Math.random() - 0.5) * 80;
-    const yOff = -(Math.random() * 20 + 10);
-    setClickFx(prev => [...prev, { id: fxId, x: xOff, y: yOff }]);
-    setTimeout(() => setClickFx(prev => prev.filter(f => f.id !== fxId)), 700);
+    setEventMsg(null);
+    setRaceResult(null);
   };
 
-  const handleBuy = (girlId) => {
-    const girl = UMA_GIRLS.find(g => g.id === girlId);
-    if (!girl) return;
-    const lvl = local.girls[girlId] || 0;
-    const cost = getGirlCost(girl.baseCost, lvl);
-    if (local.carrots < cost) return;
-    setLocal(prev => ({
-      ...prev,
-      carrots: prev.carrots - cost,
-      girls: { ...prev.girls, [girlId]: (prev.girls[girlId] || 0) + 1 },
-    }));
-    // Immediately sync this important event
-    setTimeout(() => onSync(localRef.current), 100);
+  const abandonCareer = () => {
+    setPd(prev => {
+      const next = { ...prev, currentCareer: null };
+      savePlayerData(player.name, next);
+      return next;
+    });
+    setEventMsg(null);
+    setRaceResult(null);
   };
 
-  // Leaderboard
-  const leaders = Object.entries(local.clickerBy || {})
-    .map(([name, clicks]) => ({ name, clicks }))
-    .sort((a, b) => b.clicks - a.clicks);
-
-  const daysAlive = local.createdAt
-    ? Math.max(1, Math.round((new Date() - new Date(local.createdAt + (local.createdAt.includes("T") ? "" : "T00:00:00"))) / 86400000))
-    : 1;
-
-  // Group girls by tier for the shop
-  const tiers = [1, 2, 3, 4, 5];
-
-  return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "8px 0", animation: "fadeUp 0.3s ease" }}>
-
-      {/* ── Header ── */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Inter'", letterSpacing: "-0.5px" }}>Uma Musume Training Camp</h2>
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase",
-            color: rank.color, background: rank.color + "18", border: "1px solid " + rank.color + "30",
-            padding: "3px 12px", borderRadius: 20,
-          }}>{rank.icon} {rank.label}</span>
+  // ── Player select screen ──
+  if (!player) {
+    const lb = umaData?.leaderboard || {};
+    return (
+      <div style={{ maxWidth: 700, margin: "0 auto", animation: "fadeUp 0.3s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: T.text, fontFamily: "'Inter'", marginBottom: 4 }}>Uma Musume: TMCC Derby</div>
+          <div style={{ fontSize: 13, color: T.textMuted }}>Select your trainer account</div>
         </div>
-        <div style={{ fontSize: 12, color: T.textMuted }}>
-          day {daysAlive} · {ownedGirls.length} girl{ownedGirls.length !== 1 ? "s" : ""} scouted · {totalLevels} total training levels
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginBottom: 32 }}>
+          {team.map(m => {
+            const entry = lb[m.name];
+            return (
+              <button key={m.id} onClick={() => setPlayer(m)} style={{
+                ...btnBase, padding: "20px 16px", background: T.bgCard, border: "1px solid " + T.border,
+                borderRadius: T.radiusLg, display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                textAlign: "center", borderTop: "3px solid " + m.color,
+              }}>
+                <div style={{ width: 44, height: 44, borderRadius: "50%", background: m.color + "20", border: "2.5px solid " + m.color, color: m.color, fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{m.name}</div>
+                {entry ? (
+                  <div style={{ fontSize: 11, color: T.textMuted }}>Best: <span style={{ color: getGrade(entry.bestRating).color, fontWeight: 700 }}>{entry.bestGrade}</span> · {entry.totalRuns} run{entry.totalRuns !== 1 ? "s" : ""}</div>
+                ) : (
+                  <div style={{ fontSize: 11, color: T.textMuted }}>No runs yet</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Leaderboard */}
+        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "20px 24px" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>🏆 Trainer Leaderboard</div>
+          {Object.keys(lb).length === 0
+            ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No trainers have completed a run yet</div>
+            : Object.entries(lb).sort((a, b) => b[1].bestRating - a[1].bestRating).map(([name, e], i) => {
+              const m = team.find(t => t.name === name);
+              const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : " " + (i + 1);
+              const g = getGrade(e.bestRating);
+              return (
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid " + T.border }}>
+                  <span style={{ fontSize: 14, width: 28, textAlign: "center" }}>{medal}</span>
+                  {m && <div style={{ width: 24, height: 24, borderRadius: "50%", background: m.color + "20", color: m.color, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid " + m.color + "50", flexShrink: 0 }}>{m.initials}</div>}
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{name}</span>
+                  <span style={{ fontSize: 11, color: T.textMuted }}>{e.bestGirl}</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: g.color, fontFamily: "'JetBrains Mono'", minWidth: 30, textAlign: "center" }}>{e.bestGrade}</span>
+                  <span style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono'", minWidth: 35 }}>{e.bestRating}pt</span>
+                </div>
+              );
+            })
+          }
         </div>
       </div>
+    );
+  }
 
-      {/* ── Top Section: Clicker + Owned Girls Parade ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, marginBottom: 20 }}>
-        {/* Left: Click area */}
-        <div style={{
-          background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusXl,
-          padding: "24px 20px", display: "flex", flexDirection: "column", alignItems: "center",
-          position: "relative", overflow: "hidden",
-        }}>
-          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 30%, " + rank.color + "08 0%, transparent 70%)", pointerEvents: "none" }} />
-
-          {/* Carrot count */}
-          <div style={{ fontSize: 32, fontWeight: 800, color: T.text, fontFamily: "'JetBrains Mono'", letterSpacing: "-2px", marginBottom: 2, zIndex: 1 }}>
-            {fmtNum(local.carrots)}
-          </div>
-          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4, zIndex: 1 }}>🥕 carrots</div>
-          <div style={{ fontSize: 12, color: cps > 0 ? T.success : T.textMuted, fontFamily: "'JetBrains Mono'", fontWeight: 600, marginBottom: 16, zIndex: 1 }}>
-            {cps > 0 ? fmtNum(cps) + "/sec" : "click to start!"}
-          </div>
-
-          {/* Click button */}
-          <div style={{ position: "relative", marginBottom: 16, zIndex: 1 }}>
-            {clickFx.map(f => (
-              <div key={f.id} style={{
-                position: "absolute", top: f.y, left: "50%", transform: "translateX(" + f.x + "px)",
-                fontSize: 16, fontWeight: 800, color: "#fbbf24", pointerEvents: "none",
-                animation: "fadeUp 0.7s ease forwards", zIndex: 10,
-                textShadow: "0 0 10px #fbbf2480",
-              }}>+1</div>
-            ))}
-            <button onClick={handleClick} disabled={!actingAs} style={{
-              ...btnBase, width: 110, height: 110, borderRadius: "50%", fontSize: 44,
-              background: "radial-gradient(circle at 35% 35%, #ff924c 0%, #ff6b2b 50%, #e04800 100%)",
-              border: "3px solid #fbbf2440",
-              boxShadow: "0 6px 24px #ff6b2b40, 0 0 0 5px " + T.bgCard + ", 0 0 0 7px #ff6b2b25",
-              transition: "transform 0.06s", display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: actingAs ? "pointer" : "not-allowed", userSelect: "none",
-            }}
-            onMouseDown={e => { e.currentTarget.style.transform = "scale(0.92)"; }}
-            onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
-            >🥕</button>
-          </div>
-
-          {/* Rank progress */}
-          {nextRank && (
-            <div style={{ width: "100%", zIndex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: rank.color }}>{rank.icon} {rank.label}</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: nextRank.color }}>{nextRank.icon} {nextRank.label}</span>
-              </div>
-              <div style={{ height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
-                <div style={{
-                  height: "100%", width: (rankPct * 100) + "%", borderRadius: 3,
-                  background: "linear-gradient(90deg, " + rank.color + ", " + nextRank.color + ")",
-                  transition: "width 0.3s ease",
-                }} />
-              </div>
-              <div style={{ textAlign: "center", fontSize: 9, color: T.textMuted, marginTop: 3 }}>
-                {fmtNum(Math.max(0, nextRank.min - (local.totalCarrots || 0)))} to next rank
-              </div>
-            </div>
-          )}
-
-          {/* Who's clicking */}
-          <div style={{ width: "100%", marginTop: 14, zIndex: 1 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6 }}>You are</div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {team.map(m => (
-                <button key={m.id} onClick={() => setActingAs(m.id)} style={{
-                  ...btnBase, padding: "5px 10px", fontSize: 10, display: "flex", alignItems: "center", gap: 5,
-                  background: actingAs === m.id ? m.color + "20" : "transparent",
-                  color: actingAs === m.id ? m.color : T.textMuted,
-                  border: actingAs === m.id ? "1px solid " + m.color + "40" : "1px solid " + T.border,
-                }}>
-                  <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color + "30", color: m.color, fontSize: 7, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>
-                  {m.name}
-                </button>
-              ))}
-            </div>
+  // ── Trainer Home (no career in progress) ──
+  if (!career) {
+    return (
+      <div style={{ maxWidth: 800, margin: "0 auto", animation: "fadeUp 0.3s ease" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <button onClick={() => { savePlayerData(player.name, pd); pushLeaderboard(); setPlayer(null); }} style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, padding: "6px 12px", fontSize: 12 }}>← Back</button>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: player.color + "20", border: "2px solid " + player.color, color: player.color, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{player.initials}</div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{player.name}'s Stable</div>
+            <div style={{ fontSize: 11, color: T.textMuted }}>{pd.veterans.length} veteran{pd.veterans.length !== 1 ? "s" : ""} raised</div>
           </div>
         </div>
 
-        {/* Right: Owned girls showcase */}
-        <div style={{
-          background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusXl, padding: "20px",
-          display: "flex", flexDirection: "column",
-        }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>
-            Your Team — {ownedGirls.length}/{UMA_GIRLS.length} Scouted
+        {/* Start new career */}
+        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "20px 24px", marginBottom: 20 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>🏇 Start New Career — Select Trainee</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 8 }}>
+            {UMA_ROSTER.map(g => (
+              <button key={g.id} onClick={() => startCareer(g.id)} style={{
+                ...btnBase, padding: "12px", background: T.bg, border: "1px solid " + T.border,
+                borderRadius: T.radius, textAlign: "left", borderLeft: "3px solid " + g.accent,
+                display: "flex", flexDirection: "column", gap: 4,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{g.name}</span>
+                  <span style={{ fontSize: 9, color: g.accent }}>{"★".repeat(g.star)}</span>
+                </div>
+                <div style={{ fontSize: 10, color: T.textMuted }}>{DIST_LABELS[g.dist]} · {STYLE_LABELS[g.style]}</div>
+                <div style={{ fontSize: 10, color: g.accent, fontStyle: "italic" }}>"{g.quote}"</div>
+              </button>
+            ))}
           </div>
-          {ownedGirls.length === 0 ? (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 36, opacity: 0.3 }}>🏇</div>
-              <div style={{ fontSize: 13, color: T.textMuted }}>Scout your first girl below!</div>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, flex: 1, alignContent: "start" }}>
-              {ownedGirls.map(g => {
-                const lvl = local.girls[g.id];
-                const girlCps = (g.cpsEach * lvl).toFixed(1);
+        </div>
+
+        {/* Veterans */}
+        {pd.veterans.length > 0 && (
+          <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "20px 24px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>🎖️ Veteran Hall</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {pd.veterans.slice().reverse().map((v, i) => {
+                const g = getGrade(v.totalStats);
+                const gData = UMA_ROSTER.find(r => r.id === v.girlId);
                 return (
-                  <div key={g.id} style={{
-                    background: g.accent + "0a", border: "1px solid " + g.accent + "25", borderRadius: T.radiusLg,
-                    padding: "12px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-                    transition: "all 0.2s",
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                    background: T.bg, borderRadius: T.radius,
+                    borderLeft: "3px solid " + (v.failed ? T.danger : (gData?.accent || T.accent)),
+                    opacity: v.failed ? 0.5 : 1,
                   }}>
-                    <GirlAvatar girl={g} level={lvl} size={42} />
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{g.name}</div>
-                      <div style={{ fontSize: 10, color: g.accent, fontFamily: "'JetBrains Mono'", fontWeight: 600 }}>{girlCps}/s</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: g.color, fontFamily: "'JetBrains Mono'", minWidth: 36, textAlign: "center" }}>{g.letter}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{v.girlName} {v.failed ? "(Career Failed)" : ""}</div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 3 }}>
+                        {STAT_KEYS.map(k => (
+                          <span key={k} style={{ fontSize: 10, color: STAT_COLORS[k], fontFamily: "'JetBrains Mono'", fontWeight: 600 }}>
+                            {STAT_ICONS[k]}{v.stats[k]}
+                          </span>
+                        ))}
+                        <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono'" }}>= {v.totalStats}pt</span>
+                      </div>
                     </div>
+                    <div style={{ fontSize: 10, color: T.textMuted }}>{v.date}</div>
                   </div>
                 );
               })}
             </div>
-          )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Career In Progress ──
+  const turnPct = Math.round((career.turn / TOTAL_TURNS) * 100);
+  const moodColor = MOOD_COLORS[career.mood];
+  const gradeNow = getGrade(totalStats);
+
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto", animation: "fadeUp 0.3s ease" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: girl.accent }} />
+          <span style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{girl.name}</span>
+          <span style={{ fontSize: 10, color: girl.accent }}>{"★".repeat(girl.star)}</span>
+          <span style={{ fontSize: 22, fontWeight: 800, color: gradeNow.color, fontFamily: "'JetBrains Mono'" }}>{gradeNow.letter}</span>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: T.textMuted }}>Turn {career.turn + 1}/{TOTAL_TURNS}</span>
+          <div style={{ width: 80, height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: turnPct + "%", background: T.accent, borderRadius: 3, transition: "width 0.3s" }} />
+          </div>
+          <button onClick={abandonCareer} style={{ ...btnBase, background: T.danger + "15", color: T.danger, padding: "4px 10px", fontSize: 10 }}>Retire</button>
         </div>
       </div>
 
-      {/* ── Tab Switcher ── */}
-      <div style={{ display: "flex", gap: 3, marginBottom: 16, background: T.bgCard, borderRadius: T.radius, padding: 3, border: "1px solid " + T.border }}>
-        {[["girls", "🏇 Scout & Train"], ["stats", "📊 Stats & Leaderboard"]].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} style={{
-            ...btnBase, flex: 1, padding: "9px 14px", fontSize: 12, fontWeight: 600,
-            background: tab === id ? T.accent : "transparent",
-            color: tab === id ? "#fff" : T.textMuted, borderRadius: 6,
-          }}>{label}</button>
-        ))}
-      </div>
+      {/* Career finished overlay */}
+      {career.finished && (() => {
+        const ts = STAT_KEYS.reduce((s, k) => s + career.stats[k], 0);
+        const g = getGrade(ts);
+        const lastVet = pd.veterans[pd.veterans.length - 1];
+        return (
+          <div style={{ background: T.bgCard, border: "2px solid " + (career.failed ? T.danger : g.color), borderRadius: T.radiusXl, padding: "40px 32px", textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: career.failed ? T.danger : g.color, letterSpacing: "1px", textTransform: "uppercase", marginBottom: 8 }}>
+              {career.failed ? "Career Failed — Race Lost" : "Career Complete!"}
+            </div>
+            <div style={{ fontSize: 56, fontWeight: 800, color: g.color, fontFamily: "'JetBrains Mono'" }}>{g.letter}</div>
+            <div style={{ fontSize: 16, color: T.text, fontWeight: 600, marginBottom: 12 }}>{girl.name} — {ts}pt Total</div>
+            <div style={{ display: "flex", justifyContent: "center", gap: 14, marginBottom: 20 }}>
+              {STAT_KEYS.map(k => (
+                <div key={k} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: STAT_COLORS[k], fontFamily: "'JetBrains Mono'" }}>{career.stats[k]}</div>
+                  <div style={{ fontSize: 9, color: T.textMuted, textTransform: "uppercase" }}>{k}</div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => { setPd(p => ({ ...p, currentCareer: null })); setEventMsg(null); setRaceResult(null); }} style={{ ...btnBase, padding: "12px 28px", background: T.accent, color: "#fff", fontSize: 14, fontWeight: 700 }}>Return to Stable</button>
+          </div>
+        );
+      })()}
 
-      {/* ── Girls Tab: Scout Shop ── */}
-      {tab === "girls" && (
-        <div>
-          {tiers.map(tier => {
-            const tierGirls = UMA_GIRLS.filter(g => g.tier === tier);
-            const anyOwned = tierGirls.some(g => (local.girls[g.id] || 0) > 0);
-            const anyAffordable = tierGirls.some(g => local.carrots >= getGirlCost(g.baseCost, local.girls[g.id] || 0));
-            return (
-              <div key={tier} style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: TIER_COLORS[tier], letterSpacing: "0.5px" }}>
-                    {"★".repeat(tier)} {TIER_LABELS[tier]}
-                  </span>
-                  <div style={{ flex: 1, height: 1, background: TIER_COLORS[tier] + "30" }} />
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
-                  {tierGirls.map(g => (
-                    <GirlShopCard key={g.id} girl={g} level={local.girls[g.id] || 0} carrots={local.carrots} onBuy={handleBuy} />
-                  ))}
-                </div>
+      {!career.finished && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: 14 }}>
+          {/* Left: Main panel */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Stats */}
+            <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px 20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase" }}>Training Stats</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: gradeNow.color, fontFamily: "'JetBrains Mono'" }}>{totalStats}pt</span>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Stats Tab ── */}
-      {tab === "stats" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {/* Click Leaderboard */}
-          <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>Click Leaderboard</div>
-            {leaders.length === 0
-              ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No clicks yet</div>
-              : leaders.map((l, i) => {
-                const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
-                const m = team.find(t => t.name === l.name);
-                return (
-                  <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < leaders.length - 1 ? "1px solid " + T.border : "none" }}>
-                    <span style={{ fontSize: 14, width: 24, textAlign: "center" }}>{medal}</span>
-                    {m && <div style={{ width: 22, height: 22, borderRadius: "50%", background: m.color + "20", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + m.color + "40", flexShrink: 0 }}>{m.initials}</div>}
-                    <span style={{ flex: 1, fontSize: 13, color: T.text, fontWeight: i === 0 ? 700 : 400 }}>{l.name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: T.accent, fontFamily: "'JetBrains Mono'" }}>{fmtNum(l.clicks)}</span>
+              {STAT_KEYS.map(k => (
+                <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, width: 18, textAlign: "center" }}>{STAT_ICONS[k]}</span>
+                  <span style={{ fontSize: 11, color: T.textSub, minWidth: 55, textTransform: "capitalize" }}>{k}</span>
+                  <div style={{ flex: 1, height: 8, background: T.border, borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: Math.min(100, career.stats[k] / 8) + "%", background: STAT_COLORS[k], borderRadius: 4, transition: "width 0.3s" }} />
                   </div>
-                );
-              })
-            }
+                  <span style={{ fontSize: 12, fontWeight: 700, color: STAT_COLORS[k], fontFamily: "'JetBrains Mono'", minWidth: 32, textAlign: "right" }}>{career.stats[k]}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Actions */}
+            {currentRace ? (
+              <div style={{ background: T.bgCard, border: "2px solid " + T.warning, borderRadius: T.radiusLg, padding: "20px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.warning, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8 }}>🏁 Mandatory Race — {currentRace.name}</div>
+                <div style={{ fontSize: 13, color: T.text, marginBottom: 4 }}>Grade: {currentRace.grade} · Threshold: ~{currentRace.required}pt</div>
+                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 14 }}>
+                  {currentRace.dist === "pref" ? "Preferred distance: " + DIST_LABELS[girl.dist] + " (aptitude bonus!)" : "Open distance — all stats weighted equally"}
+                </div>
+                <button onClick={doRace} style={{ ...btnBase, width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, background: "linear-gradient(135deg, " + T.warning + ", " + T.danger + ")", color: "#fff", borderRadius: T.radius }}>🏇 Enter Race</button>
+              </div>
+            ) : (
+              <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px 20px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 10 }}>Choose Action</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  {STAT_KEYS.map(k => (
+                    <button key={k} onClick={() => doTrain(k)} disabled={career.energy < 20} style={{
+                      ...btnBase, padding: "12px 8px", fontSize: 12, fontWeight: 600,
+                      background: career.energy >= 20 ? STAT_COLORS[k] + "15" : T.bgElevated,
+                      color: career.energy >= 20 ? STAT_COLORS[k] : T.textMuted,
+                      border: "1px solid " + (career.energy >= 20 ? STAT_COLORS[k] + "40" : T.border),
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                      cursor: career.energy >= 20 ? "pointer" : "not-allowed",
+                    }}>
+                      <span style={{ fontSize: 16 }}>{STAT_ICONS[k]}</span>
+                      <span style={{ textTransform: "capitalize" }}>{k}</span>
+                    </button>
+                  ))}
+                  <button onClick={doRest} style={{ ...btnBase, padding: "12px 8px", fontSize: 12, fontWeight: 600, background: T.success + "15", color: T.success, border: "1px solid " + T.success + "40", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 16 }}>💤</span><span>Rest</span>
+                  </button>
+                  <button onClick={doOuting} style={{ ...btnBase, padding: "12px 8px", fontSize: 12, fontWeight: 600, background: "#ff69b4" + "15", color: "#ff69b4", border: "1px solid #ff69b440", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 16 }}>🎀</span><span>Outing</span>
+                  </button>
+                </div>
+                {career.energy < 20 && <div style={{ fontSize: 11, color: T.danger, textAlign: "center" }}>Energy too low to train — Rest or Outing first!</div>}
+              </div>
+            )}
+
+            {/* Race result popup */}
+            {raceResult && (
+              <div style={{
+                background: raceResult.won ? T.success + "12" : T.danger + "12",
+                border: "1px solid " + (raceResult.won ? T.success : T.danger) + "40",
+                borderRadius: T.radiusLg, padding: "14px 18px",
+              }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: raceResult.won ? T.success : T.danger, marginBottom: 4 }}>
+                  {raceResult.won ? "🎉 Race Won!" : "💔 Race Lost…"}
+                </div>
+                <div style={{ fontSize: 12, color: T.textSub }}>
+                  {raceResult.name} — Score: {raceResult.score} vs Required: {raceResult.required}
+                </div>
+                {raceResult.won && <div style={{ fontSize: 11, color: T.success, marginTop: 4 }}>+30 Skill Points · Bonus stat gain!</div>}
+                {!raceResult.won && <div style={{ fontSize: 11, color: T.danger, marginTop: 4 }}>Career ended — objectives not met.</div>}
+                <button onClick={() => setRaceResult(null)} style={{ ...btnBase, marginTop: 8, padding: "6px 14px", background: T.bgElevated, color: T.textSub, fontSize: 11 }}>Dismiss</button>
+              </div>
+            )}
+
+            {/* Event message */}
+            {eventMsg && !raceResult && (
+              <div style={{ background: T.accentBg, border: "1px solid " + T.accent + "30", borderRadius: T.radius, padding: "10px 14px", fontSize: 12, color: T.accent, whiteSpace: "pre-line" }}>
+                {eventMsg}
+              </div>
+            )}
           </div>
 
-          {/* Stats panel */}
-          <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>Camp Stats</div>
-            {[
-              { label: "Carrots/sec",      val: cps > 0 ? cps.toFixed(1) : "0",     color: T.success },
-              { label: "Total Earned",      val: fmtNum(local.totalCarrots || 0),    color: "#fbbf24" },
-              { label: "Total Clicks",      val: fmtNum(leaders.reduce((s, l) => s + l.clicks, 0)), color: T.accent },
-              { label: "Girls Scouted",     val: ownedGirls.length + "/" + UMA_GIRLS.length, color: "#ff69b4" },
-              { label: "Total Train Lvls",  val: totalLevels,                          color: "#b87fff" },
-              { label: "Current Rank",      val: rank.label,                          color: rank.color },
-              { label: "Camp Age",          val: daysAlive + " day" + (daysAlive !== 1 ? "s" : ""), color: T.textSub },
-            ].map((s, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 6 ? "1px solid " + T.border : "none" }}>
-                <span style={{ fontSize: 12, color: T.textMuted }}>{s.label}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: s.color, fontFamily: "'JetBrains Mono'" }}>{s.val}</span>
+          {/* Right: Status sidebar */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Girl info */}
+            <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", background: girl.color + "30", border: "2px solid " + girl.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: girl.accent }}>{girl.name.split(" ").map(w => w[0]).join("")}</div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{girl.name}</div>
+                  <div style={{ fontSize: 10, color: T.textMuted }}>{STYLE_LABELS[girl.style]} · {DIST_LABELS[girl.dist].split(" ")[0]}</div>
+                </div>
               </div>
-            ))}
-          </div>
+              <div style={{ fontSize: 11, color: girl.accent, fontStyle: "italic" }}>"{girl.quote}"</div>
+            </div>
 
-          {/* CPS Breakdown */}
-          <div style={{ gridColumn: "1 / -1", background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>CPS Breakdown by Girl</div>
-            {ownedGirls.length === 0
-              ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Scout girls to see production stats</div>
-              : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {ownedGirls.sort((a, b) => (b.cpsEach * (local.girls[b.id] || 0)) - (a.cpsEach * (local.girls[a.id] || 0))).map(g => {
-                  const lvl = local.girls[g.id] || 0;
-                  const girlCps = g.cpsEach * lvl;
-                  const pct = cps > 0 ? (girlCps / cps) * 100 : 0;
-                  return (
-                    <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <GirlAvatar girl={g} level={lvl} size={28} />
-                      <span style={{ fontSize: 12, color: T.text, fontWeight: 500, minWidth: 120 }}>{g.name}</span>
-                      <div style={{ flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: pct + "%", background: g.accent, borderRadius: 3, transition: "width 0.4s ease" }} />
-                      </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: g.accent, fontFamily: "'JetBrains Mono'", minWidth: 50, textAlign: "right" }}>{girlCps.toFixed(1)}/s</span>
-                      <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono'", minWidth: 35, textAlign: "right" }}>{Math.round(pct)}%</span>
-                    </div>
-                  );
-                })}
+            {/* Energy / Mood */}
+            <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "14px 16px" }}>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.5px", textTransform: "uppercase" }}>Energy</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: career.energy < 25 ? T.danger : career.energy < 50 ? T.warning : T.success, fontFamily: "'JetBrains Mono'" }}>{career.energy}%</span>
+                </div>
+                <div style={{ height: 8, background: T.border, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: career.energy + "%", background: career.energy < 25 ? T.danger : career.energy < 50 ? T.warning : T.success, borderRadius: 4, transition: "width 0.3s" }} />
+                </div>
               </div>
-            }
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.5px", textTransform: "uppercase" }}>Mood</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: moodColor }}>{MOOD_EMOJI[career.mood]} {MOOD_LABELS[career.mood]}</span>
+                </div>
+                <div style={{ height: 8, background: T.border, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: ((MOOD_LEVELS.indexOf(career.mood) + 1) / 5 * 100) + "%", background: moodColor, borderRadius: 4, transition: "width 0.3s" }} />
+                </div>
+                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>Training ×{MOOD_MULT[career.mood]}</div>
+              </div>
+            </div>
+
+            {/* Upcoming race */}
+            {(() => {
+              const next = RACE_TURNS.find(r => r.turn >= career.turn);
+              if (!next) return null;
+              const turnsUntil = next.turn - career.turn;
+              return (
+                <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: 6 }}>Next Race</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.warning }}>{next.name}</div>
+                  <div style={{ fontSize: 11, color: T.textMuted }}>
+                    {turnsUntil === 0 ? "⚡ This turn!" : "in " + turnsUntil + " turn" + (turnsUntil > 1 ? "s" : "")} · ~{next.required}pt needed
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Race history */}
+            {career.raceResults.length > 0 && (
+              <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "14px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: 8 }}>Race Results</div>
+                {career.raceResults.map((r, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: i < career.raceResults.length - 1 ? "1px solid " + T.border : "none" }}>
+                    <span style={{ fontSize: 11, color: T.text }}>{r.name}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: r.won ? T.success : T.danger }}>{r.won ? "WIN" : "LOSE"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
-
-      {/* Footer hint */}
-      <div style={{ marginTop: 16, fontSize: 11, color: T.textMuted, textAlign: "center", fontStyle: "italic" }}>
-        carrots accumulate from trained girls · syncs to team every 3 sec · even works offline
-      </div>
     </div>
   );
 }
@@ -1264,10 +1340,10 @@ function App() {
     reader.readAsText(file); e.target.value = "";
   }, [notify]);
 
-  // ── Clicker sync: the UmaClickerView manages local state, this just writes to Firebase periodically ──
-  const syncClicker = useCallback((localClicker) => {
+  // ── Uma Musume: only syncs the leaderboard to Firebase ──
+  const syncUmaLeaderboard = useCallback((umaUpdate) => {
     if (!data) return;
-    setData(p => ({ ...p, clicker: { ...localClicker, lastTick: nowESTiso() } }));
+    setData(p => ({ ...p, uma: { ...p.uma, ...umaUpdate } }));
   }, [data]);
 
   const NAV = [
@@ -1275,7 +1351,7 @@ function App() {
     { id: "gantt",     label: "Timeline",  icon: "▤" },
     { id: "burndown",  label: "Burndown",  icon: "◿" },
     { id: "team",      label: "Team",      icon: "◉" },
-    { id: "tomo",      label: "Uma Clicker", icon: "🏇" },
+    { id: "tomo",      label: "Uma Musume", icon: "🏇" },
   ];
 
   // ── Loading screen (only conditional return, comes after ALL hooks) ──
@@ -1401,7 +1477,7 @@ function App() {
         {/* View Content */}
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
           {view === "tomo"
-            ? <UmaClickerView clicker={data.clicker} team={team} onSync={syncClicker} />
+            ? <UmaMusumeView umaData={data.uma} team={team} onSyncLeaderboard={syncUmaLeaderboard} />
             : !sprint
             ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
             : view === "dashboard"
