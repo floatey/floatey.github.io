@@ -469,10 +469,10 @@ const STYLE_LABELS = { runner: "Front Runner", leader: "Stalker", chaser: "Chase
 
 const TOTAL_TURNS = 24;
 const RACE_SCHEDULE = [
-  { turn: 6,  name: "Maiden Race",   grade: "Debut", threshold: 240 },
-  { turn: 12, name: "Open Class",    grade: "OP",    threshold: 400 },
-  { turn: 18, name: "Tennou Sho",    grade: "G1",    threshold: 580 },
-  { turn: 23, name: "URA Finals",    grade: "URA",   threshold: 760 },
+  { turn: 6,  name: "Maiden Race",   grade: "Debut", threshold: 220 },
+  { turn: 12, name: "Open Class",    grade: "OP",    threshold: 360 },
+  { turn: 18, name: "Tennou Sho",    grade: "G1",    threshold: 480 },
+  { turn: 23, name: "URA Finals",    grade: "URA",   threshold: 600 },
 ];
 
 const GACHA_COST = 100;
@@ -574,13 +574,13 @@ const RANDOM_EVENTS = [
 ];
 
 function getGrade(total) {
-  if (total >= 3000) return { letter: "S+", color: "#ffd700" };
-  if (total >= 2400) return { letter: "S",  color: "#fbbf24" };
-  if (total >= 1900) return { letter: "A+", color: "#f97316" };
-  if (total >= 1500) return { letter: "A",  color: "#ff5270" };
-  if (total >= 1100) return { letter: "B+", color: "#b87fff" };
-  if (total >= 800)  return { letter: "B",  color: "#4e9fff" };
-  if (total >= 500)  return { letter: "C",  color: "#2ed09b" };
+  if (total >= 650) return { letter: "S+", color: "#ffd700" };
+  if (total >= 550) return { letter: "S",  color: "#fbbf24" };
+  if (total >= 480) return { letter: "A+", color: "#f97316" };
+  if (total >= 420) return { letter: "A",  color: "#ff5270" };
+  if (total >= 360) return { letter: "B+", color: "#b87fff" };
+  if (total >= 300) return { letter: "B",  color: "#4e9fff" };
+  if (total >= 240) return { letter: "C",  color: "#2ed09b" };
   return { letter: "D", color: T.textMuted };
 }
 
@@ -603,7 +603,7 @@ function newCareer(girlId) {
 }
 
 function calcTrainGain(stat, career, girl) {
-  const base = stat === girl.bonus ? 16 : 12;
+  const base = stat === girl.bonus ? 18 : 14;
   return Math.round(base * (MOOD_MULT[career.mood] || 1) * (0.85 + Math.random() * 0.3));
 }
 
@@ -612,7 +612,7 @@ function raceScore(career, girl) {
   const w = { short: [.4,.05,.3,.1,.15], mile: [.3,.15,.25,.1,.2], mid: [.25,.25,.2,.15,.15], long: [.2,.3,.15,.2,.15] };
   const wt = w[girl.dist] || [.2,.2,.2,.2,.2];
   let score = s.speed*wt[0] + s.stamina*wt[1] + s.power*wt[2] + s.guts*wt[3] + s.wit*wt[4];
-  return Math.round(score * (0.9 + Math.random() * 0.2) * 5);
+  return Math.round(score * (0.92 + Math.random() * 0.16) * 7);
 }
 
 const LS_KEY = (name) => "tmcc_uma_" + name.replace(/\s+/g, "_");
@@ -629,9 +629,19 @@ function RaceAnimation({ girl, score, threshold, onFinish }) {
   const [done, setDone] = useState(false);
   const DURATION = 40; // ticks at 100ms = 4 seconds
   const npcs = useRef(pickNPCs(5, girl.name));
-  const npcSpeeds = useRef(npcs.current.map(() => 0.6 + Math.random() * 0.4));
-  const playerSpeed = useRef(Math.min(1, score / (threshold * 1.1)));
-  const commentRef = useRef([]);
+  const won = score >= threshold;
+  // NPC speeds MUST reflect outcome — visual rank should match actual result
+  const playerSpeed = useRef(0.7 + (score / threshold) * 0.25); // 0.7–0.95+
+  const npcSpeeds = useRef((() => {
+    const ps = playerSpeed.current;
+    if (won) {
+      // Player won — all NPCs slower. One close rival, rest scattered behind.
+      return npcs.current.map((_, i) => i === 0 ? ps - 0.02 - Math.random()*0.04 : 0.4 + Math.random() * (ps - 0.15));
+    } else {
+      // Player lost — 1-2 NPCs clearly ahead, rest scattered
+      return npcs.current.map((_, i) => i < 2 ? ps + 0.04 + Math.random()*0.08 : 0.35 + Math.random() * ps);
+    }
+  })());
 
   useEffect(() => {
     if (done) return;
@@ -647,7 +657,6 @@ function RaceAnimation({ girl, score, threshold, onFinish }) {
   const playerPos = progress * playerSpeed.current;
   const npcPositions = npcSpeeds.current.map(s => progress * s);
   const playerRank = npcPositions.filter(p => p > playerPos).length + 1;
-  const won = score >= threshold;
 
   // Commentary
   const comments = [];
@@ -816,9 +825,11 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     const rr = { name: curRace.name, grade: curRace.grade, won, score: racing.score };
     let next = { ...career, turn: career.turn + 1, raceResults: [...career.raceResults, rr], energy: Math.max(0, career.energy - 10) };
     if (won) {
-      const bk = STAT_KEYS[Math.floor(Math.random()*5)];
-      next.stats = { ...next.stats, [bk]: next.stats[bk] + 10 };
+      const bk1 = STAT_KEYS[Math.floor(Math.random()*5)];
+      const bk2 = STAT_KEYS[Math.floor(Math.random()*5)];
+      next.stats = { ...next.stats, [bk1]: next.stats[bk1] + 12, [bk2]: next.stats[bk2] + 8 };
       next.skillPts += 30;
+      next.energy = Math.min(100, next.energy + 15); // Victory energy boost
       setDialogue("🏆 " + curRace.name + " — WON!\n\n" + girl.name + ": \"" + getDlg(girl, "raceWin") + "\"");
     } else {
       next.failed = true;
@@ -1059,7 +1070,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
                   <span style={{ fontSize: 11, width: 16, textAlign: "center" }}>{STAT_ICONS[k]}</span>
                   <span style={{ fontSize: 10, color: T.textSub, minWidth: 48, textTransform: "capitalize" }}>{k}</span>
                   <div style={{ flex: 1, height: 7, background: T.border, borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: Math.min(100, career.stats[k]/6)+"%", background: STAT_COLORS[k], borderRadius: 4, transition: "width 0.3s" }} />
+                    <div style={{ height: "100%", width: Math.min(100, career.stats[k]/3)+"%", background: STAT_COLORS[k], borderRadius: 4, transition: "width 0.3s" }} />
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: STAT_COLORS[k], fontFamily: "'JetBrains Mono'", minWidth: 28, textAlign: "right" }}>{career.stats[k]}</span>
                 </div>
@@ -1070,9 +1081,9 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
             {curRace ? (
               <div style={{ background: T.bgCard, border: "2px solid " + T.warning, borderRadius: T.radiusLg, padding: "18px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.warning, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6 }}>🏁 {curRace.name} ({curRace.grade})</div>
-                <div style={{ fontSize: 12, color: T.text, marginBottom: 2 }}>Target score: ~{curRace.threshold}pt · Your estimated: ~{totalStats}pt</div>
-                <div style={{ fontSize: 11, color: totalStats >= curRace.threshold * 0.9 ? T.success : T.danger, marginBottom: 12 }}>
-                  {totalStats >= curRace.threshold * 0.9 ? "✓ Looking strong — you've got a good shot!" : "⚠ Might be tough — RNG could save you!"}
+                <div style={{ fontSize: 12, color: T.text, marginBottom: 2 }}>Target score: ~{curRace.threshold}pt</div>
+                <div style={{ fontSize: 11, color: totalStats * 7 / 5 >= curRace.threshold ? T.success : T.warning, marginBottom: 12 }}>
+                  {totalStats * 7 / 5 >= curRace.threshold ? "✓ Looking strong! You should win this." : totalStats * 7 / 5 >= curRace.threshold * 0.85 ? "⚡ Could go either way — depends on race RNG!" : "⚠ Underprepared — it'll be tough but not impossible!"}
                 </div>
                 <button onClick={doRace} style={{ ...btnBase, width: "100%", padding: "14px", fontSize: 14, fontWeight: 700, background: "linear-gradient(135deg, "+T.warning+", "+T.danger+")", color: "#fff", borderRadius: T.radius }}>🏇 Race!</button>
               </div>
