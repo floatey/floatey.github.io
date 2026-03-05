@@ -639,8 +639,15 @@ function RaceAnimation({ girl, score, threshold, onFinish }) {
   const npcSpeeds = useRef((() => {
     const ps = playerSpeed.current;
     if (won) {
-      return npcs.current.map((_, i) => i === 0 ? ps - 0.02 - Math.random()*0.04 : 0.4 + Math.random() * (ps - 0.15));
+      // ALL NPCs must be strictly slower than the player — cap at ps - 0.05
+      return npcs.current.map((_, i) => {
+        const raw = i === 0
+          ? ps - 0.02 - Math.random() * 0.04   // close rival
+          : 0.3 + Math.random() * (ps - 0.2);  // scattered pack
+        return Math.min(raw, ps - 0.05); // hard cap: never faster than player
+      });
     } else {
+      // 1-2 NPCs clearly ahead, rest scattered behind player
       return npcs.current.map((_, i) => i < 2 ? ps + 0.04 + Math.random()*0.08 : 0.35 + Math.random() * ps);
     }
   })());
