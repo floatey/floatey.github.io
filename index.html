@@ -84,7 +84,7 @@ const migrate = (data) => {
   return {
     ...data,
     team: data.team,
-    clicker: data.clicker ? data.clicker : { ...DEFAULT_CLICKER, createdAt: todayStr(), lastTick: nowESTiso() },
+    clicker: data.clicker ? { ...DEFAULT_CLICKER, ...data.clicker, girls: data.clicker.girls || {} } : { ...DEFAULT_CLICKER, createdAt: todayStr(), lastTick: nowESTiso() },
     sprints: data.sprints.map(s => ({
       ...s,
       notes: s.notes || "",
@@ -108,19 +108,49 @@ const migrate = (data) => {
   };
 };
 
+// ─── UMA GIRLS ROSTER ───
+const UMA_GIRLS = [
+  // Tier 1 — Debut
+  { id: "haru_urara",     name: "Haru Urara",       tier: 1, baseCost: 15,    cpsEach: 0.2,  color: "#ffb3d9", accent: "#ff69b4", quote: "I'll try my best again today!",         trait: "Never gives up" },
+  { id: "sakura_bakushin", name: "Sakura Bakushin O", tier: 1, baseCost: 25,   cpsEach: 0.4,  color: "#ff8fa3", accent: "#ff4d6d", quote: "Speed is everything! Let's GO!",        trait: "Pure speed" },
+  { id: "nice_nature",     name: "Nice Nature",      tier: 1, baseCost: 40,    cpsEach: 0.6,  color: "#93e1d8", accent: "#2ed09b", quote: "It's okay, we'll do fine~",              trait: "Gentle heart" },
+  // Tier 2 — Pre-OP
+  { id: "silence_suzuka",  name: "Silence Suzuka",   tier: 2, baseCost: 120,   cpsEach: 1.5,  color: "#b4d7ff", accent: "#4e9fff", quote: "...I just want to run far ahead.",      trait: "Lone frontrunner" },
+  { id: "daiwa_scarlet",   name: "Daiwa Scarlet",    tier: 2, baseCost: 200,   cpsEach: 2.5,  color: "#ff9e9e", accent: "#ff5270", quote: "D-Don't get the wrong idea!",            trait: "Tsundere rival" },
+  { id: "vodka",           name: "Vodka",            tier: 2, baseCost: 300,   cpsEach: 3.5,  color: "#a8c5ff", accent: "#6b94ff", quote: "I'm not cute, I'm COOL!",               trait: "Tomboy spirit" },
+  // Tier 3 — Open
+  { id: "tokai_teio",      name: "Tokai Teio",       tier: 3, baseCost: 1200,  cpsEach: 10,   color: "#fff3b0", accent: "#fbbf24", quote: "I am the Teio! Watch me shine!",         trait: "Miracle comeback" },
+  { id: "mejiro_mcqueen",  name: "Mejiro McQueen",   tier: 3, baseCost: 2000,  cpsEach: 16,   color: "#d4c5ff", accent: "#b87fff", quote: "Elegance is a way of life.",             trait: "Noble queen" },
+  { id: "gold_ship",       name: "Gold Ship",        tier: 3, baseCost: 3200,  cpsEach: 24,   color: "#ffd700", accent: "#f5a623", quote: "AHAHA! Bet you didn't see THAT coming!", trait: "Chaos incarnate" },
+  // Tier 4 — G1
+  { id: "special_week",    name: "Special Week",     tier: 4, baseCost: 12000, cpsEach: 80,   color: "#a0e8af", accent: "#2ed09b", quote: "I want to be the best horse girl ever!", trait: "Heart of a champion" },
+  { id: "rice_shower",     name: "Rice Shower",      tier: 4, baseCost: 20000, cpsEach: 120,  color: "#c8b0ff", accent: "#9b72cf", quote: "Am I… really allowed to win?",           trait: "Cursed beauty" },
+  { id: "symboli_rudolf",  name: "Symboli Rudolf",   tier: 4, baseCost: 32000, cpsEach: 180,  color: "#ffa3a3", accent: "#e04800", quote: "As student council president, I approve.", trait: "Emperor" },
+  // Tier 5 — Legendary
+  { id: "oguri_cap",       name: "Oguri Cap",        tier: 5, baseCost: 150000, cpsEach: 600, color: "#ffe4b5", accent: "#f97316", quote: "*eating noises*  …Is there more?",      trait: "Bottomless appetite" },
+  { id: "kitasan_black",   name: "Kitasan Black",    tier: 5, baseCost: 350000, cpsEach: 1400, color: "#87ceeb", accent: "#4e9fff", quote: "Singing keeps my spirit high!",        trait: "Idol champion" },
+];
+
+const TIER_LABELS = { 1: "Debut", 2: "Pre-OP", 3: "Open Class", 4: "G1 Champions", 5: "Legendary" };
+const TIER_COLORS = { 1: T.textSub, 2: "#4e9fff", 3: "#fbbf24", 4: "#f97316", 5: "#ff5270" };
+
+const UMA_RANKS = [
+  { min: 0,         label: "Unranked",      color: T.textMuted, icon: "🌱" },
+  { min: 50,        label: "Training Start", color: "#4e9fff",  icon: "🏃" },
+  { min: 500,       label: "Debut Race",    color: "#2ed09b",   icon: "🐴" },
+  { min: 5000,      label: "G3 Winner",     color: "#fbbf24",   icon: "🏅" },
+  { min: 50000,     label: "G2 Winner",     color: "#f5a623",   icon: "🥈" },
+  { min: 500000,    label: "G1 Winner",     color: "#f97316",   icon: "🥇" },
+  { min: 5000000,   label: "Triple Crown",  color: "#ff5270",   icon: "👑" },
+  { min: 50000000,  label: "Legend",         color: "#b87fff",   icon: "⭐" },
+];
+
 const DEFAULT_CLICKER = {
   carrots: 0,
   totalCarrots: 0,
-  cps: 0,              // carrots per second (from upgrades)
-  lastTick: null,       // ISO string for offline accumulation
+  lastTick: null,
   clickerBy: {},        // { memberName: clickCount }
-  upgrades: {
-    trainer:    { count: 0, baseCost: 15,   cpsEach: 0.1,  label: "Trainer",       icon: "🏋️", desc: "A gentle trainer. +0.1 cps" },
-    track:      { count: 0, baseCost: 100,  cpsEach: 0.5,  label: "Training Track", icon: "🏟️", desc: "A turf practice track. +0.5 cps" },
-    nutritionist:{ count: 0, baseCost: 500, cpsEach: 2,    label: "Nutritionist",  icon: "🥕", desc: "Optimized carrot diet. +2 cps" },
-    fanclub:    { count: 0, baseCost: 2000, cpsEach: 8,    label: "Fan Club",      icon: "📣", desc: "Cheering fans boost morale. +8 cps" },
-    stadium:    { count: 0, baseCost: 10000,cpsEach: 30,   label: "Stadium",       icon: "🏆", desc: "A grand racing stadium. +30 cps" },
-  },
+  girls: {},            // { girlId: level }  — level 0 = not scouted
   createdAt: null,
 };
 
@@ -452,126 +482,251 @@ function SidebarClock() {
 }
 
 
-// ─── UMAMUSUME COOKIE CLICKER ──────────────────────────────────────────────
-
-const UMA_RANKS = [
-  { min: 0,       label: "Unranked",  color: T.textMuted, icon: "🌱" },
-  { min: 100,     label: "Debut",     color: "#4e9fff",   icon: "🐴" },
-  { min: 1000,    label: "G3",        color: "#2ed09b",   icon: "🏅" },
-  { min: 10000,   label: "G2",        color: "#fbbf24",   icon: "🥈" },
-  { min: 100000,  label: "G1",        color: "#f97316",   icon: "🥇" },
-  { min: 1000000, label: "Triple Crown", color: "#ff5270", icon: "👑" },
-];
+// ─── UMA MUSUME CLICKER ───────────────────────────────────────────────────
 
 function getUmaRank(total) {
   let rank = UMA_RANKS[0];
   for (const r of UMA_RANKS) { if (total >= r.min) rank = r; }
   return rank;
 }
-
 function getNextRank(total) {
   for (const r of UMA_RANKS) { if (total < r.min) return r; }
   return null;
 }
-
 function fmtNum(n) {
+  if (n >= 1e12) return (n / 1e12).toFixed(2) + "T";
   if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
   return Math.floor(n).toString();
 }
-
-function getUpgradeCost(baseCost, count) {
-  return Math.floor(baseCost * Math.pow(1.15, count));
+function getGirlCost(baseCost, level) {
+  return Math.floor(baseCost * Math.pow(1.15, level));
 }
-
-function computeCPS(upgrades) {
-  if (!upgrades) return 0;
+function computeCPS(girls) {
   let cps = 0;
-  Object.values(upgrades).forEach(u => { cps += u.count * u.cpsEach; });
+  UMA_GIRLS.forEach(g => { const lvl = (girls && girls[g.id]) || 0; if (lvl > 0) cps += g.cpsEach * lvl; });
   return cps;
 }
-
 function accumulateOffline(clicker) {
   if (!clicker || !clicker.lastTick) return clicker;
   const nowMs = new Date().getTime();
   const lastMs = new Date(clicker.lastTick).getTime();
   const elapsed = Math.max(0, (nowMs - lastMs) / 1000);
-  const cps = computeCPS(clicker.upgrades);
+  const cps = computeCPS(clicker.girls);
   const earned = cps * elapsed;
-  return {
-    ...clicker,
-    carrots: (clicker.carrots || 0) + earned,
-    totalCarrots: (clicker.totalCarrots || 0) + earned,
-    lastTick: nowESTiso(),
-  };
+  return { ...clicker, carrots: (clicker.carrots || 0) + earned, totalCarrots: (clicker.totalCarrots || 0) + earned, lastTick: nowESTiso() };
 }
 
-// Horse-girl ASCII frames that animate
-const UMA_FRAMES = [
-  ["     🏇      ", "   ╱|‾‾|╲    ", "  ╱ |  | ╲   ", " ◇  ‾‾‾‾  ◇ "],
-  ["      🏇     ", "   ╱|‾‾|╲    ", "  ╱ |  | ╲   ", "  ◇ ‾‾‾‾ ◇  "],
-];
+// ── Girl portrait: initials + colored ring ──
+function GirlAvatar({ girl, level, size = 48 }) {
+  const initials = girl.name.split(" ").map(w => w[0]).join("").slice(0, 2);
+  const owned = level > 0;
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      background: owned ? girl.color + "30" : T.bgElevated,
+      border: "2.5px solid " + (owned ? girl.accent : T.border),
+      display: "flex", alignItems: "center", justifyContent: "center",
+      position: "relative", transition: "all 0.2s",
+      boxShadow: owned ? "0 0 16px " + girl.accent + "25" : "none",
+    }}>
+      <span style={{ fontSize: size * 0.32, fontWeight: 800, color: owned ? girl.accent : T.textMuted, fontFamily: "'Inter'" }}>{initials}</span>
+      {level > 0 && (
+        <div style={{
+          position: "absolute", bottom: -3, right: -3,
+          background: girl.accent, color: "#fff", fontSize: 8, fontWeight: 800,
+          width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+          border: "2px solid " + T.bgCard, fontFamily: "'JetBrains Mono'",
+        }}>{level}</div>
+      )}
+    </div>
+  );
+}
 
-function UmaClickerView({ clicker, team, onClick, onBuyUpgrade, onReset }) {
-  const [tick, setTick] = useState(0);
+// ── Girl card in the scout shop ──
+function GirlShopCard({ girl, level, carrots, onBuy }) {
+  const cost = getGirlCost(girl.baseCost, level);
+  const canBuy = carrots >= cost;
+  const owned = level > 0;
+  const cpsTotal = girl.cpsEach * level;
+  const cpsNext = girl.cpsEach * (level + 1);
+  const tierColor = TIER_COLORS[girl.tier];
+
+  return (
+    <div style={{
+      background: T.bgCard, border: "1px solid " + (canBuy ? girl.accent + "40" : T.border),
+      borderRadius: T.radiusLg, padding: "16px", transition: "all 0.2s",
+      opacity: canBuy ? 1 : 0.55,
+      borderTop: owned ? "2px solid " + girl.accent + "80" : "2px solid transparent",
+    }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+        <GirlAvatar girl={girl} level={level} size={50} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{girl.name}</span>
+          </div>
+          <div style={{ fontSize: 10, color: tierColor, fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase", marginBottom: 3 }}>{TIER_LABELS[girl.tier]}</div>
+          <div style={{ fontSize: 11, color: T.textMuted, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>"{girl.quote}"</div>
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ background: T.bg, borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>
+          <span style={{ color: T.textMuted }}>trait </span>
+          <span style={{ color: girl.accent, fontWeight: 600 }}>{girl.trait}</span>
+        </div>
+        {owned && <div style={{ background: T.bg, borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>
+          <span style={{ color: T.textMuted }}>cps </span>
+          <span style={{ color: T.success, fontWeight: 700, fontFamily: "'JetBrains Mono'" }}>{cpsTotal.toFixed(1)}</span>
+          <span style={{ color: T.textMuted }}> → </span>
+          <span style={{ color: "#fbbf24", fontWeight: 700, fontFamily: "'JetBrains Mono'" }}>{cpsNext.toFixed(1)}</span>
+        </div>}
+        {!owned && <div style={{ background: T.bg, borderRadius: 6, padding: "4px 8px", fontSize: 10 }}>
+          <span style={{ color: T.textMuted }}>produces </span>
+          <span style={{ color: T.success, fontWeight: 700, fontFamily: "'JetBrains Mono'" }}>+{girl.cpsEach}/s</span>
+        </div>}
+      </div>
+
+      {/* Buy button */}
+      <button onClick={() => canBuy && onBuy(girl.id)} disabled={!canBuy} style={{
+        ...btnBase, width: "100%", padding: "9px 14px", fontSize: 12, fontWeight: 700,
+        background: canBuy ? "linear-gradient(135deg, " + girl.accent + " 0%, " + girl.color + " 100%)" : T.bgElevated,
+        color: canBuy ? "#fff" : T.textMuted,
+        border: "none", cursor: canBuy ? "pointer" : "not-allowed",
+        boxShadow: canBuy ? "0 4px 16px " + girl.accent + "35" : "none",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}>
+        {owned ? "🏋️ Train" : "🔍 Scout"} — 🥕 {fmtNum(cost)}
+      </button>
+    </div>
+  );
+}
+
+
+// ── Main UmaClickerView: LOCAL-FIRST state, periodic Firebase sync ──
+function UmaClickerView({ clicker, team, onSync }) {
+  // LOCAL state — clicks and CPS accumulate here instantly, never touching Firebase directly
+  const [local, setLocal] = useState(() => accumulateOffline(clicker));
   const [actingAs, setActingAs] = useState(team[0]?.id || null);
   const [clickFx, setClickFx] = useState([]);
-  const [displayCarrots, setDisplayCarrots] = useState(clicker?.carrots || 0);
+  const [tab, setTab] = useState("girls"); // "girls" | "stats"
+  const localRef = useRef(local);
+  const lastSyncRef = useRef(Date.now());
 
-  // Tick for CPS accumulation display + animation
+  // Keep ref in sync
+  useEffect(() => { localRef.current = local; }, [local]);
+
+  // ── Merge incoming Firebase data (from other users) ──
   useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 500);
+    if (!clicker) return;
+    setLocal(prev => {
+      // Take the MAX of local and remote totals, merge clicks additively, take remote girls if higher
+      const remoteCPS = computeCPS(clicker.girls);
+      const remote = accumulateOffline(clicker);
+      const mergedGirls = { ...(prev.girls || {}) };
+      Object.entries(remote.girls || {}).forEach(([gid, lvl]) => {
+        mergedGirls[gid] = Math.max(mergedGirls[gid] || 0, lvl);
+      });
+      // Keep the higher carrot count — if remote is ahead, adopt it
+      const remoteCarrots = remote.carrots || 0;
+      const localCarrots = prev.carrots || 0;
+      const carrots = Math.max(remoteCarrots, localCarrots);
+      const totalCarrots = Math.max(remote.totalCarrots || 0, prev.totalCarrots || 0);
+      // Merge clickerBy
+      const mergedClicks = { ...(prev.clickerBy || {}) };
+      Object.entries(remote.clickerBy || {}).forEach(([name, c]) => {
+        mergedClicks[name] = Math.max(mergedClicks[name] || 0, c);
+      });
+      return { ...prev, carrots, totalCarrots, girls: mergedGirls, clickerBy: mergedClicks, createdAt: remote.createdAt || prev.createdAt };
+    });
+  }, [clicker?.carrots, clicker?.totalCarrots, JSON.stringify(clicker?.girls), JSON.stringify(clicker?.clickerBy)]);
+
+  // ── CPS tick: accumulate locally every 100ms ──
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLocal(prev => {
+        const cps = computeCPS(prev.girls);
+        if (cps <= 0) return prev;
+        const gain = cps * 0.1;
+        return { ...prev, carrots: prev.carrots + gain, totalCarrots: prev.totalCarrots + gain, lastTick: nowESTiso() };
+      });
+    }, 100);
     return () => clearInterval(id);
   }, []);
 
-  // Smooth carrot counter
+  // ── Periodic Firebase sync: every 3 seconds, push local state up ──
   useEffect(() => {
-    if (!clicker) return;
-    const cps = computeCPS(clicker.upgrades);
     const id = setInterval(() => {
-      setDisplayCarrots(prev => {
-        const target = clicker.carrots + cps * ((new Date().getTime() - new Date(clicker.lastTick || new Date()).getTime()) / 1000);
-        return prev + (target - prev) * 0.15;
-      });
-    }, 50);
+      onSync(localRef.current);
+      lastSyncRef.current = Date.now();
+    }, 3000);
     return () => clearInterval(id);
-  }, [clicker]);
+  }, [onSync]);
 
-  if (!clicker) return null;
+  // Sync on unmount / tab switch away
+  useEffect(() => {
+    return () => onSync(localRef.current);
+  }, [onSync]);
 
-  const cps = computeCPS(clicker.upgrades);
-  const rank = getUmaRank(clicker.totalCarrots || 0);
-  const nextRank = getNextRank(clicker.totalCarrots || 0);
-  const rankPct = nextRank ? Math.min(1, (clicker.totalCarrots - rank.min) / (nextRank.min - rank.min)) : 1;
   const actor = team.find(m => m.id === actingAs);
+  const cps = computeCPS(local.girls);
+  const rank = getUmaRank(local.totalCarrots || 0);
+  const nextRank = getNextRank(local.totalCarrots || 0);
+  const rankPct = nextRank ? Math.min(1, (local.totalCarrots - rank.min) / (nextRank.min - rank.min)) : 1;
+  const ownedGirls = UMA_GIRLS.filter(g => (local.girls[g.id] || 0) > 0);
+  const totalLevels = Object.values(local.girls || {}).reduce((s, v) => s + v, 0);
 
   const handleClick = () => {
     if (!actor) return;
-    onClick(actor.name);
-    // Floating +1 effect
-    const id = uid();
-    const xOff = (Math.random() - 0.5) * 60;
-    setClickFx(prev => [...prev, { id, x: xOff }]);
-    setTimeout(() => setClickFx(prev => prev.filter(f => f.id !== id)), 800);
+    setLocal(prev => ({
+      ...prev,
+      carrots: prev.carrots + 1,
+      totalCarrots: prev.totalCarrots + 1,
+      clickerBy: { ...prev.clickerBy, [actor.name]: (prev.clickerBy[actor.name] || 0) + 1 },
+    }));
+    const fxId = uid();
+    const xOff = (Math.random() - 0.5) * 80;
+    const yOff = -(Math.random() * 20 + 10);
+    setClickFx(prev => [...prev, { id: fxId, x: xOff, y: yOff }]);
+    setTimeout(() => setClickFx(prev => prev.filter(f => f.id !== fxId)), 700);
+  };
+
+  const handleBuy = (girlId) => {
+    const girl = UMA_GIRLS.find(g => g.id === girlId);
+    if (!girl) return;
+    const lvl = local.girls[girlId] || 0;
+    const cost = getGirlCost(girl.baseCost, lvl);
+    if (local.carrots < cost) return;
+    setLocal(prev => ({
+      ...prev,
+      carrots: prev.carrots - cost,
+      girls: { ...prev.girls, [girlId]: (prev.girls[girlId] || 0) + 1 },
+    }));
+    // Immediately sync this important event
+    setTimeout(() => onSync(localRef.current), 100);
   };
 
   // Leaderboard
-  const leaders = Object.entries(clicker.clickerBy || {})
+  const leaders = Object.entries(local.clickerBy || {})
     .map(([name, clicks]) => ({ name, clicks }))
     .sort((a, b) => b.clicks - a.clicks);
 
-  const daysAlive = clicker.createdAt
-    ? Math.max(1, Math.round((new Date() - new Date(clicker.createdAt + (clicker.createdAt.includes("T") ? "" : "T00:00:00"))) / 86400000))
+  const daysAlive = local.createdAt
+    ? Math.max(1, Math.round((new Date() - new Date(local.createdAt + (local.createdAt.includes("T") ? "" : "T00:00:00"))) / 86400000))
     : 1;
 
-  return (
-    <div style={{ maxWidth: 700, margin: "0 auto", padding: "8px 0", animation: "fadeUp 0.3s ease" }}>
+  // Group girls by tier for the shop
+  const tiers = [1, 2, 3, 4, 5];
 
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Inter'", letterSpacing: "-0.5px" }}>🏇 Uma Training Camp</h2>
+  return (
+    <div style={{ maxWidth: 900, margin: "0 auto", padding: "8px 0", animation: "fadeUp 0.3s ease" }}>
+
+      {/* ── Header ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Inter'", letterSpacing: "-0.5px" }}>Uma Musume Training Camp</h2>
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase",
             color: rank.color, background: rank.color + "18", border: "1px solid " + rank.color + "30",
@@ -579,178 +734,240 @@ function UmaClickerView({ clicker, team, onClick, onBuyUpgrade, onReset }) {
           }}>{rank.icon} {rank.label}</span>
         </div>
         <div style={{ fontSize: 12, color: T.textMuted }}>
-          day {daysAlive} · shared team clicker · {fmtNum(clicker.totalCarrots || 0)} total carrots earned
+          day {daysAlive} · {ownedGirls.length} girl{ownedGirls.length !== 1 ? "s" : ""} scouted · {totalLevels} total training levels
         </div>
       </div>
 
-      {/* Main Clicker Area */}
-      <div style={{
-        background: T.bgCard, border: "1px solid " + T.border,
-        borderRadius: T.radiusXl, padding: "32px 24px", marginBottom: 20,
-        display: "flex", flexDirection: "column", alignItems: "center",
-        position: "relative", overflow: "hidden",
-      }}>
-        {/* Animated background shimmer */}
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, " + rank.color + "05 0%, transparent 50%, " + rank.color + "08 100%)", pointerEvents: "none" }} />
+      {/* ── Top Section: Clicker + Owned Girls Parade ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 16, marginBottom: 20 }}>
+        {/* Left: Click area */}
+        <div style={{
+          background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusXl,
+          padding: "24px 20px", display: "flex", flexDirection: "column", alignItems: "center",
+          position: "relative", overflow: "hidden",
+        }}>
+          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 50% 30%, " + rank.color + "08 0%, transparent 70%)", pointerEvents: "none" }} />
 
-        {/* Carrot counter */}
-        <div style={{ fontSize: 42, fontWeight: 800, color: T.text, fontFamily: "'JetBrains Mono'", letterSpacing: "-2px", marginBottom: 4, zIndex: 1 }}>
-          {fmtNum(displayCarrots)} 🥕
-        </div>
-        <div style={{ fontSize: 13, color: T.textMuted, marginBottom: 24, zIndex: 1 }}>
-          {cps > 0 ? fmtNum(cps) + " carrots per second" : "click to start training!"}
-        </div>
+          {/* Carrot count */}
+          <div style={{ fontSize: 32, fontWeight: 800, color: T.text, fontFamily: "'JetBrains Mono'", letterSpacing: "-2px", marginBottom: 2, zIndex: 1 }}>
+            {fmtNum(local.carrots)}
+          </div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4, zIndex: 1 }}>🥕 carrots</div>
+          <div style={{ fontSize: 12, color: cps > 0 ? T.success : T.textMuted, fontFamily: "'JetBrains Mono'", fontWeight: 600, marginBottom: 16, zIndex: 1 }}>
+            {cps > 0 ? fmtNum(cps) + "/sec" : "click to start!"}
+          </div>
 
-        {/* Click button */}
-        <div style={{ position: "relative", marginBottom: 24, zIndex: 1 }}>
-          {clickFx.map(f => (
-            <div key={f.id} style={{
-              position: "absolute", top: -10, left: "50%", transform: "translateX(" + f.x + "px)",
-              fontSize: 18, fontWeight: 800, color: "#fbbf24", pointerEvents: "none",
-              animation: "fadeUp 0.8s ease forwards", zIndex: 10,
-              textShadow: "0 0 12px #fbbf2480",
-            }}>+1</div>
-          ))}
-          <button onClick={handleClick} disabled={!actingAs} style={{
-            ...btnBase, width: 140, height: 140, borderRadius: "50%", fontSize: 52,
-            background: "radial-gradient(circle at 35% 35%, #ff924c 0%, #ff6b2b 50%, #e04800 100%)",
-            border: "4px solid #fbbf2440",
-            boxShadow: "0 8px 32px #ff6b2b50, 0 0 0 6px " + T.bgCard + ", 0 0 0 8px #ff6b2b30",
-            transition: "transform 0.08s, box-shadow 0.08s",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: actingAs ? "pointer" : "not-allowed",
-            userSelect: "none",
-          }}
-          onMouseDown={e => { e.currentTarget.style.transform = "scale(0.93)"; }}
-          onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
-          onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
-          >🥕</button>
-        </div>
+          {/* Click button */}
+          <div style={{ position: "relative", marginBottom: 16, zIndex: 1 }}>
+            {clickFx.map(f => (
+              <div key={f.id} style={{
+                position: "absolute", top: f.y, left: "50%", transform: "translateX(" + f.x + "px)",
+                fontSize: 16, fontWeight: 800, color: "#fbbf24", pointerEvents: "none",
+                animation: "fadeUp 0.7s ease forwards", zIndex: 10,
+                textShadow: "0 0 10px #fbbf2480",
+              }}>+1</div>
+            ))}
+            <button onClick={handleClick} disabled={!actingAs} style={{
+              ...btnBase, width: 110, height: 110, borderRadius: "50%", fontSize: 44,
+              background: "radial-gradient(circle at 35% 35%, #ff924c 0%, #ff6b2b 50%, #e04800 100%)",
+              border: "3px solid #fbbf2440",
+              boxShadow: "0 6px 24px #ff6b2b40, 0 0 0 5px " + T.bgCard + ", 0 0 0 7px #ff6b2b25",
+              transition: "transform 0.06s", display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: actingAs ? "pointer" : "not-allowed", userSelect: "none",
+            }}
+            onMouseDown={e => { e.currentTarget.style.transform = "scale(0.92)"; }}
+            onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+            >🥕</button>
+          </div>
 
-        {/* Rank progress */}
-        {nextRank && (
-          <div style={{ width: "100%", maxWidth: 340, zIndex: 1 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: rank.color, letterSpacing: "0.6px" }}>{rank.icon} {rank.label}</span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: nextRank.color, letterSpacing: "0.6px" }}>{nextRank.icon} {nextRank.label}</span>
+          {/* Rank progress */}
+          {nextRank && (
+            <div style={{ width: "100%", zIndex: 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: rank.color }}>{rank.icon} {rank.label}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: nextRank.color }}>{nextRank.icon} {nextRank.label}</span>
+              </div>
+              <div style={{ height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", width: (rankPct * 100) + "%", borderRadius: 3,
+                  background: "linear-gradient(90deg, " + rank.color + ", " + nextRank.color + ")",
+                  transition: "width 0.3s ease",
+                }} />
+              </div>
+              <div style={{ textAlign: "center", fontSize: 9, color: T.textMuted, marginTop: 3 }}>
+                {fmtNum(Math.max(0, nextRank.min - (local.totalCarrots || 0)))} to next rank
+              </div>
             </div>
-            <div style={{ height: 8, background: T.border, borderRadius: 4, overflow: "hidden" }}>
-              <div style={{
-                height: "100%", width: (rankPct * 100) + "%", borderRadius: 4,
-                background: "linear-gradient(90deg, " + rank.color + ", " + nextRank.color + ")",
-                transition: "width 0.5s ease",
-              }} />
-            </div>
-            <div style={{ textAlign: "center", fontSize: 10, color: T.textMuted, marginTop: 4 }}>
-              {fmtNum(nextRank.min - (clicker.totalCarrots || 0))} carrots to next rank
+          )}
+
+          {/* Who's clicking */}
+          <div style={{ width: "100%", marginTop: 14, zIndex: 1 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 6 }}>You are</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {team.map(m => (
+                <button key={m.id} onClick={() => setActingAs(m.id)} style={{
+                  ...btnBase, padding: "5px 10px", fontSize: 10, display: "flex", alignItems: "center", gap: 5,
+                  background: actingAs === m.id ? m.color + "20" : "transparent",
+                  color: actingAs === m.id ? m.color : T.textMuted,
+                  border: actingAs === m.id ? "1px solid " + m.color + "40" : "1px solid " + T.border,
+                }}>
+                  <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color + "30", color: m.color, fontSize: 7, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>
+                  {m.name}
+                </button>
+              ))}
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Acting as */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 8, fontFamily: "'Inter'" }}>You are</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {team.map(m => (
-            <button key={m.id} onClick={() => setActingAs(m.id)} style={{
-              ...btnBase, padding: "7px 14px", fontSize: 12, display: "flex", alignItems: "center", gap: 7,
-              background: actingAs === m.id ? m.color + "20" : T.bgCard,
-              color: actingAs === m.id ? m.color : T.textSub,
-              border: actingAs === m.id ? "1px solid " + m.color + "50" : "1px solid " + T.border,
-            }}>
-              <div style={{ width: 18, height: 18, borderRadius: "50%", background: m.color + "30", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{m.initials}</div>
-              {m.name}
-            </button>
-          ))}
+        {/* Right: Owned girls showcase */}
+        <div style={{
+          background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusXl, padding: "20px",
+          display: "flex", flexDirection: "column",
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>
+            Your Team — {ownedGirls.length}/{UMA_GIRLS.length} Scouted
+          </div>
+          {ownedGirls.length === 0 ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 36, opacity: 0.3 }}>🏇</div>
+              <div style={{ fontSize: 13, color: T.textMuted }}>Scout your first girl below!</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10, flex: 1, alignContent: "start" }}>
+              {ownedGirls.map(g => {
+                const lvl = local.girls[g.id];
+                const girlCps = (g.cpsEach * lvl).toFixed(1);
+                return (
+                  <div key={g.id} style={{
+                    background: g.accent + "0a", border: "1px solid " + g.accent + "25", borderRadius: T.radiusLg,
+                    padding: "12px 10px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                    transition: "all 0.2s",
+                  }}>
+                    <GirlAvatar girl={g} level={lvl} size={42} />
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: T.text, lineHeight: 1.2 }}>{g.name}</div>
+                      <div style={{ fontSize: 10, color: g.accent, fontFamily: "'JetBrains Mono'", fontWeight: 600 }}>{girlCps}/s</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Upgrades */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 10, fontFamily: "'Inter'" }}>Upgrades</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {Object.entries(clicker.upgrades || {}).map(([key, up]) => {
-            const cost = getUpgradeCost(up.baseCost, up.count);
-            const canBuy = clicker.carrots >= cost;
+      {/* ── Tab Switcher ── */}
+      <div style={{ display: "flex", gap: 3, marginBottom: 16, background: T.bgCard, borderRadius: T.radius, padding: 3, border: "1px solid " + T.border }}>
+        {[["girls", "🏇 Scout & Train"], ["stats", "📊 Stats & Leaderboard"]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{
+            ...btnBase, flex: 1, padding: "9px 14px", fontSize: 12, fontWeight: 600,
+            background: tab === id ? T.accent : "transparent",
+            color: tab === id ? "#fff" : T.textMuted, borderRadius: 6,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* ── Girls Tab: Scout Shop ── */}
+      {tab === "girls" && (
+        <div>
+          {tiers.map(tier => {
+            const tierGirls = UMA_GIRLS.filter(g => g.tier === tier);
+            const anyOwned = tierGirls.some(g => (local.girls[g.id] || 0) > 0);
+            const anyAffordable = tierGirls.some(g => local.carrots >= getGirlCost(g.baseCost, local.girls[g.id] || 0));
             return (
-              <div key={key} style={{
-                display: "flex", alignItems: "center", gap: 14, padding: "14px 18px",
-                background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg,
-                opacity: canBuy ? 1 : 0.5, transition: "opacity 0.2s, border-color 0.2s",
-                borderColor: canBuy ? T.accent + "40" : T.border,
-              }}>
-                <div style={{ fontSize: 28, flexShrink: 0, width: 40, textAlign: "center" }}>{up.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{up.label}</span>
-                    {up.count > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: T.accent, fontFamily: "'JetBrains Mono'", background: T.accentBg, padding: "1px 7px", borderRadius: 10 }}>x{up.count}</span>}
-                  </div>
-                  <div style={{ fontSize: 11, color: T.textMuted }}>{up.desc}</div>
+              <div key={tier} style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: TIER_COLORS[tier], letterSpacing: "0.5px" }}>
+                    {"★".repeat(tier)} {TIER_LABELS[tier]}
+                  </span>
+                  <div style={{ flex: 1, height: 1, background: TIER_COLORS[tier] + "30" }} />
                 </div>
-                <button onClick={() => canBuy && onBuyUpgrade(key)} disabled={!canBuy} style={{
-                  ...btnBase, padding: "10px 18px", fontSize: 13, fontWeight: 700,
-                  background: canBuy ? T.accent : T.bgElevated,
-                  color: canBuy ? "#fff" : T.textMuted,
-                  border: "none",
-                  cursor: canBuy ? "pointer" : "not-allowed",
-                  whiteSpace: "nowrap",
-                  boxShadow: canBuy ? "0 4px 12px " + T.accent + "40" : "none",
-                }}>
-                  🥕 {fmtNum(cost)}
-                </button>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
+                  {tierGirls.map(g => (
+                    <GirlShopCard key={g.id} girl={g} level={local.girls[g.id] || 0} carrots={local.carrots} onBuy={handleBuy} />
+                  ))}
+                </div>
               </div>
             );
           })}
         </div>
-      </div>
+      )}
 
-      {/* Leaderboard + Stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-        {/* Click Leaderboard */}
-        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px 18px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 12, fontFamily: "'Inter'" }}>Click Leaderboard</div>
-          {leaders.length === 0
-            ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No clicks yet — get tapping!</div>
-            : leaders.map((l, i) => {
-              const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
-              const m = team.find(t => t.name === l.name);
-              return (
-                <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: i < leaders.length - 1 ? "1px solid " + T.border : "none" }}>
-                  <span style={{ fontSize: 14, width: 24, textAlign: "center" }}>{medal}</span>
-                  {m && <div style={{ width: 22, height: 22, borderRadius: "50%", background: m.color + "20", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + m.color + "40", flexShrink: 0 }}>{m.initials}</div>}
-                  <span style={{ flex: 1, fontSize: 13, color: T.text, fontWeight: i === 0 ? 700 : 400 }}>{l.name}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: T.accent, fontFamily: "'JetBrains Mono'" }}>{fmtNum(l.clicks)}</span>
-                </div>
-              );
-            })
-          }
+      {/* ── Stats Tab ── */}
+      {tab === "stats" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {/* Click Leaderboard */}
+          <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>Click Leaderboard</div>
+            {leaders.length === 0
+              ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No clicks yet</div>
+              : leaders.map((l, i) => {
+                const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
+                const m = team.find(t => t.name === l.name);
+                return (
+                  <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < leaders.length - 1 ? "1px solid " + T.border : "none" }}>
+                    <span style={{ fontSize: 14, width: 24, textAlign: "center" }}>{medal}</span>
+                    {m && <div style={{ width: 22, height: 22, borderRadius: "50%", background: m.color + "20", color: m.color, fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + m.color + "40", flexShrink: 0 }}>{m.initials}</div>}
+                    <span style={{ flex: 1, fontSize: 13, color: T.text, fontWeight: i === 0 ? 700 : 400 }}>{l.name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: T.accent, fontFamily: "'JetBrains Mono'" }}>{fmtNum(l.clicks)}</span>
+                  </div>
+                );
+              })
+            }
+          </div>
+
+          {/* Stats panel */}
+          <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>Camp Stats</div>
+            {[
+              { label: "Carrots/sec",      val: cps > 0 ? cps.toFixed(1) : "0",     color: T.success },
+              { label: "Total Earned",      val: fmtNum(local.totalCarrots || 0),    color: "#fbbf24" },
+              { label: "Total Clicks",      val: fmtNum(leaders.reduce((s, l) => s + l.clicks, 0)), color: T.accent },
+              { label: "Girls Scouted",     val: ownedGirls.length + "/" + UMA_GIRLS.length, color: "#ff69b4" },
+              { label: "Total Train Lvls",  val: totalLevels,                          color: "#b87fff" },
+              { label: "Current Rank",      val: rank.label,                          color: rank.color },
+              { label: "Camp Age",          val: daysAlive + " day" + (daysAlive !== 1 ? "s" : ""), color: T.textSub },
+            ].map((s, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: i < 6 ? "1px solid " + T.border : "none" }}>
+                <span style={{ fontSize: 12, color: T.textMuted }}>{s.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: s.color, fontFamily: "'JetBrains Mono'" }}>{s.val}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* CPS Breakdown */}
+          <div style={{ gridColumn: "1 / -1", background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "18px 20px" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>CPS Breakdown by Girl</div>
+            {ownedGirls.length === 0
+              ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Scout girls to see production stats</div>
+              : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {ownedGirls.sort((a, b) => (b.cpsEach * (local.girls[b.id] || 0)) - (a.cpsEach * (local.girls[a.id] || 0))).map(g => {
+                  const lvl = local.girls[g.id] || 0;
+                  const girlCps = g.cpsEach * lvl;
+                  const pct = cps > 0 ? (girlCps / cps) * 100 : 0;
+                  return (
+                    <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <GirlAvatar girl={g} level={lvl} size={28} />
+                      <span style={{ fontSize: 12, color: T.text, fontWeight: 500, minWidth: 120 }}>{g.name}</span>
+                      <div style={{ flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: pct + "%", background: g.accent, borderRadius: 3, transition: "width 0.4s ease" }} />
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: g.accent, fontFamily: "'JetBrains Mono'", minWidth: 50, textAlign: "right" }}>{girlCps.toFixed(1)}/s</span>
+                      <span style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono'", minWidth: 35, textAlign: "right" }}>{Math.round(pct)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            }
+          </div>
         </div>
+      )}
 
-        {/* Stats */}
-        <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "16px 18px" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 12, fontFamily: "'Inter'" }}>Training Stats</div>
-          {[
-            { label: "Carrots/sec", val: cps > 0 ? cps.toFixed(1) : "0", color: T.success },
-            { label: "Total Earned", val: fmtNum(clicker.totalCarrots || 0), color: "#fbbf24" },
-            { label: "Total Clicks", val: fmtNum(leaders.reduce((s, l) => s + l.clicks, 0)), color: T.accent },
-            { label: "Upgrades Owned", val: Object.values(clicker.upgrades || {}).reduce((s, u) => s + u.count, 0), color: "#b87fff" },
-            { label: "Current Rank", val: rank.label, color: rank.color },
-            { label: "Camp Age", val: daysAlive + "d", color: T.textSub },
-          ].map((s, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < 5 ? "1px solid " + T.border : "none" }}>
-              <span style={{ fontSize: 12, color: T.textMuted }}>{s.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: s.color, fontFamily: "'JetBrains Mono'" }}>{s.val}</span>
-            </div>
-          ))}
-        </div>
+      {/* Footer hint */}
+      <div style={{ marginTop: 16, fontSize: 11, color: T.textMuted, textAlign: "center", fontStyle: "italic" }}>
+        carrots accumulate from trained girls · syncs to team every 3 sec · even works offline
       </div>
-
-      {/* Hint */}
-      <div style={{ fontSize: 11, color: T.textMuted, textAlign: "center", fontStyle: "italic" }}>
-        carrots auto-accumulate from upgrades · synced across your whole team in real time
-      </div>
-
     </div>
   );
 }
@@ -1047,37 +1264,11 @@ function App() {
     reader.readAsText(file); e.target.value = "";
   }, [notify]);
 
-  // ── Clicker helpers ──
-  const clickCarrot = useCallback((memberName) => {
-    if (!data?.clicker) return;
-    const updated = accumulateOffline(data.clicker);
-    const newClickerBy = { ...updated.clickerBy };
-    newClickerBy[memberName] = (newClickerBy[memberName] || 0) + 1;
-    setData(p => ({ ...p, clicker: {
-      ...updated,
-      carrots: updated.carrots + 1,
-      totalCarrots: updated.totalCarrots + 1,
-      clickerBy: newClickerBy,
-      lastTick: nowESTiso(),
-    }}));
+  // ── Clicker sync: the UmaClickerView manages local state, this just writes to Firebase periodically ──
+  const syncClicker = useCallback((localClicker) => {
+    if (!data) return;
+    setData(p => ({ ...p, clicker: { ...localClicker, lastTick: nowESTiso() } }));
   }, [data]);
-
-  const buyUpgrade = useCallback((upgradeKey) => {
-    if (!data?.clicker) return;
-    const updated = accumulateOffline(data.clicker);
-    const up = updated.upgrades[upgradeKey];
-    if (!up) return;
-    const cost = getUpgradeCost(up.baseCost, up.count);
-    if (updated.carrots < cost) return;
-    const newUpgrades = { ...updated.upgrades, [upgradeKey]: { ...up, count: up.count + 1 } };
-    setData(p => ({ ...p, clicker: {
-      ...updated,
-      carrots: updated.carrots - cost,
-      upgrades: newUpgrades,
-      lastTick: nowESTiso(),
-    }}));
-    notify("Bought " + up.label + "! 🥕");
-  }, [data, notify]);
 
   const NAV = [
     { id: "dashboard", label: "Dashboard", icon: "▦" },
@@ -1210,7 +1401,7 @@ function App() {
         {/* View Content */}
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
           {view === "tomo"
-            ? <UmaClickerView clicker={accumulateOffline(data.clicker)} team={team} onClick={clickCarrot} onBuyUpgrade={buyUpgrade} />
+            ? <UmaClickerView clicker={data.clicker} team={team} onSync={syncClicker} />
             : !sprint
             ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
             : view === "dashboard"
