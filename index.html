@@ -986,15 +986,22 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
     if (!player) return;
     const src = pdOverride || pd;
     if (!src) return;
-    const best = [...src.veterans].sort((a, b) => b.total - a.total)[0];
-    // Guard: never write undefined into Firestore
-    const entry = best
-      ? { rating: best.total || 0, grade: best.grade || "D", girl: best.girlName || "?", runs: src.veterans.length || 0 }
-      : { rating: 0, grade: "D", girl: "—", runs: 0 };
+    // Only count successful (non-failed) completed runs
+    const goodRuns = src.veterans.filter(v => !v.failed);
+    if (goodRuns.length === 0) return; // nothing meaningful to publish yet
+    const best = goodRuns.sort((a, b) => b.total - a.total)[0];
+    const entry = {
+      rating: best.total || 0,
+      grade:  best.grade  || "D",
+      girl:   best.girlName || "?",
+      runs:   goodRuns.length,
+    };
+    // Merge, stripping any stale undefined/zero entries
     const lb = {};
-    // Merge existing leaderboard, stripping any undefined values
     Object.entries(umaData?.leaderboard || {}).forEach(([k, v]) => {
-      if (v && typeof v === "object") lb[k] = { rating: v.rating || 0, grade: v.grade || "D", girl: v.girl || "—", runs: v.runs || 0 };
+      if (v && typeof v === "object" && (v.runs || 0) > 0) {
+        lb[k] = { rating: v.rating || 0, grade: v.grade || "D", girl: v.girl || "?", runs: v.runs || 0 };
+      }
     });
     lb[player.name] = entry;
     onSyncLeaderboard({ leaderboard: lb });
@@ -1192,20 +1199,27 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
         {/* Leaderboard */}
         <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: T.radiusLg, padding: "20px 24px" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, letterSpacing: "0.8px", textTransform: "uppercase", marginBottom: 14 }}>🏆 Trainer Leaderboard</div>
-          {Object.keys(lb).length === 0 ? <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No completed runs yet</div>
-           : Object.entries(lb).sort((a,b) => b[1].rating - a[1].rating).map(([name, e], i) => {
-            const m = team.find(t => t.name === name); const g = getGrade(e.rating);
-            return (
-              <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid " + T.border }}>
-                <span style={{ fontSize: 14, width: 28, textAlign: "center" }}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":" "+(i+1)}</span>
-                {m && <div style={{ width: 24, height: 24, borderRadius: "50%", background: m.color+"20", color: m.color, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid "+m.color+"50", flexShrink: 0 }}>{m.initials}</div>}
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: T.text }}>{name}</span>
-                <span style={{ fontSize: 11, color: T.textMuted }}>{e.girl}</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: g.color, fontFamily: "'JetBrains Mono'" }}>{e.grade}</span>
-                <span style={{ fontSize: 11, color: T.textMuted, fontFamily: "'JetBrains Mono'" }}>{e.rating}pt</span>
-              </div>
-            );
-          })}
+          {(() => {
+            const validEntries = Object.entries(lb).filter(([, e]) => e && (e.runs || 0) > 0);
+            if (validEntries.length === 0) return <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>No completed runs yet — finish a career to appear here!</div>;
+            return validEntries.sort((a,b) => b[1].rating - a[1].rating).map(([name, e], i) => {
+              const m = team.find(t => t.name === name); const g = getGrade(e.rating);
+              return (
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid " + T.border }}>
+                  <span style={{ fontSize: 14, width: 28, textAlign: "center", flexShrink: 0 }}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":"#"+(i+1)}</span>
+                  {m && <div style={{ width: 26, height: 26, borderRadius: "50%", background: m.color+"20", color: m.color, fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid "+m.color+"50", flexShrink: 0 }}>{m.initials}</div>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{name}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted }}>Best: {e.girl} · {e.runs} run{e.runs !== 1 ? "s" : ""}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: g.color, fontFamily: "'JetBrains Mono'", lineHeight: 1 }}>{e.grade}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted, fontFamily: "'JetBrains Mono'" }}>{e.rating}pt</div>
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
     );
@@ -1218,7 +1232,7 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
       <div style={{ maxWidth: 800, margin: "0 auto", animation: "fadeUp 0.3s ease" }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          <button onClick={() => { savePD(player.name, pd); pushLB(); setPlayer(null); }} style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, padding: "6px 12px", fontSize: 12 }}>← Back</button>
+          <button onClick={() => { savePD(player.name, pd); setPlayer(null); }} style={{ ...btnBase, background: T.bgElevated, color: T.textMuted, padding: "6px 12px", fontSize: 12 }}>← Back</button>
           <div style={{ width: 30, height: 30, borderRadius: "50%", background: player.color+"20", border: "2px solid "+player.color, color: player.color, fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{player.initials}</div>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: T.text }}>{player.name}'s Stable</div>
