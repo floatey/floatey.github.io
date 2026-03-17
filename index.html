@@ -1227,7 +1227,21 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
       setState(s => ({...s,currency:{...s.currency,yen:Math.max(0,s.currency.yen-penalty)}}));
       addLog("- ¥"+penalty+" (wrong parts replaced for nothing)");
     }
-    if (correct) { const eb=vehicle.parts["electrical_bundle"]; if(eb&&(eb.condition||0)<0.70){const nc=Math.min(0.90,(eb.condition||0.1)+0.25);updatePart("electrical_bundle",{condition:parseFloat(nc.toFixed(2))});addLog("✓ Electrical → "+Math.round(nc*100)+"%");} }
+    if (correct && activeDiag?.targetId) {
+      const tgt=activeDiag.targetId;
+      const tgtInst=vehicle.parts[tgt];
+      if(tgtInst&&(tgtInst.condition||0)<0.90){
+        const nc=Math.min(0.90,(tgtInst.condition||0.1)+0.28);
+        updatePart(tgt,{condition:parseFloat(nc.toFixed(2)),repairProgress:1});
+        const tgtName=allParts.find(p=>p.id===tgt)?.name||tgt;
+        addLog("✓ "+tgtName+" diagnosed — "+Math.round(nc*100)+"%");
+        awardXp("diagnosis",Math.round(30+20));
+        setState(s=>({...s,stats:{...s.stats,totalRepairs:(s.stats?.totalRepairs||0)+1}}));
+        const yenR=Math.round(30+Math.random()*40);
+        setState(s=>({...s,currency:{...s.currency,yen:s.currency.yen+yenR}}));
+        addLog("+ ¥"+yenR);
+      }
+    }
     setActiveDiag(null);
   };
 
@@ -1251,7 +1265,15 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
   const handleBundleRepair = (sys) => {
     const bid=sys.id+"_bundle",inst=vehicle.parts[bid]; if(inst&&(inst.condition||0)>=0.70) return;
     if(sys.repairType==="bodywork"){setActiveMech(bid);return;}
-    if(sys.repairType==="diagnosis"&&partTree.diagnosticScenarios?.length){setActiveDiag(partTree.diagnosticScenarios[Math.floor(Math.random()*partTree.diagnosticScenarios.length)]);return;}
+    if(sys.repairType==="diagnosis"&&partTree.diagnosticScenarios?.length){
+      // Filter to scenarios tagged for this system; fall back to all if none tagged
+      const sysPool=partTree.diagnosticScenarios.filter(s=>s.systemId===sys.id);
+      const pool=sysPool.length>0?sysPool:partTree.diagnosticScenarios.filter(s=>!s.systemId);
+      if(!pool.length) return;
+      const scenario=pool[Math.floor(Math.random()*pool.length)];
+      setActiveDiag({scenario,targetId:bid});
+      return;
+    }
     const bd=allParts.find(p => p.id===bid); if(!bd||state.currency.yen<bd.replaceCost) return; GE.Audio.uiClick();
     setState(s => ({...s,currency:{...s.currency,yen:s.currency.yen-bd.replaceCost}}));
     updatePart(bid,{condition:0.80+Math.random()*0.15,repairProgress:1}); addLog("✓ "+bd.name+" restored — ¥"+bd.replaceCost); awardXp(bd.repairType||"wrench",20);
@@ -1323,7 +1345,20 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
       />
     </div>
   );
-  if (activeDiag) return (<div style={{fontFamily:"'Barlow Condensed',sans-serif"}}><div style={{padding:"12px 16px",borderBottom:"1px solid #1a1f35",display:"flex",alignItems:"center",gap:12}}><button className="game-btn" onClick={() => setActiveDiag(null)} style={{padding:"6px 12px",background:"#1a1f35",color:"#9ca3af",fontSize:12}}>← Back</button><span style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>Diagnosis</span></div><DiagnosisMechanic scenario={activeDiag} tools={state.tools} diagLevel={state.skills?.diagnosis?.level||1} allPartsRef={allParts} onComplete={handleDiagComplete} onLog={addLog} /></div>);
+  if (activeDiag) return (
+    <div style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #1a1f35",display:"flex",alignItems:"center",gap:12}}>
+        <button className="game-btn" onClick={() => setActiveDiag(null)} style={{padding:"6px 12px",background:"#1a1f35",color:"#9ca3af",fontSize:12}}>← Back</button>
+        <span style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>🔍 Diagnosis</span>
+        {activeDiag.targetId && (
+          <span className="game-mono" style={{fontSize:10,color:"#4e9fff",marginLeft:"auto"}}>
+            {allParts.find(p=>p.id===activeDiag.targetId)?.name || activeDiag.targetId.replace("_bundle","").toUpperCase()}
+          </span>
+        )}
+      </div>
+      <DiagnosisMechanic scenario={activeDiag.scenario} tools={state.tools} diagLevel={state.skills?.diagnosis?.level||1} allPartsRef={allParts} onComplete={handleDiagComplete} onLog={addLog} />
+    </div>
+  );
   if (activeMech) { const pd=allParts.find(p => p.id===activeMech); if(pd) { const mt=pd.repairType||"wrench",sl=state.skills?.[mt]?.level||1; return (<div style={{fontFamily:"'Barlow Condensed',sans-serif"}}><div style={{padding:"12px 16px",borderBottom:"1px solid #1a1f35",display:"flex",alignItems:"center",gap:12}}><button className="game-btn" onClick={() => setActiveMech(null)} style={{padding:"6px 12px",background:"#1a1f35",color:"#9ca3af",fontSize:12}}>← Back</button><span style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{pd.name}</span><span className="game-mono" style={{fontSize:10,color:"#6b7280",marginLeft:"auto"}}>{mt.toUpperCase()}</span></div>
       {mt==="precision"?<PrecisionMechanic part={pd} difficulty={pd.difficulty} skillLevel={sl} tools={state.tools} onComplete={r => handleRepairComplete(pd,r)} onLog={addLog} />
        :mt==="bodywork"?<BodyworkMechanic part={pd} difficulty={pd.difficulty} skillLevel={sl} tools={state.tools} gridSize={pd.gridSize} onComplete={q => handleRepairComplete(pd,q)} onLog={addLog} />
@@ -1434,7 +1469,17 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
                     </div>
                   );})()}
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",width:"100%"}}>
-                  <button className="game-btn" onClick={() => {GE.Audio.uiClick();setActiveMech(selectedPart);}} style={{padding:"12px 24px",background:"#4e7fff15",color:"#4e7fff",fontSize:14,fontWeight:700,border:"1px solid #4e7fff40",flex:1}}>{ti} Start {pd.repairType==="precision"?"Precision":pd.repairType==="bodywork"?"Bodywork":"Repair"}</button>
+                  <button className="game-btn" onClick={() => {
+                    GE.Audio.uiClick();
+                    if (pd.repairType==="diagnosis") {
+                      // Find scenario where correctDiagnosis === this part id
+                      const allScen=[...(partTree.diagnosticScenarios||[]),...Object.values(GD.SEQUENCE_SCENARIOS||{})];
+                      const scen=allScen.find(s=>s.correctDiagnosis===pd.id);
+                      if (scen) { setActiveDiag({scenario:scen,targetId:pd.id}); return; }
+                      // No scenario: fall through to wrench (generic inspection)
+                    }
+                    setActiveMech(selectedPart);
+                  }} style={{padding:"12px 24px",background:pd.repairType==="diagnosis"?"#4e9fff15":"#4e7fff15",color:pd.repairType==="diagnosis"?"#4e9fff":"#4e7fff",fontSize:14,fontWeight:700,border:"1px solid "+(pd.repairType==="diagnosis"?"#4e9fff40":"#4e7fff40"),flex:1}}>{pd.repairType==="diagnosis"?"🔍 Diagnose":ti+" Start "+(pd.repairType==="precision"?"Precision":pd.repairType==="bodywork"?"Bodywork":"Repair")}</button>
                   {isD&&<><button className="game-btn" onClick={() => handleReplacePart(pd)} disabled={state.currency.yen<pd.replaceCost} style={{padding:"12px 16px",background:"#f59e0b15",color:"#f59e0b",fontSize:12,border:"1px solid #f59e0b40"}}>Replace ¥{pd.replaceCost}</button>{donorCount>0&&<button className="game-btn" onClick={() => handleUseDonor(pd)} style={{padding:"12px 16px",background:"#22c55e15",color:"#22c55e",fontSize:12,border:"1px solid #22c55e40"}}>Donor ×{donorCount}</button>}</>}
                 </div></div>)}
               <div style={{marginTop:14,padding:"8px 12px",background:"#0a0d14",borderRadius:6,borderLeft:"2px solid #1a1f35"}}><div style={{fontSize:11,color:"#6b728080",fontStyle:"italic"}}>"{(pd.flavorText||[""])[Math.floor(Math.random()*(pd.flavorText||[""]).length)]}"</div></div>
