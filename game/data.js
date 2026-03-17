@@ -262,6 +262,124 @@ GD.PART_TREES.ae86 = {
   ],
 };
 
+// ══════════════════════════════════════════════════════════════
+//  MULTI-MECHANIC SEQUENCES (spec §5 — Multi-Mechanic Sequences)
+//  Each sequence chains multiple mechanics together.
+//  Steps: mechanic (wrench|precision|diagnosis|bodywork),
+//         partId (references part in the tree), action (remove|repair|install|assemble),
+//         scenarioId (for diagnosis steps)
+// ══════════════════════════════════════════════════════════════
+GD.SEQUENCES = {};
+
+// AE86 Timing Belt + Tensioner job
+// 1. Wrench off timing cover and belt
+// 2. Diagnosis: inspect tensioner — rebuildable or not?
+// 3. Precision: torque new belt tensioner bolts (star pattern)
+// 4. Wrench: reinstall belt and cover
+GD.SEQUENCES.ae86_timing_belt_job = {
+  id: "ae86_timing_belt_job",
+  name: "Timing Belt & Tensioner",
+  vehicleId: "ae86",
+  triggerPartId: "ae86_timing_belt",
+  steps: [
+    {
+      mechanic: "wrench",
+      partId: "ae86_timing_belt",
+      action: "remove",
+      label: "Step 1/4 — Remove timing belt",
+      flavorIntro: "Pull the upper cover first. Three 10mm bolts hiding behind the alternator.",
+    },
+    {
+      mechanic: "diagnosis",
+      scenarioId: "ae86_diag_timing_tensioner",
+      label: "Step 2/4 — Inspect tensioner",
+      flavorIntro: "With the belt off, spin the tensioner pulley by hand. Feel that gravel?",
+    },
+    {
+      mechanic: "precision",
+      partId: "ae86_timing_tensioner",
+      action: "assemble",
+      label: "Step 3/4 — Torque tensioner bolts",
+      flavorIntro: "18 ft-lbs, then back off a quarter turn. Don't skip this.",
+    },
+    {
+      mechanic: "wrench",
+      partId: "ae86_timing_belt",
+      action: "install",
+      label: "Step 4/4 — Install new belt",
+      flavorIntro: "Route the belt. Verify timing marks before tensioning. This is the one you don't get wrong.",
+    },
+  ],
+};
+
+// AE86 Head Gasket R&R — the big job
+// 1. Wrench: pull intake manifold
+// 2. Precision: remove head bolts in sequence (reverse star)
+// 3. Diagnosis: inspect head surface for warping
+// 4. Precision: torque new head gasket bolts (3-stage star pattern)
+GD.SEQUENCES.ae86_head_gasket_job = {
+  id: "ae86_head_gasket_job",
+  name: "Head Gasket R&R",
+  vehicleId: "ae86",
+  triggerPartId: "ae86_head_gasket",
+  steps: [
+    {
+      mechanic: "wrench",
+      partId: "ae86_intake_manifold_gasket",
+      action: "remove",
+      label: "Step 1/4 — Remove intake manifold",
+      flavorIntro: "Drain the coolant first. Then vacuum lines, fuel, all that spaghetti.",
+    },
+    {
+      mechanic: "precision",
+      partId: "ae86_head_gasket",
+      action: "remove",
+      label: "Step 2/4 — Remove head bolts (reverse star)",
+      flavorIntro: "Loosen in the reverse torque sequence. Even if they're tight — especially if they're tight.",
+    },
+    {
+      mechanic: "diagnosis",
+      scenarioId: "ae86_diag_head_surface_check",
+      label: "Step 3/4 — Inspect head surface",
+      flavorIntro: "Straightedge and feeler gauge. How bad is it?",
+    },
+    {
+      mechanic: "precision",
+      partId: "ae86_head_gasket",
+      action: "assemble",
+      label: "Step 4/4 — Torque new head gasket (3-stage)",
+      flavorIntro: "MLS gasket. Three stages: 22 ft-lbs, 36 ft-lbs, final 90° angle turn. Star pattern every stage.",
+    },
+  ],
+};
+
+// Add inline diagnostic scenarios used only in sequences
+// (in addition to the ones in the part tree)
+GD.SEQUENCE_SCENARIOS = {
+  ae86_diag_timing_tensioner: {
+    id: "ae86_diag_timing_tensioner",
+    symptom: "Tensioner pulley doesn't spin freely — grinding resistance when turned by hand.",
+    clues: {
+      free: ["Bearing feels notchy. Definitely not smooth.", "Original OEM part. 40 years old."],
+      multimeter: "Not applicable — mechanical bearing check only.",
+    },
+    correctDiagnosis: "ae86_timing_tensioner",
+    wrongOptions: ["ae86_timing_belt", "ae86_water_pump", "ae86_alt_belt"],
+    multiLayer: null,
+  },
+  ae86_diag_head_surface_check: {
+    id: "ae86_diag_head_surface_check",
+    symptom: "Cylinder head removed. Need to assess whether the mating surface requires machine work.",
+    clues: {
+      free: ["Visible discoloration near cylinder #3 border.", "Previous owner's repair history: unknown."],
+      compressionTester: "Compression before teardown: #1: 142psi, #2: 148psi, #3: 140psi, #4: 147psi. #3 slightly low.",
+    },
+    correctDiagnosis: "ae86_head_surface",
+    wrongOptions: ["ae86_head_gasket", "ae86_spark_plugs", "ae86_valve_cover_gasket"],
+    multiLayer: null,
+  },
+};
+
 // Export to window
 window.GD = GD;
 })();

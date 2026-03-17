@@ -828,6 +828,165 @@ function BodyworkMechanic({ part, difficulty, skillLevel, tools, gridSize, onCom
   );
 }
 
+// ── SEQUENCE MECHANIC (spec §5 Multi-Mechanic Sequences) ──
+// Chains wrench → diagnosis → precision → wrench (or any order) for complex jobs.
+// Each step renders the appropriate single mechanic; onStepComplete advances the chain.
+function SequenceMechanic({ sequence, allParts, diagnosticScenarios, partTree, state, onComplete, onLog }) {
+  const [stepIdx, setStepIdx] = useState(0);
+  const [stepResults, setStepResults] = useState([]); // accumulates per-step results
+  const [transitioning, setTransitioning] = useState(false);
+  const step = sequence.steps[stepIdx];
+  const totalSteps = sequence.steps.length;
+
+  // Merge part-tree diagnostics with any sequence-specific scenarios
+  const allScenarios = { ...(GD.SEQUENCE_SCENARIOS || {}) };
+  (diagnosticScenarios || []).forEach(s => { allScenarios[s.id] = s; });
+
+  const advanceStep = (result) => {
+    const newResults = [...stepResults, { step: stepIdx, mechanic: step.mechanic, result }];
+    setStepResults(newResults);
+    GE.Audio.sequenceStep();
+    if (stepIdx + 1 >= totalSteps) {
+      // All steps done
+      onLog("🏁 Sequence complete: " + sequence.name);
+      GE.Audio.complete();
+      setTimeout(() => onComplete(newResults), 600);
+    } else {
+      setTransitioning(true);
+      setTimeout(() => { setStepIdx(i => i + 1); setTransitioning(false); }, 700);
+    }
+  };
+
+  // Step transition overlay
+  if (transitioning) {
+    const nextStep = sequence.steps[stepIdx + 1];
+    return (
+      <div style={{ padding: "48px 24px", textAlign: "center", fontFamily: "'Barlow Condensed', sans-serif", animation: "fadeIn 0.3s" }}>
+        <div className="game-mono" style={{ fontSize: 11, color: "#22c55e", letterSpacing: "1.5px", marginBottom: 8 }}>STEP {stepIdx + 1} COMPLETE</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: "#e2e8f0", marginBottom: 6 }}>✓</div>
+        <div style={{ fontSize: 13, color: "#6b7280", marginTop: 16 }}>Next: {nextStep?.label || "Final step"}</div>
+      </div>
+    );
+  }
+
+  const pd = step.partId ? allParts.find(p => p.id === step.partId) : null;
+  const scenario = step.scenarioId ? allScenarios[step.scenarioId] : null;
+  const mechType = step.mechanic;
+  const skillLevel = state.skills?.[mechType]?.level || 1;
+
+  // Fallback part object for steps without a matching partId
+  const safePart = pd || {
+    id: step.partId || "unknown",
+    name: step.label || "Component",
+    repairType: mechType,
+    difficulty: 0.4,
+    canRepair: true,
+    replaceCost: 0,
+    flavorText: [step.flavorIntro || "Working..."],
+    hiddenReveal: null,
+  };
+
+  return (
+    <div style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+      {/* Sequence header */}
+      <div style={{ padding: "10px 16px", background: "#0a0d16", borderBottom: "1px solid #1a1f35" }}>
+        <div style={{ fontSize: 11, color: "#6b7280", fontFamily: "'Share Tech Mono', monospace", letterSpacing: "1px", marginBottom: 3 }}>
+          SEQUENCE: {sequence.name.toUpperCase()}
+        </div>
+        {/* Step progress dots */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {sequence.steps.map((s, i) => {
+            const done = i < stepIdx;
+            const active = i === stepIdx;
+            const mechIco = { wrench: "🔧", precision: "🎯", diagnosis: "🔍", bodywork: "🎨" }[s.mechanic] || "🔧";
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center",
+                  background: done ? "#22c55e20" : active ? "#4e7fff20" : "#1a1f35",
+                  border: done ? "1px solid #22c55e50" : active ? "2px solid #4e7fff" : "1px solid #2a2f45",
+                  fontSize: 13, transition: "all 0.2s",
+                }}>
+                  {done ? <span style={{ fontSize: 11, color: "#22c55e" }}>✓</span> : <span style={{ opacity: active ? 1 : 0.35 }}>{mechIco}</span>}
+                </div>
+                {i < sequence.steps.length - 1 && (
+                  <div style={{ width: 18, height: 2, background: done ? "#22c55e40" : "#1a1f35", borderRadius: 1, transition: "background 0.3s" }} />
+                )}
+              </div>
+            );
+          })}
+          <div className="game-mono" style={{ fontSize: 10, color: "#6b7280", marginLeft: 6 }}>
+            {stepIdx + 1}/{totalSteps}
+          </div>
+        </div>
+      </div>
+
+      {/* Step flavor intro */}
+      {step.flavorIntro && (
+        <div style={{ margin: "10px 16px 0", padding: "7px 10px", background: "#0a0d14", borderRadius: 6, borderLeft: "2px solid #4e7fff40" }}>
+          <div style={{ fontSize: 11, color: "#6b728090", fontStyle: "italic" }}>"{step.flavorIntro}"</div>
+        </div>
+      )}
+
+      {/* Step label */}
+      <div style={{ padding: "8px 16px 0" }}>
+        <div className="game-condensed" style={{ fontSize: 12, color: "#4e7fff", fontWeight: 700, letterSpacing: "0.5px" }}>
+          {step.label}
+        </div>
+      </div>
+
+      {/* Render the correct mechanic for this step */}
+      {mechType === "wrench" && (
+        <WrenchMechanic
+          part={safePart}
+          difficulty={safePart.difficulty}
+          skillLevel={skillLevel}
+          tools={state.tools}
+          onComplete={() => { onLog("✓ " + step.label); advanceStep(null); }}
+          onLog={onLog}
+        />
+      )}
+      {mechType === "precision" && (
+        <PrecisionMechanic
+          part={safePart}
+          difficulty={safePart.difficulty}
+          skillLevel={skillLevel}
+          tools={state.tools}
+          onComplete={(r) => { onLog("✓ " + step.label); advanceStep(r); }}
+          onLog={onLog}
+        />
+      )}
+      {mechType === "bodywork" && (
+        <BodyworkMechanic
+          part={safePart}
+          difficulty={safePart.difficulty}
+          skillLevel={skillLevel}
+          tools={state.tools}
+          gridSize={safePart.gridSize}
+          onComplete={(q) => { onLog("✓ " + step.label); advanceStep(q); }}
+          onLog={onLog}
+        />
+      )}
+      {mechType === "diagnosis" && scenario && (
+        <DiagnosisMechanic
+          scenario={scenario}
+          tools={state.tools}
+          diagLevel={state.skills?.diagnosis?.level || 1}
+          allPartsRef={allParts}
+          onComplete={(correct, wrongs) => { onLog("✓ " + step.label); advanceStep({ correct, wrongs }); }}
+          onLog={onLog}
+        />
+      )}
+      {mechType === "diagnosis" && !scenario && (
+        <div style={{ padding: "32px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 13, color: "#ff4d6d" }}>⚠ Diagnostic scenario not found: {step.scenarioId}</div>
+          <button className="game-btn" onClick={() => advanceStep(null)} style={{ marginTop: 16, padding: "8px 20px", background: "#1a1f35", color: "#9ca3af", fontSize: 12 }}>Skip Step</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── GACHA (spec §3) ──
 function GachaView({ state, setState, onBack, addLog }) {
   const [phase, setPhase] = useState("menu"); const [pullResult, setPullResult] = useState(null);
@@ -991,6 +1150,7 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
   const [selectedPart, setSelectedPart] = useState(null);
   const [activeMech, setActiveMech] = useState(null);
   const [activeDiag, setActiveDiag] = useState(null);
+  const [activeSequence, setActiveSequence] = useState(null); // { sequence, triggerPartDef }
   const [repairLog, setRepairLog] = useState(state.repairLog?.slice(0,30) || []);
   const [showFirstStart, setShowFirstStart] = useState(false);
   const [showSellModal, setShowSellModal] = useState(false);
@@ -1097,6 +1257,38 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
     updatePart(bid,{condition:0.80+Math.random()*0.15,repairProgress:1}); addLog("✓ "+bd.name+" restored — ¥"+bd.replaceCost); awardXp(bd.repairType||"wrench",20);
   };
 
+  // ── SEQUENCE: find a sequence whose triggerPartId matches this part ──
+  const getSequenceForPart = (partId) => {
+    if (!GD.SEQUENCES) return null;
+    return Object.values(GD.SEQUENCES).find(seq => seq.vehicleId === partTree.modelId && seq.triggerPartId === partId) || null;
+  };
+
+  const handleSequenceComplete = (results) => {
+    // Award XP and currency for each step completed
+    const xpAward = Math.round(30 + (results.length * 20));
+    const yenAward = Math.round(50 + (results.length * 30));
+    awardXp("wrench", Math.round(xpAward * 0.5));
+    awardXp("precision", Math.round(xpAward * 0.3));
+    setState(s => ({...s, currency: {...s.currency, yen: s.currency.yen + yenAward},
+      stats: {...s.stats, totalRepairs: (s.stats?.totalRepairs||0) + results.length, totalYenEarned: (s.stats?.totalYenEarned||0) + yenAward}}));
+    // Mark trigger part as repaired
+    if (activeSequence?.triggerPartDef) {
+      const pd = activeSequence.triggerPartDef;
+      const cur = vehicle.parts[pd.id];
+      const gain = 0.30 + Math.random() * 0.30;
+      const nc = Math.min(0.95, (cur?.condition || 0.1) + gain);
+      updatePart(pd.id, { condition: parseFloat(nc.toFixed(2)), repairProgress: 1 });
+      // Also bump tensioner if present (sequence dependency)
+      if (vehicle.parts["ae86_timing_tensioner"]) {
+        const nt = Math.min(0.95, (vehicle.parts["ae86_timing_tensioner"].condition || 0.1) + 0.35);
+        updatePart("ae86_timing_tensioner", { condition: parseFloat(nt.toFixed(2)), repairProgress: 1 });
+      }
+    }
+    addLog("✓ Sequence complete: " + activeSequence?.sequence?.name + " — +¥" + yenAward);
+    setActiveSequence(null);
+    setSelectedPart(null);
+  };
+
   const handleFirstStartDone = () => {
     setShowFirstStart(false);
     setState(s => {const v={...s.garage.vehicles[vehicleId],status:"first_started"};return{...s,lastModified:Date.now(),garage:{...s.garage,vehicles:{...s.garage.vehicles,[vehicleId]:v}},currency:{...s.currency,yen:s.currency.yen+2000,wrenchTokens:s.currency.wrenchTokens+10},stats:{...s.stats,totalYenEarned:(s.stats.totalYenEarned||0)+2000}};});
@@ -1113,6 +1305,24 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
   };
 
   if (showFirstStart) return <FirstStartSequence partTree={partTree} onComplete={handleFirstStartDone} />;
+  if (activeSequence) return (
+    <div style={{fontFamily:"'Barlow Condensed',sans-serif"}}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #1a1f35",display:"flex",alignItems:"center",gap:12}}>
+        <button className="game-btn" onClick={() => setActiveSequence(null)} style={{padding:"6px 12px",background:"#1a1f35",color:"#9ca3af",fontSize:12}}>← Back</button>
+        <span style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{activeSequence.sequence.name}</span>
+        <span className="game-mono" style={{fontSize:10,color:"#6b7280",marginLeft:"auto"}}>MULTI-STEP JOB</span>
+      </div>
+      <SequenceMechanic
+        sequence={activeSequence.sequence}
+        allParts={allParts}
+        diagnosticScenarios={partTree.diagnosticScenarios}
+        partTree={partTree}
+        state={state}
+        onComplete={handleSequenceComplete}
+        onLog={addLog}
+      />
+    </div>
+  );
   if (activeDiag) return (<div style={{fontFamily:"'Barlow Condensed',sans-serif"}}><div style={{padding:"12px 16px",borderBottom:"1px solid #1a1f35",display:"flex",alignItems:"center",gap:12}}><button className="game-btn" onClick={() => setActiveDiag(null)} style={{padding:"6px 12px",background:"#1a1f35",color:"#9ca3af",fontSize:12}}>← Back</button><span style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>Diagnosis</span></div><DiagnosisMechanic scenario={activeDiag} tools={state.tools} diagLevel={state.skills?.diagnosis?.level||1} allPartsRef={allParts} onComplete={handleDiagComplete} onLog={addLog} /></div>);
   if (activeMech) { const pd=allParts.find(p => p.id===activeMech); if(pd) { const mt=pd.repairType||"wrench",sl=state.skills?.[mt]?.level||1; return (<div style={{fontFamily:"'Barlow Condensed',sans-serif"}}><div style={{padding:"12px 16px",borderBottom:"1px solid #1a1f35",display:"flex",alignItems:"center",gap:12}}><button className="game-btn" onClick={() => setActiveMech(null)} style={{padding:"6px 12px",background:"#1a1f35",color:"#9ca3af",fontSize:12}}>← Back</button><span style={{fontSize:15,fontWeight:700,color:"#e2e8f0"}}>{pd.name}</span><span className="game-mono" style={{fontSize:10,color:"#6b7280",marginLeft:"auto"}}>{mt.toUpperCase()}</span></div>
       {mt==="precision"?<PrecisionMechanic part={pd} difficulty={pd.difficulty} skillLevel={sl} tools={state.tools} onComplete={r => handleRepairComplete(pd,r)} onLog={addLog} />
@@ -1213,10 +1423,20 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
                   <button className="game-btn" onClick={() => handleReplacePart(pd)} disabled={state.currency.yen<pd.replaceCost} style={{padding:"12px 20px",background:state.currency.yen>=pd.replaceCost?"#f59e0b20":"#1a1f35",color:state.currency.yen>=pd.replaceCost?"#f59e0b":"#4b5563",fontSize:14,border:"1px solid "+(state.currency.yen>=pd.replaceCost?"#f59e0b40":"#1a1f35")}}>Replace ¥{pd.replaceCost}</button>
                   {donorCount>0&&<button className="game-btn" onClick={() => handleUseDonor(pd)} style={{padding:"12px 20px",background:"#22c55e18",color:"#22c55e",fontSize:13,border:"1px solid #22c55e40"}}>Donor (×{donorCount})</button>}
                 </div>)
-               : (<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+               : (<div style={{display:"flex",gap:8,flexWrap:"wrap",flexDirection:"column"}}>
+                  {/* Sequence button — shown when a multi-step job is defined for this part */}
+                  {getSequenceForPart(pd.id) && (() => { const seq = getSequenceForPart(pd.id); return (
+                    <div style={{width:"100%",marginBottom:4}}>
+                      <button className="game-btn" onClick={() => {GE.Audio.uiClick();setActiveSequence({sequence:seq,triggerPartDef:pd});}} style={{width:"100%",padding:"12px 20px",background:"#f59e0b18",color:"#f59e0b",fontSize:14,fontWeight:700,border:"2px solid #f59e0b50",letterSpacing:"0.5px"}}>
+                        ⛓ Run Full Job Sequence ({seq.steps.length} steps)
+                      </button>
+                      <div className="game-mono" style={{fontSize:9,color:"#f59e0b60",textAlign:"center",marginTop:3}}>{seq.steps.map(s=>({wrench:"🔧",precision:"🎯",diagnosis:"🔍",bodywork:"🎨"})[s.mechanic]).join(" → ")}</div>
+                    </div>
+                  );})()}
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",width:"100%"}}>
                   <button className="game-btn" onClick={() => {GE.Audio.uiClick();setActiveMech(selectedPart);}} style={{padding:"12px 24px",background:"#4e7fff15",color:"#4e7fff",fontSize:14,fontWeight:700,border:"1px solid #4e7fff40",flex:1}}>{ti} Start {pd.repairType==="precision"?"Precision":pd.repairType==="bodywork"?"Bodywork":"Repair"}</button>
                   {isD&&<><button className="game-btn" onClick={() => handleReplacePart(pd)} disabled={state.currency.yen<pd.replaceCost} style={{padding:"12px 16px",background:"#f59e0b15",color:"#f59e0b",fontSize:12,border:"1px solid #f59e0b40"}}>Replace ¥{pd.replaceCost}</button>{donorCount>0&&<button className="game-btn" onClick={() => handleUseDonor(pd)} style={{padding:"12px 16px",background:"#22c55e15",color:"#22c55e",fontSize:12,border:"1px solid #22c55e40"}}>Donor ×{donorCount}</button>}</>}
-                </div>)}
+                </div></div>)}
               <div style={{marginTop:14,padding:"8px 12px",background:"#0a0d14",borderRadius:6,borderLeft:"2px solid #1a1f35"}}><div style={{fontSize:11,color:"#6b728080",fontStyle:"italic"}}>"{(pd.flavorText||[""])[Math.floor(Math.random()*(pd.flavorText||[""]).length)]}"</div></div>
             </div>);
           })() : <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",color:"#4b5563",padding:40}}><div style={{fontSize:36,opacity:0.3}}>🔧</div><div style={{fontSize:15,fontWeight:600,color:"#6b7280",marginTop:12}}>Select a part to inspect</div></div>}
