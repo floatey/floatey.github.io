@@ -207,7 +207,84 @@ GE.loadFeed = async function() {
   catch { return []; }
 };
 
-// ── SELLING & SHOWCASE ──
+// ── TOOL EFFECTS (spec Section 6) ──
+GE.getWrenchEffects = function(tools) {
+  return {
+    hasImpact: !!tools.impact_wrench,       // Every 15th click = auto-5x burst
+    hasPenOil: !!tools.penetrating_oil,     // -30% resistance (difficulty) on job
+    impactInterval: 15,
+  };
+};
+GE.getPrecisionEffects = function(tools) {
+  return {
+    hasTorqueWrench: !!tools.torque_wrench, // -15% sweep speed
+    hasAngleGauge: !!tools.angle_gauge,     // Green zone +10% wider
+  };
+};
+GE.getBodyworkEffects = function(tools) {
+  return {
+    hasDAPolisher: !!tools.da_polisher,     // 2× fill rate
+    hasMediaBlaster: !!tools.media_blaster, // Instant-clear rust zones
+  };
+};
+
+// ── SYSTEM COMPLETION BONUS (spec Section 6: 200-500¥) ──
+GE.SYSTEM_COMPLETION_BONUS = { engine: 500, fuel: 300, cooling: 250, exhaust: 250, drivetrain: 400, brakes: 250, suspension: 300, interior: 200, electrical: 300, body: 350, glass: 200, trim: 200 };
+
+// ── DAILY LOGIN BONUS ──
+GE.DAILY_BONUS = 100;
+GE.checkDailyBonus = function(state) {
+  const today = new Date().toDateString();
+  if (state.lastDailyBonus === today) return null;
+  return GE.DAILY_BONUS;
+};
+
+// ── WRENCH FLAVOR TEXT (dynamic based on progress) ──
+GE.WRENCH_PROGRESS_FLAVOR = [
+  { at: 0.0, texts: ["Fresh bolts. Let's see how seized they are.", "Starting from the top. Lefty loosey.", "Alright, let's get this thing apart."] },
+  { at: 0.25, texts: ["Getting somewhere. Keep the rhythm.", "Quarter of the way. The easy bolts are done.", "Now we're into the stuck ones."] },
+  { at: 0.5, texts: ["Halfway. The PB Blaster is earning its keep.", "Three uggas in... almost there.", "Past the midpoint. Don't lose momentum."] },
+  { at: 0.75, texts: ["Home stretch. Just a few more.", "Almost free. I can feel it giving.", "Last few turns. Don't strip it now."] },
+  { at: 0.9, texts: ["One more good hit...", "Right there. Just needs one more crack.", "Almost... almost..."] },
+];
+GE.getWrenchFlavor = function(progress) {
+  let best = GE.WRENCH_PROGRESS_FLAVOR[0];
+  for (const tier of GE.WRENCH_PROGRESS_FLAVOR) {
+    if (progress >= tier.at) best = tier;
+  }
+  return best.texts[Math.floor(Math.random() * best.texts.length)];
+};
+
+// ── CRITICAL CLICK FLAVOR ──
+GE.CRITICAL_FLAVOR = ["CRACK — it broke free!", "There we go.", "Like butter.", "That's the one.", "Finally. Stubborn bastard."];
+
+// ── GACHA (fix 10-pull guarantee) ──
+GE.rollGacha10 = function(pity4, pity5) {
+  // 10-pull: guaranteed at least one ★★★★+
+  const results = [];
+  let p4 = pity4, p5 = pity5;
+  let gotRareOrBetter = false;
+  for (let i = 0; i < 10; i++) {
+    let r;
+    if (i === 9 && !gotRareOrBetter) {
+      // Guarantee ★★★★+ on last pull if none yet
+      r = Math.random() < 0.25 ? 5 : 4;
+    } else if (p5 >= 49) { r = 5; }
+    else if (p4 >= 19) { r = 4; }
+    else {
+      const roll = Math.random();
+      if (roll < 0.10) r = 5;
+      else if (roll < 0.40) r = 4;
+      else r = 3;
+    }
+    if (r >= 4) gotRareOrBetter = true;
+    p4 = r >= 4 ? 0 : p4 + 1;
+    p5 = r >= 5 ? 0 : p5 + 1;
+    const pool = GD.VEHICLES.filter(v => v.rarity === r);
+    results.push({ rarity: r, vehicle: pool[Math.floor(Math.random() * pool.length)] });
+  }
+  return { results, newPity4: p4, newPity5: p5 };
+};
 GE.SELL_PRICES  = { 3: 5000,  4: 15000, 5: 50000 };
 GE.SELL_WT      = { 3: 15,    4: 30,    5: 60 };
 GE.SHOWCASE_DAILY = 50; // ¥ per kept car per day
@@ -247,6 +324,49 @@ GE.hasIntuition = function(diagLevel) { return diagLevel >= 10; };
 GE.isCarFullyComplete = function(partTree, vehicleParts) {
   const comp = GE.getSystemCompletion(partTree, vehicleParts);
   return Object.values(comp).every(c => c.pct >= 100);
+};
+
+// ── TOOL EFFECTS ──
+GE.getWrenchToolEffects = function(tools) { return { hasImpact: !!tools.impact_wrench, hasPenOil: !!tools.penetrating_oil }; };
+GE.getPrecisionToolEffects = function(tools) { return { hasTorqueWrench: !!tools.torque_wrench, hasAngleGauge: !!tools.angle_gauge }; };
+GE.getBodyworkToolEffects = function(tools) { return { hasDAPolisher: !!tools.da_polisher, hasMediaBlaster: !!tools.media_blaster }; };
+
+// ── SYSTEM COMPLETION BONUS ──
+GE.getSystemBonus = function(sysId) { return (GD.SYSTEM_COMPLETION_BONUS && GD.SYSTEM_COMPLETION_BONUS[sysId]) || 200; };
+
+// ── DAILY INCOME ──
+GE.DAILY_LOGIN_BONUS = 100;
+GE.collectDailyIncome = function(state) {
+  var today = new Date().toDateString();
+  if (state.lastDailyIncome === today) return { state: state, earned: 0 };
+  var showcase = GE.getShowcaseIncome(state);
+  var total = GE.DAILY_LOGIN_BONUS + showcase;
+  var ns = JSON.parse(JSON.stringify(state));
+  ns.currency.yen += total; ns.lastDailyIncome = today;
+  ns.stats.totalYenEarned = (ns.stats.totalYenEarned || 0) + total;
+  return { state: ns, earned: total, login: GE.DAILY_LOGIN_BONUS, showcase: showcase };
+};
+
+// ── DONOR PARTS ──
+GE.hasDonorPart = function(state, modelId) { return (state.currency.donorParts[modelId] || 0) > 0; };
+GE.useDonorPart = function(state, modelId) { var ns = JSON.parse(JSON.stringify(state)); ns.currency.donorParts[modelId] = Math.max(0, (ns.currency.donorParts[modelId]||0)-1); return ns; };
+
+// ── GIFT SYSTEM ──
+GE.canSendGift = function(state) {
+  if (state.lastGiftSent === new Date().toDateString()) return false;
+  return Object.values(state.currency.donorParts||{}).some(function(v){return v>0;});
+};
+GE.sendGift = async function(fromState, toId, partType) {
+  var dp = fromState.currency.donorParts[partType]; if (!dp) return null;
+  var ns = JSON.parse(JSON.stringify(fromState));
+  ns.currency.donorParts[partType] = dp - 1; ns.lastGiftSent = new Date().toDateString();
+  if (window._firebaseReady && window._gameDoc && window._getDoc) {
+    try { var snap = await window._getDoc(window._gameDoc(toId)); var r = snap.exists() ? snap.data().payload : null;
+    if (r) { r.currency = r.currency||{}; r.currency.donorParts = r.currency.donorParts||{}; r.currency.donorParts[partType] = (r.currency.donorParts[partType]||0)+1;
+    await window._setDoc(window._gameDoc(toId),{payload:r,lastModified:Date.now()}); }} catch(e){}
+  }
+  GE.postFeed({who:fromState.profileId,what:"gifted_part",detail:"Sent a donor part to "+toId+"!"});
+  return ns;
 };
 
 // Export
