@@ -207,6 +207,48 @@ GE.loadFeed = async function() {
   catch { return []; }
 };
 
+// ── SELLING & SHOWCASE ──
+GE.SELL_PRICES  = { 3: 5000,  4: 15000, 5: 50000 };
+GE.SELL_WT      = { 3: 15,    4: 30,    5: 60 };
+GE.SHOWCASE_DAILY = 50; // ¥ per kept car per day
+
+GE.calculateQualityMultiplier = function(partTree, vehicleParts) {
+  const allParts = GE.getAllParts(partTree);
+  const revealed = allParts.filter(p => vehicleParts[p.id]?.revealed);
+  if (revealed.length === 0) return 1.0;
+  const avg = revealed.reduce((s, p) => s + (vehicleParts[p.id]?.condition || 0), 0) / revealed.length;
+  if (avg <= 0.70) return 1.0;
+  const rarity = partTree.rarity;
+  const maxMult = rarity === 5 ? 2.0 : 1.5;
+  return 1.0 + (avg - 0.70) / 0.30 * (maxMult - 1.0);
+};
+
+GE.calculateSaleValue = function(partTree, vehicleParts) {
+  const base = GE.SELL_PRICES[partTree.rarity] || 5000;
+  const mult = GE.calculateQualityMultiplier(partTree, vehicleParts);
+  return { yen: Math.round(base * mult), wt: GE.SELL_WT[partTree.rarity] || 15, multiplier: mult };
+};
+
+GE.getShowcaseIncome = function(state) {
+  const showcased = Object.values(state.garage?.vehicles || {}).filter(v => v.status === "showcase");
+  return showcased.length * GE.SHOWCASE_DAILY;
+};
+
+// ── PERFECT REPAIR PROC (skill 16+) ──
+GE.rollPerfectRepair = function(skillLevel) {
+  if (skillLevel < 16) return false;
+  return Math.random() < 0.05; // 5% chance
+};
+
+// ── MECHANIC'S INTUITION (diagnosis skill 10+) ──
+GE.hasIntuition = function(diagLevel) { return diagLevel >= 10; };
+
+// ── COMPLETION CHECK (all systems 100%) ──
+GE.isCarFullyComplete = function(partTree, vehicleParts) {
+  const comp = GE.getSystemCompletion(partTree, vehicleParts);
+  return Object.values(comp).every(c => c.pct >= 100);
+};
+
 // Export
 window.GE = GE;
 })();

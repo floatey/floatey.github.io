@@ -590,13 +590,17 @@ function PrecisionMechanic({ part, difficulty, skillLevel, onComplete, onLog }) 
   const [sweeping, setSweeping] = useState(true);
   const [flash, setFlash] = useState(null);
   const [done, setDone] = useState(false);
+  const [perfectStreak, setPerfectStreak] = useState(0);
+  const [vrBonus, setVrBonus] = useState(false);
   const animRef = useRef(null);
   const startRef = useRef(performance.now());
   const dirRef = useRef(1);
 
-  const greenWidth = Math.max(6, 14 - difficulty * 10 + tier.bonus * 8);
-  const yellowWidth = greenWidth * 1.8;
-  const sweepSpeed = (0.03 + difficulty * 0.05) * (1 - tier.bonus * 0.15);
+  // Green zone narrows with difficulty, widens with skill
+  const greenWidth = Math.max(5, 15 - difficulty * 12 + tier.bonus * 10);
+  const yellowWidth = greenWidth * 2.0;
+  // FIXED: ~2-4 second full sweep depending on difficulty
+  const sweepSpeed = (0.35 + difficulty * 0.55) * (1 - tier.bonus * 0.15);
 
   useEffect(() => {
     if (!sweeping || done) return;
@@ -622,26 +626,39 @@ function PrecisionMechanic({ part, difficulty, skillLevel, onComplete, onLog }) 
     if (dist <= greenWidth / 2) { result = "green"; GE.Audio.precisionHit(); setFlash("#22c55e"); }
     else if (dist <= yellowWidth / 2) { result = "yellow"; GE.Audio.uiClick(); setFlash("#eab308"); }
     else { result = "red"; GE.Audio.precisionMiss(); setFlash("#ff4d6d"); }
+    // Variable-ratio "Perfect Torque" bonus — fires after 3+ greens, ~25% chance each
+    let gotVR = false;
+    if (result === "green") {
+      const ns = perfectStreak + 1; setPerfectStreak(ns);
+      if (ns >= 3 && (ns >= 8 || Math.random() < 0.25)) {
+        gotVR = true; setVrBonus(true); setPerfectStreak(0);
+        onLog && onLog("★ PERFECT TORQUE — double XP!");
+        setTimeout(() => setVrBonus(false), 800);
+      }
+    } else { setPerfectStreak(0); }
     const nr = [...results, result];
     setResults(nr);
-    onLog && onLog(result === "green" ? "✦ Perfect torque!" : result === "yellow" ? "• Acceptable — within spec." : "✗ Miss — retorque needed.");
+    if (!gotVR) onLog && onLog(result === "green" ? "✦ Perfect." : result === "yellow" ? "• Acceptable." : "✗ Miss — retorque.");
     setTimeout(() => {
       setFlash(null);
       if (result === "red") {
         setResults(r => { const c = [...r]; c[c.length-1] = "retry"; return c; });
+        onLog && onLog("↻ Retrying step...");
       }
-      if (nr.filter(r => r !== "retry").length >= totalSteps) {
+      const active = nr.filter(r => r !== "retry");
+      if (active.length >= totalSteps) {
         setDone(true); GE.Audio.complete();
         onLog && onLog("✓ " + part.name + " — precision work done!");
         setTimeout(() => onComplete && onComplete(nr), 500);
       } else {
-        setSweepPos(Math.random() * 20);
-        dirRef.current = 1;
+        // Randomize restart position and direction for unpredictability
+        setSweepPos(Math.random() < 0.5 ? Math.random() * 10 : 90 + Math.random() * 10);
+        dirRef.current = Math.random() < 0.5 ? 1 : -1;
         setSweeping(true);
         setStep(s => s + 1);
       }
-    }, 600);
-  }, [sweeping, done, sweepPos, results, greenWidth, yellowWidth, totalSteps, part, onComplete, onLog]);
+    }, 500);
+  }, [sweeping, done, sweepPos, results, greenWidth, yellowWidth, totalSteps, part, onComplete, onLog, perfectStreak]);
 
   const goodCount = results.filter(r => r === "green").length;
   const okCount = results.filter(r => r === "yellow").length;
@@ -687,13 +704,20 @@ function PrecisionMechanic({ part, difficulty, skillLevel, onComplete, onLog }) 
 }
 
 // ── DIAGNOSIS MECHANIC ──
-function DiagnosisMechanic({ scenario, tools, onComplete, onLog }) {
+function DiagnosisMechanic({ scenario, tools, diagLevel, onComplete, onLog }) {
   const [revealedClues, setRevealedClues] = useState(["free"]);
   const [selected, setSelected] = useState(null);
   const [wrongGuesses, setWrongGuesses] = useState([]);
   const [solved, setSolved] = useState(false);
+  const hasIntuition = GE.hasIntuition(diagLevel || 1);
 
-  const allOptions = [scenario.correctDiagnosis, ...scenario.wrongOptions];
+  // Shuffle options once so correct isn't always first
+  const allOptions = useMemo(() => {
+    const opts = [scenario.correctDiagnosis, ...scenario.wrongOptions];
+    for (let i = opts.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [opts[i],opts[j]] = [opts[j],opts[i]]; }
+    return opts;
+  }, [scenario]);
+
   const allParts = GE.getAllParts(GE.getPartTree("ae86"));
   const getPartName = (id) => { const p = allParts.find(x => x.id === id); return p ? p.name : id; };
 
@@ -757,12 +781,14 @@ function DiagnosisMechanic({ scenario, tools, onComplete, onLog }) {
               const isWrong = wrongGuesses.includes(opt);
               const isCorrect = solved && opt === scenario.correctDiagnosis;
               const isSel = selected === opt;
+              // Mechanic's Intuition: subtle highlight on correct answer (not auto-solve)
+              const isIntuited = hasIntuition && !solved && opt === scenario.correctDiagnosis && wrongGuesses.length === 0;
               return (
                 <div key={opt} onClick={() => { if (!isWrong && !solved) { setSelected(opt); GE.Audio.uiClick(); } }}
                   style={{
                     padding: "8px 10px", borderRadius: 6, cursor: isWrong || solved ? "default" : "pointer",
-                    background: isCorrect ? "#22c55e18" : isWrong ? "#ff4d6d08" : isSel ? "#4e7fff15" : "#0e1220",
-                    border: isCorrect ? "1px solid #22c55e50" : isWrong ? "1px solid #ff4d6d30" : isSel ? "1px solid #4e7fff50" : "1px solid #1a1f35",
+                    background: isCorrect ? "#22c55e18" : isWrong ? "#ff4d6d08" : isSel ? "#4e7fff15" : isIntuited ? "#22c55e06" : "#0e1220",
+                    border: isCorrect ? "1px solid #22c55e50" : isWrong ? "1px solid #ff4d6d30" : isSel ? "1px solid #4e7fff50" : isIntuited ? "1px solid #22c55e18" : "1px solid #1a1f35",
                     opacity: isWrong ? 0.4 : 1,
                   }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -781,6 +807,7 @@ function DiagnosisMechanic({ scenario, tools, onComplete, onLog }) {
               Submit Diagnosis
             </button>
           )}
+          {hasIntuition && !solved && wrongGuesses.length === 0 && <div className="game-mono" style={{ marginTop: 6, fontSize: 10, color: "#22c55e50", textAlign: "center" }}>🔍 Mechanic's Intuition active</div>}
           {solved && <div className="game-mono" style={{ marginTop: 8, fontSize: 12, color: "#22c55e", textAlign: "center" }}>✓ Problem identified!</div>}
         </div>
       </div>
@@ -788,50 +815,80 @@ function DiagnosisMechanic({ scenario, tools, onComplete, onLog }) {
   );
 }
 
-// ── BODYWORK MECHANIC ──
+// ── BODYWORK MECHANIC (Sand → Prime → Paint process chains, difficulty scaling) ──
 function BodyworkMechanic({ part, difficulty, skillLevel, gridSize, onComplete, onLog }) {
   const tier = GE.getSkillTier(skillLevel);
   const [rows, cols] = gridSize || [2, 3];
   const totalZones = rows * cols;
-  const [zones, setZones] = useState(() => {
-    return Array.from({ length: totalZones }, () => ({
-      progress: 0, isRust: Math.random() < 0.25, done: false,
-    }));
-  });
+  const STEPS = ["Sand", "Prime", "Paint"];
+  const STEP_COLORS = ["#4e7fff", "#a855f7", "#22c55e"];
+
+  const [zones, setZones] = useState(() =>
+    Array.from({ length: totalZones }, () => ({
+      progress: 0, isRust: Math.random() < (0.15 + difficulty * 0.25),
+      rustRevealed: false, processStep: 0, done: false, quality: 1.0,
+    }))
+  );
   const [activeZone, setActiveZone] = useState(null);
-  const [done, setDone] = useState(false);
+  const [rustEvent, setRustEvent] = useState(null);
   const holdRef = useRef(null);
 
-  const fillRate = (0.02 + tier.bonus * 0.01) * (1 + skillLevel * 0.05);
+  // Difficulty drives base fill time; skill speeds it up
+  // diff 0.2/skill 1: ~2s per step. diff 0.8/skill 1: ~4s per step
+  const baseFillRate = (0.015 + tier.bonus * 0.008) / (0.5 + difficulty * 0.8);
+  // Rust multiplier: 2× base, skill reduces to min 1.4×
+  const rustMult = Math.max(1.4, 2.0 - tier.bonus * 0.6);
 
   const startHold = (idx) => {
-    if (done || zones[idx].done) return;
+    if (zones[idx].done) return;
     GE.Audio.init();
     setActiveZone(idx);
     holdRef.current = setInterval(() => {
       setZones(prev => {
         const next = [...prev];
         const z = { ...next[idx] };
-        const rate = z.isRust ? fillRate * 0.5 : fillRate;
+        const rate = z.isRust ? baseFillRate / rustMult : baseFillRate;
         z.progress = Math.min(1, z.progress + rate);
-        if (z.progress >= 1) { z.done = true; GE.Audio.uiClick(); }
-        else { GE.Audio.bodyworkTick(); }
+        GE.Audio.bodyworkTick();
+        if (z.progress >= 1) {
+          if (z.processStep < 2) {
+            z.processStep += 1; z.progress = 0;
+            GE.Audio.uiClick();
+            // VR: rust zones may reveal hidden damage between steps
+            if (z.isRust && !z.rustRevealed && Math.random() < 0.3) {
+              z.rustRevealed = true; z.quality *= 0.85;
+              setRustEvent("Zone " + (idx+1) + ": deeper rust underneath — quality hit.");
+              setTimeout(() => setRustEvent(null), 2500);
+            }
+          } else { z.done = true; GE.Audio.uiClick(); }
+        }
         next[idx] = z;
-        const allDone = next.every(zone => zone.done);
-        if (allDone) {
+        if (next.every(zone => zone.done)) {
           clearInterval(holdRef.current);
+          const avgQ = next.reduce((s, zone) => s + zone.quality, 0) / next.length;
           setTimeout(() => {
             GE.Audio.complete();
-            onLog && onLog("✓ " + part.name + " — bodywork complete!");
-            onComplete && onComplete();
+            onLog && onLog("✓ " + part.name + " — bodywork done! Quality: " + Math.round(avgQ*100) + "%");
+            onComplete && onComplete(avgQ);
           }, 300);
         }
         return next;
       });
-    }, 60);
+    }, 50);
   };
 
-  const stopHold = () => { clearInterval(holdRef.current); setActiveZone(null); };
+  const stopHold = () => {
+    clearInterval(holdRef.current);
+    // Lifting early = quality penalty per spec
+    if (activeZone !== null) {
+      setZones(prev => {
+        const next = [...prev]; const z = next[activeZone];
+        if (z && !z.done && z.progress > 0 && z.progress < 1) next[activeZone] = { ...z, quality: z.quality * 0.95 };
+        return next;
+      });
+    }
+    setActiveZone(null);
+  };
   useEffect(() => () => clearInterval(holdRef.current), []);
 
   const doneCount = zones.filter(z => z.done).length;
@@ -840,36 +897,46 @@ function BodyworkMechanic({ part, difficulty, skillLevel, gridSize, onComplete, 
 
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <div>
           <div className="game-condensed" style={{ fontSize: 14, color: "#9ca3af", fontWeight: 500 }}>Bodywork: {part.name}</div>
-          <div className="game-mono" style={{ fontSize: 11, color: "#6b7280" }}>Hold each zone to work it. Rust = 2× time.</div>
+          <div className="game-mono" style={{ fontSize: 11, color: "#6b7280" }}>Hold each zone through 3 steps: Sand → Prime → Paint</div>
         </div>
-        <div className="game-mono" style={{ fontSize: 14, fontWeight: 700, color: allDone ? "#22c55e" : "#e2e8f0" }}>{coverage}%</div>
+        <div style={{ textAlign: "right" }}>
+          <div className="game-mono" style={{ fontSize: 14, fontWeight: 700, color: allDone ? "#22c55e" : "#e2e8f0" }}>{coverage}%</div>
+          <div className="game-mono" style={{ fontSize: 10, color: "#6b7280" }}>Rust: {rustMult.toFixed(1)}× | Diff: {"●".repeat(Math.ceil(difficulty*5))}{"○".repeat(5-Math.ceil(difficulty*5))}</div>
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(" + cols + ", 1fr)", gap: 4, marginBottom: 14 }}>
-        {zones.map((z, i) => (
-          <div key={i}
-            onMouseDown={() => startHold(i)} onMouseUp={stopHold} onMouseLeave={stopHold}
-            onTouchStart={(e) => { e.preventDefault(); startHold(i); }} onTouchEnd={stopHold}
-            style={{
-              height: 56, borderRadius: 6, cursor: z.done ? "default" : "pointer", position: "relative", overflow: "hidden",
-              background: z.done ? "#22c55e20" : z.isRust ? "#7c2d1218" : "#0e1220",
-              border: activeZone === i ? "2px solid #4e7fff" : z.done ? "2px solid #22c55e40" : z.isRust ? "2px solid #92400e40" : "2px solid #1a1f35",
-              userSelect: "none", WebkitUserSelect: "none",
-            }}>
-            {/* Fill progress */}
-            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: (z.progress * 100) + "%", background: z.done ? "#22c55e30" : "#4e7fff20", transition: "height 0.06s linear" }} />
-            <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%" }}>
-              {z.done ? <span style={{ fontSize: 14, color: "#22c55e" }}>✓</span>
-               : <><span style={{ fontSize: z.isRust ? 11 : 10, color: z.isRust ? "#92400e" : "#4b5563" }}>{z.isRust ? "🟫 RUST" : ""}</span>
-                  <span className="game-mono" style={{ fontSize: 9, color: "#4b5563" }}>{Math.round(z.progress * 100)}%</span></>}
+      {rustEvent && <div style={{ padding: "6px 10px", background: "#f59e0b12", border: "1px solid #f59e0b30", borderRadius: 6, marginBottom: 8, fontSize: 11, color: "#f59e0b", animation: "fadeUp 0.3s ease" }}>★ {rustEvent}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(" + cols + ", 1fr)", gap: 4, marginBottom: 10 }}>
+        {zones.map((z, i) => {
+          const fc = z.done ? "#22c55e" : STEP_COLORS[z.processStep];
+          return (
+            <div key={i}
+              onMouseDown={() => startHold(i)} onMouseUp={stopHold} onMouseLeave={stopHold}
+              onTouchStart={(e) => { e.preventDefault(); startHold(i); }} onTouchEnd={stopHold}
+              style={{
+                height: 64, borderRadius: 6, cursor: z.done ? "default" : "pointer", position: "relative", overflow: "hidden",
+                background: z.done ? "#22c55e10" : z.isRust ? "#7c2d1215" : "#0e1220",
+                border: activeZone === i ? "2px solid " + fc : z.done ? "2px solid #22c55e30" : z.isRust ? "2px solid #92400e30" : "2px solid #1a1f35",
+                userSelect: "none", WebkitUserSelect: "none",
+              }}>
+              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: (z.progress * 100) + "%", background: fc + "25", transition: "height 0.05s linear" }} />
+              <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 2 }}>
+                {z.done ? <span style={{ fontSize: 14, color: "#22c55e" }}>✓</span>
+                 : <>{z.isRust && <span style={{ fontSize: 9, color: "#92400e" }}>🟫 RUST{z.rustRevealed ? " ⚠" : ""}</span>}
+                    <span className="game-mono" style={{ fontSize: 9, color: fc, fontWeight: 600 }}>{STEPS[z.processStep]}</span>
+                    <span className="game-mono" style={{ fontSize: 9, color: "#4b5563" }}>{Math.round(z.progress * 100)}%</span></>}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      <div style={{ fontSize: 12, color: "#6b728090", fontStyle: "italic", textAlign: "center" }}>
-        {allDone ? "Surface work complete!" : "Hold on each zone until filled. Don't rush."}
+      <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 8 }}>
+        {STEPS.map((s, i) => <span key={s} className="game-mono" style={{ fontSize: 10, color: STEP_COLORS[i] + "80" }}>{i+1}. {s}</span>)}
+      </div>
+      <div style={{ fontSize: 11, color: "#6b728080", fontStyle: "italic", textAlign: "center" }}>
+        {allDone ? "Surface work complete!" : "Hold each zone through all 3 steps. Rust zones take " + rustMult.toFixed(1) + "× longer. Don't lift early — quality drops."}
       </div>
     </div>
   );
@@ -1173,6 +1240,8 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
   const systemComp = GE.getSystemCompletion(partTree, vehicle.parts);
   const allParts = GE.getAllParts(partTree);
   const readyForStart = GE.isReadyForFirstStart(partTree, vehicle.parts);
+  const isFullyComplete = GE.isCarFullyComplete(partTree, vehicle.parts);
+  const [showSellModal, setShowSellModal] = useState(false);
 
   const addLog = (msg) => {
     const entry = { msg, time: Date.now() };
@@ -1200,14 +1269,25 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
 
   const handleRepairComplete = (partDef, mechResult) => {
     const current = vehicle.parts[partDef.id];
-    let gain = 0.20 + Math.random() * 0.30;
-    if (mechResult && Array.isArray(mechResult)) { // precision results
-      const greens = mechResult.filter(r => r === "green").length;
-      const total = mechResult.filter(r => r !== "retry").length;
-      gain = 0.15 + (greens / Math.max(1, total)) * 0.50;
+    const skillLv = state.skills?.[partDef.repairType]?.level || 1;
+    // Perfect Repair proc — Master Tech (skill 16+), 5% chance → instant 100%
+    if (GE.rollPerfectRepair(skillLv)) {
+      updatePart(partDef.id, { condition: 1.0, repairProgress: 1 });
+      addLog("★★ PERFECT REPAIR! " + partDef.name + " → 100% condition!");
+      GE.Audio.complete();
+    } else {
+      let gain = 0.20 + Math.random() * 0.30;
+      if (mechResult && Array.isArray(mechResult)) { // precision results array
+        const greens = mechResult.filter(r => r === "green").length;
+        const total = mechResult.filter(r => r !== "retry").length;
+        gain = 0.15 + (greens / Math.max(1, total)) * 0.50;
+      }
+      if (typeof mechResult === "number") { // bodywork quality scalar (0-1)
+        gain = 0.15 + mechResult * 0.40;
+      }
+      const nc = Math.min(0.95, (current.condition || 0.1) + gain);
+      updatePart(partDef.id, { condition: parseFloat(nc.toFixed(2)), repairProgress: 1 });
     }
-    const nc = Math.min(0.95, (current.condition || 0.1) + gain);
-    updatePart(partDef.id, { condition: parseFloat(nc.toFixed(2)), repairProgress: 1 });
     awardSkillXp(partDef.repairType, Math.round(10 + partDef.difficulty * 30));
     setState(s => ({ ...s, stats: { ...s.stats, totalRepairs: (s.stats?.totalRepairs || 0) + 1 } }));
     if (partDef.hiddenReveal && Math.random() < partDef.hiddenReveal.chance) {
@@ -1274,13 +1354,30 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
 
   if (showFirstStart) return <FirstStartSequence partTree={partTree} onComplete={handleFirstStartComplete} />;
 
+  // ── Sell / Showcase handlers (Phase 3) ──
+  const handleSell = () => {
+    const sale = GE.calculateSaleValue(partTree, vehicle.parts);
+    setState(s => {
+      const nv = { ...s.garage.vehicles }; delete nv[vehicleId];
+      return { ...s, garage: { ...s.garage, vehicles: nv }, currency: { ...s.currency, yen: s.currency.yen + sale.yen, wrenchTokens: s.currency.wrenchTokens + sale.wt }, stats: { ...s.stats, carsCompleted: (s.stats.carsCompleted||0)+1, totalYenEarned: (s.stats.totalYenEarned||0)+sale.yen } };
+    });
+    GE.postFeed({ who: state.profileId, what: "completed_car", detail: "Sold " + partTree.displayName + " for ¥" + GE.calculateSaleValue(partTree, vehicle.parts).yen.toLocaleString() + "!" });
+    onBack();
+  };
+  const handleShowcase = () => {
+    setState(s => { const v = { ...s.garage.vehicles[vehicleId], status: "showcase" }; return { ...s, garage: { ...s.garage, vehicles: { ...s.garage.vehicles, [vehicleId]: v } }, stats: { ...s.stats, carsCompleted: (s.stats.carsCompleted||0)+1 } }; });
+    addLog("🏆 Showcased! +¥" + GE.SHOWCASE_DAILY + "/day passive income");
+    GE.postFeed({ who: state.profileId, what: "showcased", detail: "Showcased " + partTree.displayName + "!" });
+    setShowSellModal(false);
+  };
+
   if (activeDiag) return (
     <div style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #1a1f35", display: "flex", alignItems: "center", gap: 12 }}>
         <button className="game-btn" onClick={() => setActiveDiag(null)} style={{ padding: "6px 12px", background: "#1a1f35", color: "#9ca3af", fontSize: 12 }}>← Back</button>
         <span style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>Diagnosis</span>
       </div>
-      <DiagnosisMechanic scenario={activeDiag} tools={state.tools} onComplete={handleDiagComplete} onLog={addLog} />
+      <DiagnosisMechanic scenario={activeDiag} tools={state.tools} diagLevel={state.skills?.diagnosis?.level || 1} onComplete={handleDiagComplete} onLog={addLog} />
     </div>
   );
 
@@ -1297,7 +1394,7 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
             <span className="game-mono" style={{ fontSize: 10, color: "#6b7280", marginLeft: "auto" }}>{mechType.toUpperCase()}</span>
           </div>
           {mechType === "precision" ? <PrecisionMechanic part={partDef} difficulty={partDef.difficulty} skillLevel={skillLv} onComplete={(results) => handleRepairComplete(partDef, results)} onLog={addLog} />
-           : mechType === "bodywork" ? <BodyworkMechanic part={partDef} difficulty={partDef.difficulty} skillLevel={skillLv} gridSize={partDef.gridSize} onComplete={() => handleRepairComplete(partDef)} onLog={addLog} />
+           : mechType === "bodywork" ? <BodyworkMechanic part={partDef} difficulty={partDef.difficulty} skillLevel={skillLv} gridSize={partDef.gridSize} onComplete={(q) => handleRepairComplete(partDef, q)} onLog={addLog} />
            : <WrenchMechanic part={partDef} difficulty={partDef.difficulty} skillLevel={skillLv} onComplete={() => handleRepairComplete(partDef)} onLog={addLog} />}
         </div>
       );
@@ -1309,6 +1406,33 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
 
   return (
     <div className="game-workbench-layout" style={{ display: "flex", height: "100%", fontFamily: "'Barlow Condensed', sans-serif", background: "#0a0d16" }}>
+      {/* Sell/Showcase Modal */}
+      {showSellModal && (() => {
+        const sale = GE.calculateSaleValue(partTree, vehicle.parts);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "#000000a0", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }} onClick={() => setShowSellModal(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#0e1220", border: "1px solid #1a1f35", borderRadius: 12, padding: 24, maxWidth: 400, width: "90vw", animation: "popIn 0.2s ease" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>{partTree.displayName}</div>
+              <div className="game-mono" style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>Quality Multiplier: ×{sale.multiplier.toFixed(2)}</div>
+              <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+                <div style={{ flex: 1, padding: 14, background: "#0a0d16", borderRadius: 8, textAlign: "center" }}>
+                  <div className="game-mono" style={{ fontSize: 20, fontWeight: 700, color: "#f59e0b" }}>¥{sale.yen.toLocaleString()}</div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>Sale Price</div>
+                </div>
+                <div style={{ flex: 1, padding: 14, background: "#0a0d16", borderRadius: 8, textAlign: "center" }}>
+                  <div className="game-mono" style={{ fontSize: 20, fontWeight: 700, color: "#a855f7" }}>+{sale.wt} WT</div>
+                  <div style={{ fontSize: 11, color: "#6b7280" }}>Bonus Tokens</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="game-btn" onClick={handleSell} style={{ flex: 1, padding: 12, background: "#f59e0b18", color: "#f59e0b", fontSize: 14, fontWeight: 700, border: "1px solid #f59e0b40" }}>💰 Sell</button>
+                <button className="game-btn" onClick={handleShowcase} style={{ flex: 1, padding: 12, background: "#a855f718", color: "#a855f7", fontSize: 14, fontWeight: 700, border: "1px solid #a855f740" }}>🏆 Showcase</button>
+              </div>
+              <div className="game-mono" style={{ fontSize: 10, color: "#4b5563", textAlign: "center", marginTop: 8 }}>Showcase = ¥{GE.SHOWCASE_DAILY}/day passive income, keeps car in garage</div>
+            </div>
+          </div>
+        );
+      })()}
       {/* Systems panel */}
       <div className="game-systems-panel game-scrollbar" style={{ width: 260, minWidth: 260, borderRight: "1px solid #1a1f35", overflowY: "auto", padding: "12px 0" }}>
         <div style={{ padding: "0 14px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1319,9 +1443,21 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
           <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 2 }}>{partTree.displayName}</div>
           <div className="game-mono" style={{ fontSize: 10, color: "#6b7280" }}>{partTree.engineCode}</div>
         </div>
-        {readyForStart && vehicle.status !== "first_started" && (
+        {readyForStart && vehicle.status !== "first_started" && vehicle.status !== "showcase" && (
           <div style={{ margin: "0 14px 10px", padding: "10px 14px", background: "#22c55e10", border: "1px solid #22c55e30", borderRadius: 8, cursor: "pointer" }} onClick={() => setShowFirstStart(true)}>
             <div className="game-condensed" style={{ fontSize: 14, fontWeight: 700, color: "#22c55e" }}>🔑 READY FOR FIRST START</div>
+          </div>
+        )}
+        {isFullyComplete && vehicle.status !== "showcase" && (
+          <div style={{ margin: "0 14px 10px", padding: "10px 14px", background: "#f59e0b10", border: "1px solid #f59e0b30", borderRadius: 8, cursor: "pointer" }} onClick={() => setShowSellModal(true)}>
+            <div className="game-condensed" style={{ fontSize: 14, fontWeight: 700, color: "#f59e0b" }}>💰 SELL OR SHOWCASE</div>
+            <div className="game-mono" style={{ fontSize: 10, color: "#f59e0b80" }}>All systems complete!</div>
+          </div>
+        )}
+        {vehicle.status === "showcase" && (
+          <div style={{ margin: "0 14px 10px", padding: "10px 14px", background: "#a855f710", border: "1px solid #a855f730", borderRadius: 8 }}>
+            <div className="game-condensed" style={{ fontSize: 14, fontWeight: 700, color: "#a855f7" }}>🏆 SHOWCASED</div>
+            <div className="game-mono" style={{ fontSize: 10, color: "#a855f780" }}>+¥{GE.SHOWCASE_DAILY}/day</div>
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -1449,19 +1585,99 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
   );
 }
 
+// ── STATS DASHBOARD (Phase 3) ──
+function GameStats({ state, onBack }) {
+  const vehicles = Object.values(state.garage?.vehicles || {});
+  const showcased = vehicles.filter(v => v.status === "showcase");
+  const dailyIncome = GE.getShowcaseIncome(state);
+  return (
+    <div style={{ padding: 24, fontFamily: "'Barlow Condensed', sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <button className="game-btn" onClick={onBack} style={{ padding: "6px 12px", background: "#1a1f35", color: "#9ca3af", fontSize: 12 }}>← Back</button>
+        <div style={{ fontSize: 20, fontWeight: 700, color: "#e2e8f0" }}>Stats & Progress</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 12, marginBottom: 24 }}>
+        {[
+          { label: "Cars in Garage", value: vehicles.length, color: "#4e7fff" },
+          { label: "Cars Completed", value: state.stats?.carsCompleted || 0, color: "#22c55e" },
+          { label: "Total Repairs", value: state.stats?.totalRepairs || 0, color: "#a855f7" },
+          { label: "Total ¥ Earned", value: "¥" + (state.stats?.totalYenEarned || 0).toLocaleString(), color: "#f59e0b" },
+          { label: "Gacha Pulls", value: state.gacha?.totalPulls || 0, color: "#a855f7" },
+          { label: "Showcase Income", value: dailyIncome > 0 ? "¥" + dailyIncome + "/day" : "—", color: "#22c55e" },
+          { label: "Showcased Cars", value: showcased.length, color: "#f59e0b" },
+        ].map(s => (
+          <div key={s.label} style={{ padding: 16, background: "#0e1220", borderRadius: 8, border: "1px solid #1a1f35", borderLeft: "3px solid " + s.color }}>
+            <div className="game-mono" style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 12 }}>Skills</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+          {[["wrench","🔧","Wrench"],["precision","🎯","Precision"],["diagnosis","🔍","Diagnosis"],["bodywork","🎨","Bodywork"]].map(([sk,ico,label]) => {
+            const s = state.skills?.[sk] || { level: 1, xp: 0 };
+            const tier = GE.getSkillTier(s.level);
+            const needed = GE.xpForLevel(s.level);
+            const pct = needed > 0 ? Math.round((s.xp / needed) * 100) : 0;
+            return (
+              <div key={sk} style={{ padding: "14px 16px", background: "#0e1220", borderRadius: 8, border: "1px solid #1a1f35" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>{ico} {label}</span>
+                  <span className="game-mono" style={{ fontSize: 12, color: s.level >= 16 ? "#f59e0b" : s.level >= 11 ? "#a855f7" : s.level >= 6 ? "#22c55e" : "#6b7280" }}>Lv.{s.level}</span>
+                </div>
+                <div className="game-mono" style={{ fontSize: 10, color: "#6b7280", marginBottom: 4 }}>
+                  {tier.title}{tier.bonus > 0 ? " (+" + Math.round(tier.bonus * 100) + "% efficiency)" : ""}
+                  {sk === "diagnosis" && s.level >= 10 ? " · 🔍 Intuition" : ""}
+                  {s.level >= 16 ? " · ★ Perfect Repair 5%" : ""}
+                </div>
+                <div style={{ height: 4, background: "#1a1f35", borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: pct + "%", background: "#4e7fff", borderRadius: 2, transition: "width 0.3s" }} />
+                </div>
+                <div className="game-mono" style={{ fontSize: 9, color: "#4b5563", marginTop: 2 }}>{s.xp} / {needed} XP</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 12 }}>Tools Owned</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {GD.TOOLS.filter(t => state.tools[t.id]).map(t => (
+            <span key={t.id} className="game-mono" style={{ fontSize: 11, padding: "4px 10px", background: "#22c55e10", color: "#22c55e", borderRadius: 20 }}>✓ {t.name}</span>
+          ))}
+          {GD.TOOLS.filter(t => state.tools[t.id]).length === 0 && <span style={{ fontSize: 12, color: "#4b5563" }}>No tools purchased yet.</span>}
+        </div>
+      </div>
+      <div style={{ marginTop: 24 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 12 }}>Donor Parts</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {Object.entries(state.currency?.donorParts || {}).filter(([,v]) => v > 0).map(([k,v]) => {
+            const car = GD.VEHICLES.find(c => c.id === k);
+            return <span key={k} className="game-mono" style={{ fontSize: 11, padding: "4px 10px", background: "#f59e0b10", color: "#f59e0b", borderRadius: 20 }}>{car ? car.name.split(" ").pop() : k}: ×{v}</span>;
+          })}
+          {Object.values(state.currency?.donorParts || {}).every(v => !v) && <span style={{ fontSize: 12, color: "#4b5563" }}>None yet. Pull duplicates in the Junkyard.</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── GARAGE VIEW ──
-function GameGarage({ state, onSelectCar, onNavigateShop, onNavigateGacha }) {
+function GameGarage({ state, onSelectCar, onNavigateShop, onNavigateGacha, onNavigateStats }) {
   const vehicles = state.garage?.vehicles || {};
   const entries = Object.entries(vehicles);
+  const showcaseIncome = GE.getShowcaseIncome(state);
   return (
     <div style={{ padding: 24, fontFamily: "'Barlow Condensed', sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 8 }}>
-        <div><div style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0" }}>Your Garage</div><div className="game-mono" style={{ fontSize: 12, color: "#6b7280" }}>{entries.length} vehicle{entries.length !== 1 ? "s" : ""}</div></div>
+        <div><div style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0" }}>Your Garage</div><div className="game-mono" style={{ fontSize: 12, color: "#6b7280" }}>{entries.length} vehicle{entries.length !== 1 ? "s" : ""}{showcaseIncome > 0 ? " · ¥" + showcaseIncome + "/day passive" : ""}</div></div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <span className="game-mono" style={{ fontSize: 14, color: "#f59e0b", fontWeight: 700 }}>¥{(state.currency?.yen||0).toLocaleString()}</span>
           <span className="game-mono" style={{ fontSize: 12, color: "#a855f7" }}>🔧{state.currency?.wrenchTokens||0}WT</span>
           <button className="game-btn" onClick={onNavigateGacha} style={{ padding: "7px 14px", background: "#a855f718", color: "#a855f7", fontSize: 12, border: "1px solid #a855f740" }}>🎰 Junkyard</button>
           <button className="game-btn" onClick={onNavigateShop} style={{ padding: "7px 14px", background: "#1a1f35", color: "#9ca3af", fontSize: 12, border: "1px solid #2a2f45" }}>🛒 Shop</button>
+          <button className="game-btn" onClick={onNavigateStats} style={{ padding: "7px 14px", background: "#1a1f35", color: "#9ca3af", fontSize: 12, border: "1px solid #2a2f45" }}>📊 Stats</button>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
@@ -1471,8 +1687,9 @@ function GameGarage({ state, onSelectCar, onNavigateShop, onNavigateGacha }) {
           const comp = GE.getSystemCompletion(tree, v.parts);
           const totalPct = Object.values(comp).reduce((s,c) => s + c.pct, 0) / Math.max(1, Object.keys(comp).length);
           const rc = GD.RARITY_COLORS[roster?.rarity || 3];
+          const isShowcase = v.status === "showcase";
           return (
-            <div key={id} onClick={() => onSelectCar(id)} style={{ background: "#0e1220", border: "1px solid #1a1f35", borderRadius: 10, padding: 18, cursor: "pointer", transition: "all 0.2s", borderLeft: "3px solid " + rc }}
+            <div key={id} onClick={() => onSelectCar(id)} style={{ background: "#0e1220", border: "1px solid " + (isShowcase ? "#a855f730" : "#1a1f35"), borderRadius: 10, padding: 18, cursor: "pointer", transition: "all 0.2s", borderLeft: "3px solid " + rc }}
               onMouseOver={e => e.currentTarget.style.background = "#121730"} onMouseOut={e => e.currentTarget.style.background = "#0e1220"}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 12 }}>
                 <div>
@@ -1480,12 +1697,13 @@ function GameGarage({ state, onSelectCar, onNavigateShop, onNavigateGacha }) {
                   <div style={{ fontSize: 17, fontWeight: 700, color: "#e2e8f0", marginTop: 2 }}>{roster?.name || v.modelId}</div>
                   <div className="game-mono" style={{ fontSize: 11, color: "#6b7280" }}>{roster?.engine}</div>
                 </div>
+                {isShowcase && <span style={{ fontSize: 11, color: "#a855f7", background: "#a855f715", padding: "3px 8px", borderRadius: 6 }}>🏆</span>}
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                 {Object.entries(comp).slice(0,6).map(([sId,c]) => <span key={sId} className="game-mono" style={{ fontSize: 9, padding: "2px 6px", borderRadius: 8, background: c.pct >= 100 ? "#22c55e15" : "#1a1f35", color: c.pct >= 100 ? "#22c55e" : "#6b7280" }}>{sId.slice(0,4).toUpperCase()} {c.pct}%</span>)}
               </div>
               <div style={{ height: 4, background: "#1a1f35", borderRadius: 2, overflow: "hidden" }}><div style={{ height: "100%", width: totalPct + "%", background: totalPct >= 100 ? "#22c55e" : "#4e7fff", borderRadius: 2, transition: "width 0.4s" }} /></div>
-              <div className="game-mono" style={{ fontSize: 10, color: "#6b7280", marginTop: 4, textAlign: "right" }}>{Math.round(totalPct)}% {v.status === "first_started" && <span style={{ color: "#22c55e" }}>🔑 RUNNING</span>}</div>
+              <div className="game-mono" style={{ fontSize: 10, color: "#6b7280", marginTop: 4, textAlign: "right" }}>{Math.round(totalPct)}% {v.status === "first_started" && <span style={{ color: "#22c55e" }}>🔑 RUNNING</span>}{isShowcase && <span style={{ color: "#a855f7" }}>🏆 +¥{GE.SHOWCASE_DAILY}/day</span>}</div>
             </div>
           );
         })}
@@ -1536,7 +1754,7 @@ function GameView() {
 
   const goBack = () => {
     if (screen === "workbench") { setScreen("garage"); setActiveCar(null); }
-    else if (screen === "shop" || screen === "gacha") { if (activeCar) setScreen("workbench"); else setScreen("garage"); }
+    else if (screen === "shop" || screen === "gacha" || screen === "stats") { if (activeCar) setScreen("workbench"); else setScreen("garage"); }
     else { setScreen("picker"); setProfileId(null); setStateRaw(null); }
   };
 
@@ -1544,10 +1762,11 @@ function GameView() {
 
   if (screen === "picker") return <GameProfilePicker onSelect={selectProfile} />;
   if (!state) return <div style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>Loading...</div>;
+  if (screen === "stats") return <GameStats state={state} onBack={goBack} />;
   if (screen === "gacha") return <GachaView state={state} setState={setState} onBack={goBack} addLog={addLog} />;
   if (screen === "shop") return <GameShop state={state} onBuyTool={(t) => { if (state.currency.yen >= t.cost) setState(s => ({ ...s, currency: { ...s.currency, yen: s.currency.yen - t.cost }, tools: { ...s.tools, [t.id]: true } })); }} onBuyPart={(p) => { if (!activeCar || state.currency.yen < p.replaceCost) return; setState(s => { const v = {...s.garage.vehicles[activeCar]}; v.parts = {...v.parts, [p.id]: {...v.parts[p.id], condition: 0.85+Math.random()*0.15, repairProgress: 1}}; return {...s, currency:{...s.currency, yen: s.currency.yen - p.replaceCost}, garage:{...s.garage, vehicles:{...s.garage.vehicles, [activeCar]: v}}}; }); }} activeCar={activeCar ? state.garage.vehicles[activeCar] : null} partTree={activeCar ? GE.getPartTree(state.garage.vehicles[activeCar]?.modelId) : null} onBack={goBack} />;
   if (screen === "workbench" && activeCar) return <GameWorkbench state={state} setState={setState} vehicleId={activeCar} onBack={goBack} onNavigateShop={() => setScreen("shop")} />;
-  return <GameGarage state={state} onSelectCar={(id) => { setActiveCar(id); setScreen("workbench"); }} onNavigateShop={() => setScreen("shop")} onNavigateGacha={() => setScreen("gacha")} />;
+  return <GameGarage state={state} onSelectCar={(id) => { setActiveCar(id); setScreen("workbench"); }} onNavigateShop={() => setScreen("shop")} onNavigateGacha={() => setScreen("gacha")} onNavigateStats={() => setScreen("stats")} />;
 }
 
 // ════════════════════════════════════════════════════════════════
