@@ -1,86 +1,196 @@
-[
-  {
-    "modelId": "ae86",
-    "displayName": "1985 Toyota AE86 Sprinter Trueno",
-    "rarity": 3,
-    "engine": "4A-GE 1.6L I4",
-    "loreBlurb": "The legendary tofu delivery car. Simple, light, and the gateway to everything JDM."
-  },
-  {
-    "modelId": "crx",
-    "displayName": "1991 Honda CRX Si",
-    "rarity": 3,
-    "engine": "D16A6 1.6L I4",
-    "loreBlurb": "Rust everywhere, but the engine probably still runs. Bodywork-heavy."
-  },
-  {
-    "modelId": "z31",
-    "displayName": "1986 Nissan 300ZX (Z31)",
-    "rarity": 3,
-    "engine": "VG30E 3.0L V6",
-    "loreBlurb": "Vacuum spaghetti, T-top seals, and wiring gremlins. Diagnosis-heavy."
-  },
-  {
-    "modelId": "aw11",
-    "displayName": "1988 Toyota MR2 (AW11)",
-    "rarity": 3,
-    "engine": "4A-GE 1.6L I4",
-    "loreBlurb": "Mid-engine access nightmare. Everything is backwards and upside down."
-  },
-  {
-    "modelId": "s13",
-    "displayName": "1993 Nissan 240SX (S13)",
-    "rarity": 4,
-    "engine": "KA24DE 2.4L I4",
-    "loreBlurb": "Drift tax damage. Undoing bad mods, mystery wiring, clapped interior."
-  },
-  {
-    "modelId": "fc3s",
-    "displayName": "1989 Mazda RX-7 (FC3S)",
-    "rarity": 4,
-    "engine": "13B-T Rotary Turbo",
-    "loreBlurb": "Your first rotary. Port cleanup, coolant seal inspection, single turbo rebuild."
-  },
-  {
-    "modelId": "2g_eclipse",
-    "displayName": "1995 Mitsubishi Eclipse GSX (2G)",
-    "rarity": 4,
-    "engine": "4G63T 2.0L I4 Turbo",
-    "loreBlurb": "DSM reliability — cracked manifold, transfer case, AWD turbo platform."
-  },
-  {
-    "modelId": "dc2",
-    "displayName": "1997 Honda Integra Type R (DC2)",
-    "rarity": 4,
-    "engine": "B18C5 1.8L I4 VTEC",
-    "loreBlurb": "High-rev NA. Valve adjustment, VTEC solenoid, LSD rebuild. Precision-heavy."
-  },
-  {
-    "modelId": "fd3s",
-    "displayName": "1993 Mazda RX-7 (FD3S)",
-    "rarity": 5,
-    "engine": "13B-REW Twin-Turbo",
-    "loreBlurb": "Sequential twin-turbo, apex seals, vacuum labyrinth. All four mechanics maxed."
-  },
-  {
-    "modelId": "wrx_sti",
-    "displayName": "2006 Subaru WRX STI",
-    "rarity": 5,
-    "engine": "EJ257 2.5L H4 Turbo",
-    "loreBlurb": "Ringland failure, boxer access, turbo system, DCCD AWD."
-  },
-  {
-    "modelId": "jza80",
-    "displayName": "1994 Toyota Supra RZ (JZA80)",
-    "rarity": 5,
-    "engine": "2JZ-GTE 3.0L I6 TT",
-    "loreBlurb": "Inline-six royalty. Sequential TT, head gasket, Getrag V160 rebuild."
-  },
-  {
-    "modelId": "bnr34",
-    "displayName": "1999 Nissan Skyline GT-R (BNR34)",
-    "rarity": 5,
-    "engine": "RB26DETT 2.6L I6 TT",
-    "loreBlurb": "ATTESA E-TS AWD, ITBs ×6, twin ceramic turbos. The endgame car."
-  }
-]
+{
+  "vehicles": [
+    {
+      "modelId": "ae86",
+      "displayName": "1985 Toyota AE86 Sprinter Trueno",
+      "chassisCode": "AE86",
+      "engineCode": "4A-GE",
+      "year": 1985,
+      "make": "Toyota",
+      "model": "Sprinter Trueno",
+      "rarity": 3,
+      "engineDescription": "1.6L I4 DOHC 16V",
+      "restorationFocus": "NA four-banger, vacuum lines, basic suspension. The tutorial car.",
+      "basePrice": 5000,
+      "completionTimeEstimate": "3-5 hours",
+      "loreBlurb": "The lightweight Corolla that became a drift legend. Takumi's chariot, the mountain king's weapon of choice.",
+      "partTreeFile": "parts/ae86.json"
+    },
+    {
+      "modelId": "crx",
+      "displayName": "1991 Honda CRX Si",
+      "chassisCode": "EF8",
+      "engineCode": "D16A6",
+      "year": 1991,
+      "make": "Honda",
+      "model": "CRX Si",
+      "rarity": 3,
+      "engineDescription": "1.6L I4 SOHC 16V",
+      "restorationFocus": "Rust everywhere. Bodywork-heavy — engine is fine.",
+      "basePrice": 4500,
+      "completionTimeEstimate": "3-5 hours",
+      "loreBlurb": "Honda's featherweight pocket rocket. They all rust, but the ones that survive are worth saving.",
+      "partTreeFile": "parts/crx.json"
+    },
+    {
+      "modelId": "z31",
+      "displayName": "1986 Nissan 300ZX",
+      "chassisCode": "Z31",
+      "engineCode": "VG30E",
+      "year": 1986,
+      "make": "Nissan",
+      "model": "300ZX",
+      "rarity": 3,
+      "engineDescription": "3.0L V6 SOHC 12V",
+      "restorationFocus": "V6 vacuum spaghetti, T-top seals, wiring gremlins. Diagnosis-heavy.",
+      "basePrice": 5500,
+      "completionTimeEstimate": "3-5 hours",
+      "loreBlurb": "The Z that time forgot. Overshadowed by its twin-turbo successor, the Z31 hides a surprisingly capable chassis under all those vacuum lines.",
+      "partTreeFile": "parts/z31.json"
+    },
+    {
+      "modelId": "aw11",
+      "displayName": "1988 Toyota MR2",
+      "chassisCode": "AW11",
+      "engineCode": "4A-GE",
+      "year": 1988,
+      "make": "Toyota",
+      "model": "MR2",
+      "rarity": 3,
+      "engineDescription": "1.6L I4 DOHC 16V",
+      "restorationFocus": "Mid-engine access nightmare. Wrench work difficulty from layout.",
+      "basePrice": 6000,
+      "completionTimeEstimate": "3-5 hours",
+      "loreBlurb": "Toyota's mid-engine experiment. Same 4A-GE as the AE86 but crammed behind the seats. Bring short arms and patience.",
+      "partTreeFile": "parts/aw11.json"
+    },
+    {
+      "modelId": "s13",
+      "displayName": "1993 Nissan 240SX",
+      "chassisCode": "S13",
+      "engineCode": "KA24DE",
+      "year": 1993,
+      "make": "Nissan",
+      "model": "240SX",
+      "rarity": 4,
+      "engineDescription": "2.4L I4 DOHC 16V",
+      "restorationFocus": "Drift tax damage. Undoing bad mods, mystery wiring, clapped interior.",
+      "basePrice": 8000,
+      "completionTimeEstimate": "8-12 hours",
+      "loreBlurb": "Every drift missile started as someone's clean S13. Yours has zip ties where bolts should be and a wiring harness held together by hope.",
+      "partTreeFile": "parts/s13.json"
+    },
+    {
+      "modelId": "fc3s",
+      "displayName": "1989 Mazda RX-7",
+      "chassisCode": "FC3S",
+      "engineCode": "13B-T",
+      "year": 1989,
+      "make": "Mazda",
+      "model": "RX-7",
+      "rarity": 4,
+      "engineDescription": "1.3L Rotary Turbo",
+      "restorationFocus": "First rotary. Port cleanup, coolant seal inspection, single turbo rebuild.",
+      "basePrice": 12000,
+      "completionTimeEstimate": "8-12 hours",
+      "loreBlurb": "Your introduction to the spinning Dorito. The FC taught a generation that rotaries are worth the trouble — most of the time.",
+      "partTreeFile": "parts/fc3s.json"
+    },
+    {
+      "modelId": "eclipse_gsx",
+      "displayName": "1995 Mitsubishi Eclipse GSX",
+      "chassisCode": "2G",
+      "engineCode": "4G63T",
+      "year": 1995,
+      "make": "Mitsubishi",
+      "model": "Eclipse GSX",
+      "rarity": 4,
+      "engineDescription": "2.0L I4 DOHC Turbo",
+      "restorationFocus": "DSM reliability — cracked manifold, transfer case, AWD turbo platform.",
+      "basePrice": 9000,
+      "completionTimeEstimate": "8-12 hours",
+      "loreBlurb": "The DSM that could embarrass anything on the street — when it ran. Cracked exhaust manifolds and transfer case whine are just part of the experience.",
+      "partTreeFile": "parts/eclipse_gsx.json"
+    },
+    {
+      "modelId": "dc2",
+      "displayName": "1997 Honda Integra Type R",
+      "chassisCode": "DC2",
+      "engineCode": "B18C5",
+      "year": 1997,
+      "make": "Honda",
+      "model": "Integra Type R",
+      "rarity": 4,
+      "engineDescription": "1.8L I4 DOHC VTEC",
+      "restorationFocus": "High-rev NA. Valve adjustment, VTEC solenoid, LSD rebuild. Precision-heavy.",
+      "basePrice": 15000,
+      "completionTimeEstimate": "8-12 hours",
+      "loreBlurb": "Honda's masterpiece of naturally aspirated engineering. The B18C5 screams to 8400 RPM and rewards every fraction of precision you give it.",
+      "partTreeFile": "parts/dc2.json"
+    },
+    {
+      "modelId": "fd3s",
+      "displayName": "1993 Mazda RX-7 FD3S",
+      "chassisCode": "FD3S",
+      "engineCode": "13B-REW",
+      "year": 1993,
+      "make": "Mazda",
+      "model": "RX-7",
+      "rarity": 5,
+      "engineDescription": "1.3L Twin-Turbo Rotary",
+      "restorationFocus": "Sequential twin-turbo, apex seals, vacuum labyrinth. All four mechanics maxed.",
+      "basePrice": 35000,
+      "completionTimeEstimate": "15-25 hours",
+      "loreBlurb": "The rotary's final form. 80+ vacuum lines, sequential twin turbos, and apex seals that haunt your dreams. If you can finish this, you can finish anything.",
+      "partTreeFile": "parts/fd3s.json"
+    },
+    {
+      "modelId": "ej257",
+      "displayName": "2006 Subaru WRX STI",
+      "chassisCode": "GDB",
+      "engineCode": "EJ257",
+      "year": 2006,
+      "make": "Subaru",
+      "model": "WRX STI",
+      "rarity": 5,
+      "engineDescription": "2.5L H4 DOHC Turbo",
+      "restorationFocus": "Ringland failure, boxer access, turbo system, DCCD AWD.",
+      "basePrice": 28000,
+      "completionTimeEstimate": "15-25 hours",
+      "loreBlurb": "The rally-bred boxer that loves to crack ringlands. Horizontally opposed means everything is sideways, including your patience.",
+      "partTreeFile": "parts/ej257.json"
+    },
+    {
+      "modelId": "jza80",
+      "displayName": "1994 Toyota Supra RZ",
+      "chassisCode": "JZA80",
+      "engineCode": "2JZ-GTE",
+      "year": 1994,
+      "make": "Toyota",
+      "model": "Supra RZ",
+      "rarity": 5,
+      "engineDescription": "3.0L I6 DOHC Twin-Turbo",
+      "restorationFocus": "Inline-six royalty. Sequential TT, head gasket, Getrag V160 rebuild.",
+      "basePrice": 45000,
+      "completionTimeEstimate": "15-25 hours",
+      "loreBlurb": "The 2JZ needs no introduction. Toyota overbuilt this engine so hard that thirty years later people are still finding its limits.",
+      "partTreeFile": "parts/jza80.json"
+    },
+    {
+      "modelId": "bnr34",
+      "displayName": "1999 Nissan Skyline GT-R",
+      "chassisCode": "BNR34",
+      "engineCode": "RB26DETT",
+      "year": 1999,
+      "make": "Nissan",
+      "model": "Skyline GT-R",
+      "rarity": 5,
+      "engineDescription": "2.6L I6 DOHC Twin-Turbo",
+      "restorationFocus": "ATTESA E-TS AWD, ITBs x6, twin ceramic turbos. The endgame car.",
+      "basePrice": 55000,
+      "completionTimeEstimate": "15-25 hours",
+      "loreBlurb": "Godzilla. Six individual throttle bodies, twin ceramic turbos, and an AWD system that thinks faster than you do. The final boss.",
+      "partTreeFile": "parts/bnr34.json"
+    }
+  ]
+}

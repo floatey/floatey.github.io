@@ -1,0 +1,1302 @@
+{
+  "modelId": "ae86",
+  "displayName": "1985 Toyota AE86 Sprinter Trueno",
+  "chassisCode": "AE86",
+  "engineCode": "4A-GE",
+  "rarity": 3,
+  "arrivalConditionRange": [0.20, 0.45],
+  "systems": [
+    {
+      "id": "engine",
+      "name": "Engine (4A-GE 1.6L)",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "cylinder_head",
+          "name": "Cylinder Head",
+          "parts": [
+            {
+              "id": "ae86_engine_valve_cover_gasket",
+              "name": "Valve Cover Gasket",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 20,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_cam_seals",
+                "chance": 0.8,
+                "flavorText": "Valve cover's off. Yep — oil seeping past both cam seals. Classic 4A-GE."
+              },
+              "flavorText": [
+                "Gasket's toast. Classic 4A-GE move.",
+                "Oil weeping down the side of the head. This thing's been crying for years.",
+                "Cork gasket, naturally. Toyota loved these until they didn't."
+              ]
+            },
+            {
+              "id": "ae86_engine_cam_seals",
+              "name": "Cam Seals (Intake & Exhaust)",
+              "repairType": "precision",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 35,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_valve_cover_gasket"],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_camshaft_wear",
+                "chance": 0.4,
+                "flavorText": "Seals are out. Hang on — there's visible wear on the cam journals. That's not great."
+              },
+              "flavorText": [
+                "Both seals are hard as a hockey puck. No wonder they're leaking.",
+                "Oil everywhere once these go. Cheap part, fiddly install.",
+                "Gotta get the seal seated square or it'll leak again in a month."
+              ]
+            },
+            {
+              "id": "ae86_engine_camshaft_wear",
+              "name": "Camshaft Journal Wear",
+              "repairType": "diagnosis",
+              "difficulty": 0.5,
+              "canRepair": false,
+              "replaceCost": 280,
+              "sourceRarity": "uncommon",
+              "prerequisites": ["ae86_engine_cam_seals"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Scoring on the journals. She's been run low on oil at some point.",
+                "Cam lobes still look okay, but these journals need attention.",
+                "Not the worst I've seen, but you'll feel it in the idle if you leave it."
+              ]
+            },
+            {
+              "id": "ae86_engine_valve_adjustment",
+              "name": "Valve Adjustment Shims",
+              "repairType": "precision",
+              "difficulty": 0.5,
+              "canRepair": true,
+              "replaceCost": 60,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_valve_cover_gasket"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Shim-over-bucket setup. Measure twice, shim once.",
+                "Couple of these are way out of spec. You can hear it ticking.",
+                "Grab the feeler gauges. This is where patience pays off."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "block",
+          "name": "Engine Block",
+          "parts": [
+            {
+              "id": "ae86_engine_front_main_seal",
+              "name": "Front Crankshaft Seal",
+              "repairType": "precision",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 25,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_timing_belt"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Oil slinging off the crank pulley. Seal's done.",
+                "With the timing belt off you can see it weeping. Swap it now or regret it later.",
+                "Cheap seal, but you gotta pull the timing gear to get to it."
+              ]
+            },
+            {
+              "id": "ae86_engine_rear_main_seal",
+              "name": "Rear Main Seal",
+              "repairType": "precision",
+              "difficulty": 0.6,
+              "canRepair": false,
+              "replaceCost": 30,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_drivetrain_flywheel"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "The one seal everyone dreads. Trans has to come out to get here.",
+                "Oil dripping off the bell housing. Rear main, guaranteed.",
+                "While you're in there, just do it. You don't want to pull the trans twice."
+              ]
+            },
+            {
+              "id": "ae86_engine_piston_rings",
+              "name": "Piston Rings (Set of 4)",
+              "repairType": "precision",
+              "difficulty": 0.7,
+              "canRepair": false,
+              "replaceCost": 180,
+              "sourceRarity": "uncommon",
+              "prerequisites": ["ae86_engine_valve_adjustment"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Compression test told the story. Rings are shot on cylinders 2 and 3.",
+                "Oil consumption and blow-by. These rings have seen better decades.",
+                "Ring gaps are way out of spec. Time for a fresh set and a hone."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "timing",
+          "name": "Timing System",
+          "parts": [
+            {
+              "id": "ae86_engine_timing_belt",
+              "name": "Timing Belt",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 45,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_tensioner_pulley",
+                "chance": 0.7,
+                "flavorText": "Belt's off. The tensioner has play in it — grab it and wiggle. Yeah, that's no good."
+              },
+              "flavorText": [
+                "Cracked and glazed. This belt's been on here since the Clinton administration.",
+                "The 4A-GE is interference. If this snaps, the valves meet the pistons. Not a friendly meeting.",
+                "Always do the belt, tensioner, and water pump together. Don't be cheap."
+              ]
+            },
+            {
+              "id": "ae86_engine_tensioner_pulley",
+              "name": "Timing Belt Tensioner",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 55,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_timing_belt"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Bearing's crunchy. Spin it by hand — sounds like gravel.",
+                "If the tensioner goes, it takes the belt with it. Replace together, always.",
+                "Spring's lost tension. This thing was barely keeping the belt on."
+              ]
+            },
+            {
+              "id": "ae86_engine_water_pump",
+              "name": "Water Pump",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 75,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_timing_belt"],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_wp_housing_gasket",
+                "chance": 0.6,
+                "flavorText": "Pump's out. Gasket surface underneath is corroded — you'll need to clean that up and reseal."
+              },
+              "flavorText": [
+                "Weep hole is dripping. She's on her way out.",
+                "Timing belt is right there — do the pump while you're in it. No excuses.",
+                "Impeller's still intact but the bearing's got play. Swap it."
+              ]
+            },
+            {
+              "id": "ae86_engine_wp_housing_gasket",
+              "name": "Water Pump Housing Gasket",
+              "repairType": "precision",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 12,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_water_pump"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Paper gasket, crusty as expected. Scrape the surface clean before the new one goes on.",
+                "Twelve-dollar part that'll cause a hundred-dollar headache if you skip it.",
+                "Use a razor blade and patience. Don't gouge the aluminum."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "intake",
+          "name": "Intake System",
+          "parts": [
+            {
+              "id": "ae86_engine_throttle_body",
+              "name": "Throttle Body",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 120,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_vacuum_lines",
+                "chance": 1.0,
+                "flavorText": "Throttle body's off and — oh. Now you can see the vacuum line spaghetti behind it. Some of these are cracked to pieces."
+              },
+              "flavorText": [
+                "Butterfly valve's gummed up. Carb cleaner and a rag, she'll clean up.",
+                "Bore's full of carbon. Somebody never changed the air filter.",
+                "Throttle cable's sticky too. Hit everything with cleaner while it's apart."
+              ]
+            },
+            {
+              "id": "ae86_engine_vacuum_lines",
+              "name": "Vacuum Lines",
+              "repairType": "diagnosis",
+              "difficulty": 0.5,
+              "canRepair": false,
+              "replaceCost": 40,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_throttle_body"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Half these lines are cracked. The other half are plugged with someone's idea of a fix.",
+                "Vacuum spaghetti. Trace every line, label before you pull. Trust me.",
+                "The 4A-GE vacuum routing diagram should be on the hood. It's not. Of course."
+              ]
+            },
+            {
+              "id": "ae86_engine_intake_manifold_gasket",
+              "name": "Intake Manifold Gasket",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 18,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_engine_throttle_body"],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_piston_rings",
+                "chance": 0.35,
+                "flavorText": "Manifold's off. Look at the intake ports — oil pooling in runners 2 and 3. Rings are letting blow-by into the intake side."
+              },
+              "flavorText": [
+                "Sucking air past the gasket. You can hear it hiss at idle.",
+                "Manifold bolts are all different lengths because someone's been here before. Fun.",
+                "Spray some carb cleaner around the base. If the idle changes, you found your leak."
+              ]
+            },
+            {
+              "id": "ae86_engine_iacv",
+              "name": "Idle Air Control Valve",
+              "repairType": "diagnosis",
+              "difficulty": 0.4,
+              "canRepair": true,
+              "replaceCost": 95,
+              "sourceRarity": "uncommon",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Idle's hunting like crazy. IACV's gunked up or dead.",
+                "Pull it off and blast it with cleaner first. Sometimes that's all it needs.",
+                "Plunger is stuck. Carbon buildup all over. This car sat for a long time."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fuel",
+      "name": "Fuel System",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "fuel_delivery",
+          "name": "Fuel Delivery",
+          "parts": [
+            {
+              "id": "ae86_fuel_injector_1",
+              "name": "Fuel Injector #1",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 65,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_fuel_fuel_rail"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Spray pattern's all wrong. This one's dribbling, not atomizing.",
+                "O-ring's hard. Injector might clean up, but the seal needs replacing either way.",
+                "Ohm it out — resistance is within spec but it's still clogged."
+              ]
+            },
+            {
+              "id": "ae86_fuel_injector_2",
+              "name": "Fuel Injector #2",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 65,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_fuel_fuel_rail"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Dead injector. Cylinder two's running lean and it shows.",
+                "Pintle's stuck. Soak it overnight, sometimes they come back.",
+                "Click test: nothing. This one's electrically dead."
+              ]
+            },
+            {
+              "id": "ae86_fuel_injector_3",
+              "name": "Fuel Injector #3",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 65,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_fuel_fuel_rail"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Varnish all over the tip. Old gas did a number on this one.",
+                "Flow rate's about 60% of the others. That's your misfire right there.",
+                "Could try an ultrasonic bath, but at this point just replace all four."
+              ]
+            },
+            {
+              "id": "ae86_fuel_injector_4",
+              "name": "Fuel Injector #4",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 65,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_fuel_fuel_rail"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "This one actually looks okay. Clean it, new O-ring, back in it goes.",
+                "Spray pattern's decent. Best of the four, which isn't saying much.",
+                "Lucky number four. At least one thing in this fuel system isn't trashed."
+              ]
+            },
+            {
+              "id": "ae86_fuel_fuel_rail",
+              "name": "Fuel Rail",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 85,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Rail's got some surface corrosion but it's structurally fine. Clean and paint it.",
+                "Pull the rail with all four injectors still in. Way easier to service on the bench.",
+                "Fuel residue everywhere. Pop the clips, pull steady, and have a rag ready."
+              ]
+            },
+            {
+              "id": "ae86_fuel_fuel_filter",
+              "name": "Fuel Filter",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 20,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "This filter's darker than coffee. No telling when it was last changed.",
+                "Twenty-dollar part, ten-minute job. No reason not to do it.",
+                "Check the flow direction arrow. Someone installed the last one backwards."
+              ]
+            },
+            {
+              "id": "ae86_fuel_pressure_regulator",
+              "name": "Fuel Pressure Regulator",
+              "repairType": "diagnosis",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 110,
+              "sourceRarity": "uncommon",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Diaphragm's leaking. Pull the vacuum line — if fuel comes out, there's your answer.",
+                "Fuel pressure's all over the place. Regulator's lost its mind.",
+                "Vacuum reference line is cracked too. Replace both while you're here."
+              ]
+            },
+            {
+              "id": "ae86_fuel_fuel_pump",
+              "name": "Fuel Pump",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 130,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Key on — listen. That whine is weak. Pump's dying.",
+                "Fuel pump's in the tank on these. Drop the tank or go through the trunk.",
+                "Pressure test says 28 PSI. Spec is 38. This pump's tired."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cooling",
+      "name": "Cooling System",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "cooling_system",
+          "name": "Cooling Circuit",
+          "parts": [
+            {
+              "id": "ae86_cooling_radiator",
+              "name": "Radiator",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": true,
+              "replaceCost": 160,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_cooling_lower_hose",
+                "chance": 0.7,
+                "flavorText": "Radiator's out. The lower hose behind it is ballooned and soft — that's a blowout waiting to happen."
+              },
+              "flavorText": [
+                "Fins are bent to hell and half the tubes are green with corrosion.",
+                "Someone tried to JB Weld the end tank. Points for effort.",
+                "Plastic end tanks on an aluminum core. They all crack eventually."
+              ]
+            },
+            {
+              "id": "ae86_cooling_thermostat",
+              "name": "Thermostat",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 15,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Stuck closed. Boil test confirmed it — this thing's a paperweight.",
+                "Fifteen bucks and twenty minutes. Easiest fix on the whole car.",
+                "Housing bolts are corroded. Hit 'em with penetrating oil first."
+              ]
+            },
+            {
+              "id": "ae86_cooling_upper_hose",
+              "name": "Upper Radiator Hose",
+              "repairType": "wrench",
+              "difficulty": 0.1,
+              "canRepair": false,
+              "replaceCost": 18,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Squeeze it. If it doesn't spring back, it's done.",
+                "Hose is swollen near the thermostat housing. Heat cycles got it.",
+                "New clamps too. The old ones are one-time-use spring clips."
+              ]
+            },
+            {
+              "id": "ae86_cooling_lower_hose",
+              "name": "Lower Radiator Hose",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 22,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_cooling_radiator"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Collapsing under suction at high RPM. Internal spring is gone.",
+                "Tucked behind the radiator. Pain to reach but not a hard swap.",
+                "Soft as a wet noodle. Coolant's been eating it from the inside."
+              ]
+            },
+            {
+              "id": "ae86_cooling_heater_hose",
+              "name": "Heater Hoses",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 25,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Routed through the firewall. One's cracked right at the heater core fitting.",
+                "No heat in the cabin? Start here before you blame the heater core.",
+                "These always get forgotten. Out of sight, out of mind, until your feet are wet."
+              ]
+            },
+            {
+              "id": "ae86_cooling_radiator_cap",
+              "name": "Radiator Cap",
+              "repairType": "wrench",
+              "difficulty": 0.1,
+              "canRepair": false,
+              "replaceCost": 10,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Spring's weak. Not holding pressure — that's why it's puking coolant.",
+                "Rubber seal is cracked and flat. Ten bucks to fix an overheating mystery.",
+                "Pressure test the cap separately. If it doesn't hold 13 PSI, toss it."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exhaust",
+      "name": "Exhaust System",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "exhaust_system",
+          "name": "Exhaust",
+          "parts": [
+            {
+              "id": "ae86_exhaust_header",
+              "name": "Exhaust Manifold / Header",
+              "repairType": "wrench",
+              "difficulty": 0.5,
+              "canRepair": true,
+              "replaceCost": 220,
+              "sourceRarity": "uncommon",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_exhaust_manifold_gasket",
+                "chance": 0.9,
+                "flavorText": "Header's off. The exhaust manifold gasket is blown between cylinders 2 and 3. That explains the ticking."
+              },
+              "flavorText": [
+                "Studs are rusted in. Get the torch ready, this is a fight.",
+                "Hairline crack near the collector. You can hear the exhaust leak on cold start.",
+                "Four-into-one design. Toyota kept it simple but the studs didn't get the memo."
+              ]
+            },
+            {
+              "id": "ae86_exhaust_manifold_gasket",
+              "name": "Exhaust Manifold Gasket",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 15,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_exhaust_header"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Blown between two ports. You can see daylight through the gasket.",
+                "Multi-layer steel gasket, but it's been cooking for forty years.",
+                "Fifteen-dollar fix that sounds like a five-hundred-dollar problem."
+              ]
+            },
+            {
+              "id": "ae86_exhaust_catalytic_converter",
+              "name": "Catalytic Converter",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 200,
+              "sourceRarity": "uncommon",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Rattle it. Hear that? Substrate's broken apart inside.",
+                "Honeycomb is melted — someone was running rich for a long time.",
+                "It's clogged. Backpressure's killing power. This has to go."
+              ]
+            },
+            {
+              "id": "ae86_exhaust_midpipe",
+              "name": "Mid-Pipe",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": true,
+              "replaceCost": 95,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Rusted through right where it bends. Classic rust belt special.",
+                "Flange bolts are seized. Penetrating oil and prayer.",
+                "Hangers are gone too. It's been resting on the driveshaft tunnel."
+              ]
+            },
+            {
+              "id": "ae86_exhaust_muffler",
+              "name": "Muffler",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 80,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Internal baffles are shot. Sounds like a tin can full of bees.",
+                "Rusted at the seam. Poke it with a screwdriver — goes right through.",
+                "Someone welded a coffee can over the last hole. Respect the hustle."
+              ]
+            },
+            {
+              "id": "ae86_exhaust_o2_sensor",
+              "name": "O2 Sensor",
+              "repairType": "diagnosis",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 55,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Sensor's lazy. Response time is way too slow — running rich because of it.",
+                "Connector's corroded. Clean it first, but this sensor's probably cooked.",
+                "Forty years of exhaust gas. The tip looks like it's been dipped in tar."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "drivetrain",
+      "name": "Drivetrain",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "clutch",
+          "name": "Clutch Assembly",
+          "parts": [
+            {
+              "id": "ae86_drivetrain_clutch_disc",
+              "name": "Clutch Disc",
+              "repairType": "wrench",
+              "difficulty": 0.5,
+              "canRepair": false,
+              "replaceCost": 120,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_engine_rear_main_seal",
+                "chance": 0.6,
+                "flavorText": "Clutch is out and — yep, rear main seal is weeping oil all over the flywheel. That's why it was slipping."
+              },
+              "flavorText": [
+                "Friction material is glazed smooth. This clutch has been slipping for a while.",
+                "Down to the rivets on the inside. Surprised it still grabs at all.",
+                "Trans has to come out. Clear your afternoon."
+              ]
+            },
+            {
+              "id": "ae86_drivetrain_pressure_plate",
+              "name": "Pressure Plate",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 95,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_drivetrain_clutch_disc"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Fingers are worn unevenly. This thing wasn't releasing properly.",
+                "Hot spots on the friction surface. It's been cooking itself.",
+                "Always replace with the disc. They wear as a set."
+              ]
+            },
+            {
+              "id": "ae86_drivetrain_throw_out_bearing",
+              "name": "Throw-Out Bearing",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 35,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_drivetrain_clutch_disc"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Chirps when you push the clutch pedal. Dead giveaway.",
+                "Spin it by hand. That grinding? Yeah, new bearing time.",
+                "Thirty-five bucks. You'd be insane not to replace it while the trans is out."
+              ]
+            },
+            {
+              "id": "ae86_drivetrain_flywheel",
+              "name": "Flywheel Resurface",
+              "repairType": "precision",
+              "difficulty": 0.5,
+              "canRepair": true,
+              "replaceCost": 75,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_drivetrain_pressure_plate"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Heat cracks all over the surface. Machine shop can save it if it's not too deep.",
+                "Glazed but no hot spots. Quick resurface and it's good to go.",
+                "Check the ring gear teeth while it's out. Starter's been chewing on them."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rear_end",
+          "name": "Rear Drivetrain",
+          "parts": [
+            {
+              "id": "ae86_drivetrain_rear_diff",
+              "name": "Rear Differential",
+              "repairType": "wrench",
+              "difficulty": 0.6,
+              "canRepair": true,
+              "replaceCost": 350,
+              "sourceRarity": "uncommon",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Whining on decel. Ring and pinion are on their way out.",
+                "Drain the fluid — if it sparkles, the gears are eating themselves.",
+                "The AE86 open diff. Everyone wants an LSD swap. This one just wants fresh oil."
+              ]
+            },
+            {
+              "id": "ae86_drivetrain_carrier_bearing",
+              "name": "Driveshaft Carrier Bearing",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 60,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Vibration at highway speed. Grab the driveshaft — if it clunks, carrier bearing's dead.",
+                "Rubber isolator is crumbling. Bearing itself might be fine, but the mount is toast.",
+                "Two-piece driveshaft on these. The center bearing takes all the abuse."
+              ]
+            },
+            {
+              "id": "ae86_drivetrain_cv_axles",
+              "name": "CV Axles (Pair)",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 140,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Boots are torn, grease everywhere. The joints are clicking on turns.",
+                "One's got play. The other's making noise. Replace both, save the headache.",
+                "Grease slung all over the inside of the wheel. Boots have been gone a while."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brakes",
+      "name": "Brake System",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "front_brakes",
+          "name": "Front Brakes",
+          "parts": [
+            {
+              "id": "ae86_brakes_front_pads",
+              "name": "Front Brake Pads",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 35,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_brakes_front_rotors",
+                "chance": 0.5,
+                "flavorText": "Pads are out. The rotors behind them are scored deep — you can feel the grooves with your fingernail."
+              },
+              "flavorText": [
+                "Metal on metal. The wear indicators are long gone.",
+                "Inner pad's down to the backing plate. Outer's got a little left. Caliper's sticking.",
+                "At least these are easy. Two bolts and a C-clamp."
+              ]
+            },
+            {
+              "id": "ae86_brakes_front_rotors",
+              "name": "Front Brake Rotors",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 70,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_brakes_front_pads"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Lip on the edge you could cut yourself on. Way past minimum thickness.",
+                "Warped. You can feel the pulsing through the pedal on every stop.",
+                "Scored deep enough to catch a thumbnail. New rotors, not a resurface."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rear_brakes",
+          "name": "Rear Brakes",
+          "parts": [
+            {
+              "id": "ae86_brakes_rear_shoes",
+              "name": "Rear Brake Shoes",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 40,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_brakes_rear_drums",
+                "chance": 0.6,
+                "flavorText": "Shoes are out. The drum surface is grooved and there's a hot spot from the shoes dragging. Drums gotta go."
+              },
+              "flavorText": [
+                "Springs are a puzzle. Take a picture before you pull anything apart.",
+                "Shoe material is crumbling. One side is soaked in brake fluid — leaking wheel cylinder.",
+                "Drum brakes. Welcome to 1985. The self-adjuster is seized, naturally."
+              ]
+            },
+            {
+              "id": "ae86_brakes_rear_drums",
+              "name": "Rear Brake Drums",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 65,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_brakes_rear_shoes"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Out of round. You can see the wear ridge without a micrometer.",
+                "Drums are stuck on. Couple persuasive taps with a mallet should do it.",
+                "Scored past the max diameter stamp. Can't turn these, gotta replace."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "brake_hydraulics",
+          "name": "Brake Hydraulics",
+          "parts": [
+            {
+              "id": "ae86_brakes_brake_lines",
+              "name": "Brake Lines",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 85,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Rubber flex lines are swollen. Hard lines have rust scale on them.",
+                "Spongy pedal? Start here. These hoses are expanding under pressure.",
+                "Flare nuts are seized. Get a proper flare nut wrench or you'll round them."
+              ]
+            },
+            {
+              "id": "ae86_brakes_master_cylinder",
+              "name": "Brake Master Cylinder",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 110,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Pedal goes to the floor. Internal seals are bypassing.",
+                "Bench bleed the new one before you install it. Saves hours of bleeding.",
+                "Fluid's black. When's the last time someone flushed this system? Never?"
+              ]
+            },
+            {
+              "id": "ae86_brakes_fluid_flush",
+              "name": "Brake Fluid Flush",
+              "repairType": "precision",
+              "difficulty": 0.2,
+              "canRepair": true,
+              "replaceCost": 15,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Fluid's brown. It absorbs moisture and cooks the seals. Flush it.",
+                "Grab a buddy — one pumps, one bleeds. Start at the furthest wheel.",
+                "DOT 3 or DOT 4. Read the cap, not the internet."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "suspension",
+      "name": "Suspension & Steering",
+      "type": "detailed",
+      "subsystems": [
+        {
+          "id": "front_suspension",
+          "name": "Front Suspension",
+          "parts": [
+            {
+              "id": "ae86_suspension_front_struts",
+              "name": "Front Struts",
+              "repairType": "wrench",
+              "difficulty": 0.5,
+              "canRepair": false,
+              "replaceCost": 180,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": {
+                "revealsOnAction": "remove",
+                "targetPartId": "ae86_suspension_front_springs",
+                "chance": 0.5,
+                "flavorText": "Strut's out. The spring's sagging — one side sits lower than the other. No wonder it pulls."
+              },
+              "flavorText": [
+                "Bounce test: three bounces before it settles. Should be one. Struts are blown.",
+                "Oil leaking down the body. These are done — riding on the bump stops.",
+                "McPherson struts up front. Spring compressor required. Don't skip it."
+              ]
+            },
+            {
+              "id": "ae86_suspension_front_springs",
+              "name": "Front Springs",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 120,
+              "sourceRarity": "common",
+              "prerequisites": ["ae86_suspension_front_struts"],
+              "hiddenReveal": null,
+              "flavorText": [
+                "One spring has a broken coil at the bottom. That clunk over bumps? Found it.",
+                "Sagged about an inch compared to spec. Car's been sitting on these for decades.",
+                "Spring compressor time. Be careful — stored energy in these will ruin your day."
+              ]
+            },
+            {
+              "id": "ae86_suspension_tie_rod_ends",
+              "name": "Tie Rod Ends",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 45,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Grab and wiggle. Clunk. That's your steering slop right there.",
+                "Boot's torn and the ball joint's dry. Replace both sides.",
+                "Count the threads before you take 'em off. Gets your alignment close enough to drive to the shop."
+              ]
+            },
+            {
+              "id": "ae86_suspension_ball_joints",
+              "name": "Front Ball Joints",
+              "repairType": "wrench",
+              "difficulty": 0.4,
+              "canRepair": false,
+              "replaceCost": 55,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Jack it up, pry bar under the tire. If it moves, ball joint's shot.",
+                "Worn ball joints make the whole front end feel vague. These are cooked.",
+                "Pickle fork or press — your call. Either way, the boot's trashed."
+              ]
+            },
+            {
+              "id": "ae86_suspension_control_arm_bushings",
+              "name": "Front Control Arm Bushings",
+              "repairType": "wrench",
+              "difficulty": 0.5,
+              "canRepair": false,
+              "replaceCost": 65,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Rubber's cracked and separating from the sleeve. Zero compliance left.",
+                "Every bump feels like a suggestion, not a command. Bushings are the reason.",
+                "Press 'em out, press 'em in. Alignment after. No shortcuts."
+              ]
+            },
+            {
+              "id": "ae86_suspension_steering_rack_boots",
+              "name": "Steering Rack Boots",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 25,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Torn wide open. Dirt and water getting into the rack. Replace before the rack dies.",
+                "Cheap insurance. Keeps the rack alive for another few decades.",
+                "Zip-tie style or clamp style — either works. Just get them on tight."
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rear_suspension",
+          "name": "Rear Suspension",
+          "parts": [
+            {
+              "id": "ae86_suspension_rear_shocks",
+              "name": "Rear Shocks",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 140,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Oil stains running down the shock body. They've given up.",
+                "Rear end hops over bumps instead of settling. Shocks have zero damping left.",
+                "Four-link rear on the AE86. Shocks are straightforward — two bolts each."
+              ]
+            },
+            {
+              "id": "ae86_suspension_rear_springs",
+              "name": "Rear Springs",
+              "repairType": "wrench",
+              "difficulty": 0.3,
+              "canRepair": false,
+              "replaceCost": 110,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Sagging. You can tell by the rear wheel gap — it's sitting low.",
+                "Coil springs in the back. One has a rust pit that's going to become a crack.",
+                "Measure ride height side to side. If they don't match, at least one spring is tired."
+              ]
+            },
+            {
+              "id": "ae86_suspension_sway_bar_bushings",
+              "name": "Sway Bar Bushings",
+              "repairType": "wrench",
+              "difficulty": 0.2,
+              "canRepair": false,
+              "replaceCost": 20,
+              "sourceRarity": "common",
+              "prerequisites": [],
+              "hiddenReveal": null,
+              "flavorText": [
+                "Clunking over speed bumps. Bushings are oval — bar's just rattling around in there.",
+                "Polyurethane or rubber, your call. Either way these originals are done.",
+                "Twenty-dollar fix that makes the car feel ten years newer in corners."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "interior",
+      "name": "Interior",
+      "type": "bundle",
+      "repairType": "bodywork",
+      "difficulty": 0.3,
+      "bundleCost": 400,
+      "flavorText": [
+        "Cracked dash, torn seats, shift boot's in shreds. Full 80s Toyota interior experience.",
+        "The dash is a moonscape of cracks. Seat foam is visible through the cloth. But the gauge cluster still works — Toyota quality where it counts.",
+        "Smells like old oil and sun-baked vinyl. This interior tells a story. Not a great one."
+      ]
+    },
+    {
+      "id": "electrical",
+      "name": "Electrical",
+      "type": "bundle",
+      "repairType": "diagnosis",
+      "difficulty": 0.4,
+      "bundleCost": 500,
+      "flavorText": [
+        "Alternator's weak, starter solenoid clicks sometimes, and somebody spliced into the harness for a stereo that's long gone.",
+        "Fusible links are crusty. Half the dash lights are out. The wiring harness has three colors of electrical tape in it.",
+        "Check the grounds first. On old Toyotas, it's always the grounds."
+      ]
+    },
+    {
+      "id": "body",
+      "name": "Body",
+      "type": "bundle",
+      "repairType": "bodywork",
+      "difficulty": 0.5,
+      "bundleCost": 700,
+      "flavorText": [
+        "Quarter panels are bubbly with rust. Fender flares are cracked. The paint is checking everywhere.",
+        "Rust in the usual spots — rear wheel wells, rocker panels, battery tray. Gonna need metal work.",
+        "She's straight at least. No accident damage. Just forty years of weather and parking lot dings."
+      ]
+    },
+    {
+      "id": "glass",
+      "name": "Glass & Seals",
+      "type": "bundle",
+      "repairType": "bodywork",
+      "difficulty": 0.3,
+      "bundleCost": 300,
+      "flavorText": [
+        "Windshield seal is letting water in. Rear glass seal is dried out. Cabin smells like mildew when it rains.",
+        "Rubber seals are hard as rocks. The glass is fine but everything around it is failing.",
+        "Pop-up headlight covers are hazed. Windshield has a long crack. Quarter glass seals are shot."
+      ]
+    },
+    {
+      "id": "trim",
+      "name": "Exterior Trim",
+      "type": "bundle",
+      "repairType": "bodywork",
+      "difficulty": 0.2,
+      "bundleCost": 250,
+      "flavorText": [
+        "Bumpers are faded, mirrors are cracked, and someone lost a door handle on the passenger side.",
+        "Weatherstripping is flat and hard. Door seals don't seal. Wind noise at 40 mph.",
+        "All the rubber and plastic bits that make a car look finished instead of abandoned."
+      ]
+    }
+  ],
+  "diagnosticScenarios": [
+    {
+      "id": "ae86_diag_rough_idle",
+      "symptom": "Engine idles rough, stalls at stop lights",
+      "clues": {
+        "free": [
+          "RPM fluctuates between 500 and 1200 at idle",
+          "No check engine light, no obvious vacuum leaks visible"
+        ],
+        "multimeter": "Idle air control valve resistance reads open circuit",
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_engine_iacv",
+      "wrongOptions": [
+        "ae86_fuel_pressure_regulator",
+        "ae86_engine_vacuum_lines",
+        "ae86_engine_throttle_body"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_overheating",
+      "symptom": "Car overheats sitting in traffic but runs cool on the highway",
+      "clues": {
+        "free": [
+          "Temperature gauge climbs quickly at red lights",
+          "Coolant level is full, no visible leaks"
+        ],
+        "multimeter": null,
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_cooling_thermostat",
+      "wrongOptions": [
+        "ae86_engine_water_pump",
+        "ae86_cooling_radiator_cap",
+        "ae86_cooling_radiator"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_exhaust_tick",
+      "symptom": "Ticking noise on cold start that fades as engine warms up",
+      "clues": {
+        "free": [
+          "Tick is loudest near the exhaust manifold area",
+          "No tick after about 5 minutes of running"
+        ],
+        "multimeter": null,
+        "compressionTester": "Compression is even across all four cylinders — not an internal issue",
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_exhaust_manifold_gasket",
+      "wrongOptions": [
+        "ae86_engine_valve_adjustment",
+        "ae86_exhaust_header",
+        "ae86_engine_cam_seals"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_clutch_slip",
+      "symptom": "RPMs climb but the car doesn't accelerate in third gear under load",
+      "clues": {
+        "free": [
+          "Burning smell after hard acceleration",
+          "Clutch pedal engagement point is very high, near the top of travel"
+        ],
+        "multimeter": null,
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_drivetrain_clutch_disc",
+      "wrongOptions": [
+        "ae86_drivetrain_pressure_plate",
+        "ae86_drivetrain_rear_diff",
+        "ae86_engine_piston_rings"
+      ],
+      "multiLayer": {
+        "revealsScenarioId": "ae86_diag_clutch_oil"
+      }
+    },
+    {
+      "id": "ae86_diag_clutch_oil",
+      "symptom": "New clutch installed but it's already slipping intermittently after 50 miles",
+      "clues": {
+        "free": [
+          "Oil drips visible on the bell housing",
+          "Clutch disc friction surface has oil staining"
+        ],
+        "multimeter": null,
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_engine_rear_main_seal",
+      "wrongOptions": [
+        "ae86_drivetrain_pressure_plate",
+        "ae86_drivetrain_throw_out_bearing",
+        "ae86_drivetrain_flywheel"
+      ],
+      "multiLayer": null
+    }
+  ],
+  "firstStartText": "You flip the key. The starter cranks — once, twice — and the 4A-GE catches. That distinctive twin-cam wail rises through the rev range. Four throttle bodies gulping air, sixteen valves dancing. She's alive. Takumi would be proud.",
+  "loreBlurb": "The lightweight Corolla that became a drift legend. Powered by Toyota's jewel-like 4A-GE twin cam, the AE86 proved that momentum and driver skill beat horsepower."
+}
