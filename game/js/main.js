@@ -17,7 +17,7 @@ import { formatYen }          from './utils.js';
 let state      = null;
 let sync       = null;
 let audio      = null;
-let vehicleData = null;   // contents of data/vehicles.json
+let vehicleData = null;   // contents of data/vehicles.json  ({ vehicles: [...] })
 
 /** Expose app-wide singletons for any module that needs them */
 export function getApp() {
@@ -55,6 +55,11 @@ function route() {
     renderGarage();
   } else if (hash.startsWith('#/workbench/')) {
     const instanceId = hash.split('/')[2];
+    // Guard: if no instanceId, fall back to garage
+    if (!instanceId) {
+      navigate('#/garage');
+      return;
+    }
     setActiveTab('workbench');
     renderWorkbench(instanceId);
   } else if (hash === '#/shop') {
@@ -130,7 +135,7 @@ function renderHeader() {
   const syncIcon = sync ? sync.getStatusIcon() : '🔴';
   const syncLabel = sync ? sync.getStatusLabel() : 'Offline';
 
-  // ── Top bar (the header element IS the top bar per CSS) ───
+  // ── Top bar ───────────────────────────────────────────────
   header.innerHTML = '';
 
   const backBtn = document.createElement('button');
@@ -210,18 +215,34 @@ async function init() {
   sync  = new SyncManager();
   audio = new AudioManager();
 
-  // 2. Load static data
+  // FIX: Expose audio manager globally so mechanics (wrench.js etc.) can reach it
+  window.audioManager = audio;
+
+  // FIX: Init audio on the first user gesture (Web Audio API requires this)
+  const initAudioOnce = () => {
+    audio.init();
+    document.removeEventListener('click',     initAudioOnce);
+    document.removeEventListener('touchstart', initAudioOnce);
+    document.removeEventListener('keydown',   initAudioOnce);
+  };
+  document.addEventListener('click',      initAudioOnce, { once: true });
+  document.addEventListener('touchstart', initAudioOnce, { once: true, passive: true });
+  document.addEventListener('keydown',    initAudioOnce, { once: true });
+
+  // 2. Load static vehicle data
   try {
     const resp = await fetch('data/vehicles.json');
     if (resp.ok) {
       vehicleData = await resp.json();
+      // vehicleData is { vehicles: [...] } — garage.js uses .vehicles correctly;
+      // shop.js and profile-picker.js have been updated to also use .vehicles
     } else {
       console.warn('vehicles.json not found — running without vehicle data');
-      vehicleData = [];
+      vehicleData = { vehicles: [] };
     }
   } catch (e) {
     console.warn('Could not load vehicles.json:', e);
-    vehicleData = [];
+    vehicleData = { vehicles: [] };
   }
 
   // 3. Route to current hash

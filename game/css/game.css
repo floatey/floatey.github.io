@@ -1841,3 +1841,38 @@ a:hover {
 .p-sm   { padding: var(--space-sm); }
 .p-base { padding: var(--space-base); }
 .w-full { width: 100%; }
+
+
+/* ────────────────────────────────────────────────────────────────
+   SECTION 17: MISSING UTILITY CLASSES (Phase 1 patch)
+   ──────────────────────────────────────────────────────────────── */
+
+/* Empty / stub state placeholder */
+.empty-state {
+  padding: var(--space-xl, 48px) var(--space-base, 16px);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-style: italic;
+}
+
+/* Audio controls widget (rendered by audio.js) */
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.audio-controls__mute {
+  font-size: 1rem;
+  padding: 2px 6px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.audio-controls__volume {
+  width: 72px;
+  cursor: pointer;
+  accent-color: var(--accent, #e5c100);
+  vertical-align: middle;
+}

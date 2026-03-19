@@ -5,12 +5,14 @@
 //    startWrenchWork(partData, instanceState, container, onComplete)
 //
 //  onComplete fires with: { newCondition, xpEarned, logEntries[] }
+//
+//  FILE LOCATION: game/js/mechanics/wrench.js
 // ════════════════════════════════════════════════════════════
 
+// FIX: correct relative path — this file lives one level below js/
 import { randomInt, randomRange, pickRandom, clamp } from '../utils.js';
 
 // ── One-time CSS injection ────────────────────────────────────
-// Wrench-specific keyframes and utility classes not in game.css
 let _cssInjected = false;
 
 function _injectCSS() {
@@ -20,8 +22,6 @@ function _injectCSS() {
   const style = document.createElement('style');
   style.id = 'wrench-mechanic-styles';
   style.textContent = `
-
-    /* ── Tap target press feedback ── */
     @keyframes ww-tap-press {
       0%   { transform: scale(1); }
       35%  { transform: scale(0.95); }
@@ -31,7 +31,6 @@ function _injectCSS() {
       animation: ww-tap-press 120ms ease !important;
     }
 
-    /* ── Tap icon bob ── */
     @keyframes ww-icon-bob {
       0%   { transform: translateY(0) rotate(0deg); }
       40%  { transform: translateY(-6px) rotate(-12deg); }
@@ -41,7 +40,6 @@ function _injectCSS() {
       animation: ww-icon-bob 140ms ease !important;
     }
 
-    /* ── Hazard border flash ── */
     @keyframes ww-hazard-flash {
       0%, 100% {
         border-color: #ef4444;
@@ -56,7 +54,6 @@ function _injectCSS() {
       animation: ww-hazard-flash 380ms ease infinite !important;
     }
 
-    /* ── Critical click: progress bar scales up briefly ── */
     @keyframes ww-critical-pop {
       0%   { transform: scaleY(1)   scaleX(1);   filter: brightness(1); }
       25%  { transform: scaleY(1.5) scaleX(1.01); filter: brightness(1.8); }
@@ -68,7 +65,6 @@ function _injectCSS() {
       transform-origin: left center;
     }
 
-    /* ── Hazard fail: progress bar shakes red ── */
     @keyframes ww-shake {
       0%         { transform: translateX(0); }
       15%, 45%, 75% { transform: translateX(-5px); }
@@ -83,7 +79,6 @@ function _injectCSS() {
     .ww-shake   { animation: ww-shake      300ms ease !important; }
     .ww-loss    { animation: ww-loss-flash 550ms ease !important; }
 
-    /* ── Hazard success: brief green pulse on target ── */
     @keyframes ww-success-flash {
       0%   { box-shadow: 0 0 0 rgba(34,197,94,0); }
       30%  { box-shadow: 0 0 24px rgba(34,197,94,0.55); }
@@ -93,7 +88,6 @@ function _injectCSS() {
       animation: ww-success-flash 600ms ease !important;
     }
 
-    /* ── Momentum bar in-rhythm pulse ── */
     @keyframes ww-momentum-pulse {
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.55; }
@@ -102,7 +96,6 @@ function _injectCSS() {
       animation: ww-momentum-pulse 700ms ease infinite;
     }
 
-    /* ── Completion: progress bar sweeps to full green ── */
     @keyframes ww-complete-sweep {
       0%   { background: var(--condition-good); }
       40%  { background: #10b981; filter: brightness(1.6); }
@@ -112,7 +105,6 @@ function _injectCSS() {
       animation: ww-complete-sweep 700ms ease forwards !important;
     }
 
-    /* ── Flavor text fade-up on change ── */
     @keyframes ww-flavor-in {
       from { opacity: 0; transform: translateY(5px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -121,7 +113,6 @@ function _injectCSS() {
       animation: ww-flavor-in 200ms ease !important;
     }
 
-    /* ── x3.0 gold shimmer on tap target border ── */
     @keyframes ww-gold-shimmer {
       0%, 100% { box-shadow: 0 0 10px rgba(245,158,11,0.25); }
       50%       { box-shadow: 0 0 28px rgba(245,158,11,0.55); }
@@ -130,7 +121,6 @@ function _injectCSS() {
       animation: ww-gold-shimmer 900ms ease infinite;
     }
 
-    /* ── Tap target base ── */
     .ww-tap-target {
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
@@ -142,7 +132,6 @@ function _injectCSS() {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
-
   `;
   document.head.appendChild(style);
 }
@@ -165,13 +154,12 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
 
   // ── Derived constants ────────────────────────────────────────
   const difficulty    = clamp(partData.difficulty ?? 0.5, 0, 1);
-  const totalClicks   = Math.round(30 + difficulty * 70);   // 37 – 93
+  const totalClicks   = Math.round(30 + difficulty * 70);   // 37 – 100
   const idealTempo    = 200 + (1.0 - difficulty) * 300;     // 230 – 470 ms
   const tolerance     = 80;                                  // ±ms
   const baseXP        = 10 + difficulty * 40;               // 14 – 46
-  const baseClickVal  = 1.0 / totalClicks;                   // per-click base progress
+  const baseClickVal  = 1.0 / totalClicks;
 
-  // flavor text pools
   const GENERIC_FLAVOR = [
     'Keep the rhythm.',
     'Steady hands.',
@@ -209,13 +197,13 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
   // ── Mutable state ────────────────────────────────────────────
   let progress        = 0;
   let clickCount      = 0;
-  let lastClickTime   = 0;       // performance.now() timestamp
+  let lastClickTime   = 0;
 
-  let comboCount      = 0;       // consecutive in-tempo hits
-  let totalComboSum   = 0;       // sum of effective multipliers (for avg XP calc)
+  let comboCount      = 0;
+  let totalComboSum   = 0;
   let totalComboSamples = 0;
 
-  let criticalBonus   = 0;       // clicks remaining with +0.5 bonus after a critical
+  let criticalBonus   = 0;
 
   let inHazard        = false;
   let hazardClicked   = false;
@@ -265,7 +253,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     'font-family: var(--font-ui)',
   ].join(';');
 
-  // Prevent text selection while rapidly tapping
   container.style.userSelect = 'none';
   container.style.webkitUserSelect = 'none';
 
@@ -293,7 +280,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     style: `color:${resistance.color}; font-weight:700;`,
     textContent: resistance.label,
   });
-  // "SEIZED" pulses
   if (difficulty >= 0.85) {
     resistLabel.style.animation = 'ww-hazard-flash 800ms ease infinite';
   }
@@ -426,23 +412,18 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     comboBig.textContent = tier.label;
     comboBig.style.color = tier.color;
 
-    // Tap target border colour by combo tier
     tapTarget.style.borderColor = tier.color === 'var(--text-muted)' ? 'var(--border)' : tier.color;
 
-    // x3 gold shimmer
     if (comboCount >= 15) {
       tapTarget.classList.add('ww-gold-shimmer');
     } else {
       tapTarget.classList.remove('ww-gold-shimmer');
     }
 
-    // Momentum bar width + color
-    // Scale: 0 → 0%, hits 3 → ~15%, 6 → 30%, 10 → 50%, 15 → 75%, 20+ → 100%
     const momentumPct = Math.min(100, (comboCount / 20) * 100);
     momentumBar.style.width = `${momentumPct}%`;
     momentumBar.style.background = tier.color;
 
-    // Rhythm label + pulse
     if (comboCount >= 3) {
       const rhythmWord =
         comboCount >= 15 ? 'PERFECT' :
@@ -467,7 +448,7 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     flavorEl.textContent = `"${text}"`;
     if (animate) {
       flavorEl.classList.remove('ww-flavor-in');
-      void flavorEl.offsetWidth; // force reflow to restart animation
+      void flavorEl.offsetWidth;
       flavorEl.classList.add('ww-flavor-in');
       flavorEl.addEventListener('animationend', () => flavorEl.classList.remove('ww-flavor-in'), { once: true });
     }
@@ -484,10 +465,18 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     }
   }
 
+  // FIX: correct audio sound names to match the audio.js registry
   function playAudio(name, opts = {}) {
     try {
-      if (window.audioManager) window.audioManager.play(name, opts);
-    } catch (_) { /* audio module not yet loaded */ }
+      const am = window.audioManager;
+      if (!am) return;
+      if (name === 'ratchet') {
+        // FIX: use the playRatchet() helper which picks ratchet_1/2/3 with pitch variance
+        am.playRatchet();
+      } else {
+        am.play(name, opts);
+      }
+    } catch (_) { /* audio not yet loaded */ }
   }
 
 
@@ -495,43 +484,29 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
   //  GAME SYSTEMS
   // ════════════════════════════════════════════════════════════
 
-  // ── Tap target press feedback (every click) ──────────────────
   function animateTap() {
-    // Target scale
     _triggerAnimation(tapTarget, 'ww-pressing');
-    // Icon bob
     _triggerAnimation(tapIcon, 'ww-icon-bob');
   }
 
-
-  // ── Critical Click ───────────────────────────────────────────
   function triggerCritical() {
-    // Progress jump: 3× – 5× a normal click value
     const multiplier = randomRange(3, 5);
     const jump = baseClickVal * multiplier;
     progress = Math.min(1.0, progress + jump);
 
-    // Visual: progress bar pops
     _triggerAnimation(progressBar, 'ww-critical-pop');
-
-    // Flavor
     setFlavor(pickRandom(CRITICAL_FLAVOR));
-
-    // Combo bonus for next 3 clicks
     criticalBonus = 3;
 
-    // Sound — higher pitch ratchet
+    // FIX: 'impact' is the correct sound name in audio.js
     playAudio('impact');
 
-    // Reset timer
     nextCriticalAt      = randomInt(8, 35);
     clicksSinceCritical = 0;
 
     updateProgressDisplay();
   }
 
-
-  // ── Hazard Interrupt ─────────────────────────────────────────
   function startHazard() {
     inHazard      = true;
     hazardClicked = false;
@@ -541,6 +516,7 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     tapIcon.textContent  = '🛑';
     tapTarget.classList.add('ww-hazard-active');
 
+    // FIX: 'stuck' is the correct sound name in audio.js
     playAudio('stuck');
 
     hazardTimer = setTimeout(() => endHazard(!hazardClicked), 1500);
@@ -555,19 +531,14 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     tapIcon.textContent  = '🔧';
 
     if (success) {
-      // ── SUCCESS: momentum preserved ──
       tapLabel.textContent = 'CLICK';
       _triggerAnimation(tapTarget, 'ww-success-flash', 650);
       setFlavor(pickRandom(HAZARD_SUCCESS));
-      // Restore combo-appropriate border (slight delay so flash is visible first)
       setTimeout(updateComboDisplay, 650);
     } else {
-      // ── FAILURE: lose combo + 5% progress ──
       comboCount = 0;
-
       progress = Math.max(0, progress - 0.05);
 
-      // Shake + colour flash the progress bar
       _triggerAnimation(progressBar, 'ww-shake');
       _triggerAnimation(progressBar, 'ww-loss');
 
@@ -578,21 +549,16 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
       updateProgressDisplay();
     }
 
-    // Reset hazard timer
     nextHazardAt      = randomInt(15, 30);
     clicksSinceHazard = 0;
   }
 
-
-  // ── Completion ───────────────────────────────────────────────
   function completeWork() {
     isComplete = true;
 
-    // Stop listening
     tapTarget.removeEventListener('click', handleClick);
     tapTarget.removeEventListener('touchstart', handleTouch);
 
-    // Visual
     progress = 1.0;
     updateProgressDisplay();
     _triggerAnimation(progressBar, 'ww-complete-bar', 1000);
@@ -608,16 +574,15 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     const actionWords = ['sorted', 'off', 'done', 'free'];
     setFlavor(`Done. ${partData.name} is ${pickRandom(actionWords)}.`);
 
-    playAudio('systemComplete');
+    // FIX: correct sound name is 'system_complete' (not 'systemComplete')
+    playAudio('system_complete');
 
     // ── Result calculation ──
-    // Condition improvement: start + (1 - start) * 0.70
     const startCondition = instanceState.condition ?? 0.2;
     const newCondition   = parseFloat(
       (startCondition + (1.0 - startCondition) * 0.70).toFixed(2)
     );
 
-    // Average combo multiplier across all clicks
     const avgCombo = totalComboSamples > 0 ? totalComboSum / totalComboSamples : 1.0;
     const xpEarned = Math.round(baseXP * avgCombo);
 
@@ -627,7 +592,7 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
       `Wrench XP earned: +${xpEarned}`,
     ];
 
-    // 1-second delay: let the player savour the completion flash
+    // 1-second delay so the player sees the completion flash
     setTimeout(() => {
       onComplete({ newCondition, xpEarned, logEntries });
     }, 1000);
@@ -643,9 +608,8 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
 
     const now = performance.now();
 
-    // ── Hazard intercept ──
     if (inHazard) {
-      hazardClicked = true;          // endHazard() will handle the FAIL path
+      hazardClicked = true;
       return;
     }
 
@@ -654,7 +618,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     clicksSinceCritical++;
     clicksSinceFlavor++;
 
-    // ── Rhythm check ──
     let inRhythm = false;
     if (lastClickTime > 0) {
       const delta = now - lastClickTime;
@@ -665,11 +628,9 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     if (inRhythm) {
       comboCount++;
     } else if (clickCount > 1) {
-      // First click never penalised — no reference delta yet
       comboCount = 0;
     }
 
-    // ── Effective multiplier (combo + possible critical bonus) ──
     const tier = getComboTier(comboCount);
     let effectiveMult = tier.multiplier;
     if (criticalBonus > 0) {
@@ -677,39 +638,32 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
       criticalBonus--;
     }
 
-    // Accumulate for avg combo XP calculation
     totalComboSum += effectiveMult;
     totalComboSamples++;
 
-    // ── Progress ──
     progress = Math.min(1.0, progress + baseClickVal * effectiveMult);
 
-    // ── Per-click feedback (non-negotiable per GDD §13 #4) ──
     animateTap();
     updateComboDisplay();
     updateProgressDisplay();
 
-    // Sound: slightly randomised pitch each click
-    playAudio('ratchet', { pitch: 0.88 + Math.random() * 0.28 });
+    // FIX: 'ratchet' is handled by playAudio to call playRatchet() with pitch variance
+    playAudio('ratchet');
 
-    // ── Hazard check (variable interval 15–30 clicks) ──
     if (clicksSinceHazard >= nextHazardAt && !inHazard) {
       startHazard();
     }
 
-    // ── Critical click check (variable interval 8–35 clicks) ──
     if (clicksSinceCritical >= nextCriticalAt) {
       triggerCritical();
     }
 
-    // ── Flavor rotation (every 5–10 clicks) ──
     if (clicksSinceFlavor >= nextFlavorAt) {
       setFlavor(pickRandom(ALL_FLAVOR));
       nextFlavorAt      = randomInt(5, 10);
       clicksSinceFlavor = 0;
     }
 
-    // ── Completion check ──
     if (progress >= 1.0) {
       completeWork();
     }
@@ -721,7 +675,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
   }
 
   function handleTouch(e) {
-    // Prevent double-tap zoom and ghost mouse events
     e.preventDefault();
     processClick();
   }
@@ -729,11 +682,9 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
   tapTarget.addEventListener('click', handleClick);
   tapTarget.addEventListener('touchstart', handleTouch, { passive: false });
 
-
   // ── Initial render ───────────────────────────────────────────
   updateComboDisplay();
   updateProgressDisplay();
-  // Seed flavor text without animation on first render
   setFlavor(pickRandom(ALL_FLAVOR), false);
 }
 
@@ -742,12 +693,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
 //  LOCAL HELPERS
 // ════════════════════════════════════════════════════════════
 
-/**
- * Minimal element factory — keeps UI construction readable.
- * @param {string} tag
- * @param {object} [props]  - style (string), className, textContent, innerHTML, + any attr
- * @returns {HTMLElement}
- */
 function _el(tag, props = {}) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {

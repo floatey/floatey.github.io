@@ -95,41 +95,35 @@ function getProfileSummary(profileId) {
   }
 }
 
-/** Look up display name from vehicleData (or fallback to modelId). */
+/** Look up display name from vehicleData.vehicles array. */
 function getVehicleDisplayName(modelId) {
   if (!modelId) return null;
   const { vehicleData } = getApp();
-  if (vehicleData && Array.isArray(vehicleData)) {
-    const match = vehicleData.find(v => v.id === modelId || v.modelId === modelId);
-    if (match) return match.shortName || match.name || modelId.toUpperCase();
+  // FIX: vehicleData is { vehicles: [...] }, not a plain array
+  const arr = vehicleData?.vehicles;
+  if (arr && Array.isArray(arr)) {
+    const match = arr.find(v => v.modelId === modelId);
+    if (match) return match.displayName || match.shortName || match.name || modelId.toUpperCase();
   }
   // Fallback friendly names
   const fallback = {
     ae86: 'AE86 Trueno', fd3s: 'FD RX-7', fc3s: 'FC RX-7', s13: '240SX',
-    jza80: 'Supra', bnr32: 'GT-R R32', na1: 'NSX', ek9: 'Civic Type R',
-    dc2: 'Integra Type R', sw20: 'MR2', ef9: 'CRX Si', z32: '300ZX',
+    jza80: 'Supra', bnr34: 'GT-R', dc2: 'Integra Type R', aw11: 'MR2',
+    crx: 'CRX Si', z31: '300ZX', eclipse_gsx: 'Eclipse GSX', ej257: 'WRX STI',
   };
   return fallback[modelId] || modelId.toUpperCase();
 }
 
 function getVehicleRarity(modelId) {
   const { vehicleData } = getApp();
-  if (vehicleData && Array.isArray(vehicleData)) {
-    const match = vehicleData.find(v => v.id === modelId || v.modelId === modelId);
+  // FIX: vehicleData is { vehicles: [...] }, not a plain array
+  const arr = vehicleData?.vehicles;
+  if (arr && Array.isArray(arr)) {
+    const match = arr.find(v => v.modelId === modelId);
     if (match) return match.rarity || 3;
   }
   return 3;
 }
-
-// ── AE86 Starter Stub ───────────────────────────────────────
-
-const AE86_STUB = {
-  id: 'ae86',
-  name: '1985 Toyota AE86 Sprinter Trueno',
-  shortName: 'AE86 Trueno',
-  rarity: 3,
-  systems: [],  // Prompt 05 will generate the real part tree
-};
 
 // ── Render ──────────────────────────────────────────────────
 
@@ -296,28 +290,33 @@ async function handlePlay(profileId, btn) {
     // 1. Load profile from localStorage
     const profileData = state.load(profileId);
 
-    // 2. Check if first time (no vehicles)
+    // 2. Check if this is a first-time (no vehicles yet)
+    //    FIX: Do NOT call state.addVehicle() here with the empty stub.
+    //    garage.js's ensureStarterVehicle() loads the real ae86.json part tree.
+    //    We only need to know if it IS first-time so we can show the welcome toast.
     const isFirstTime = Object.keys(profileData.garage?.vehicles || {}).length === 0;
 
-    // 3. Init sync
-    const syncResult = await sync.init(profileId);
+    // 3. Init sync (best-effort; gameplay works offline)
+    let syncResult = { status: 'ok' };
+    try {
+      syncResult = await sync.init(profileId);
+    } catch (syncErr) {
+      console.warn('[ProfilePicker] Sync init failed, continuing offline:', syncErr);
+    }
 
-    // 4. If sync returned conflict, the conflict modal is shown by sync.js.
-    //    We wait for conflict resolution via hashchange re-route.
+    // 4. If sync returned conflict, conflict modal is shown by sync.js
     if (syncResult.status === 'conflict') {
       btn.textContent = originalText;
       btn.disabled = false;
-      // The conflict modal handles navigation on resolution.
       return;
     }
 
-    // 5. If first time, add the AE86 starter car
+    // 5. Show welcome toast for brand-new profiles
     if (isFirstTime) {
-      state.addVehicle(AE86_STUB, 3, 'ae86');
       showWelcomeToast();
     }
 
-    // 6. Navigate to garage
+    // 6. Navigate to garage — garage.js will auto-add the starter AE86 with real parts
     navigate('#/garage');
 
   } catch (err) {
@@ -325,13 +324,7 @@ async function handlePlay(profileId, btn) {
     btn.textContent = originalText;
     btn.disabled = false;
 
-    // Even if sync fails, we can play offline
-    const profileData = state.getState();
-    const isFirstTime = Object.keys(profileData?.garage?.vehicles || {}).length === 0;
-    if (isFirstTime) {
-      state.addVehicle(AE86_STUB, 3, 'ae86');
-      showWelcomeToast();
-    }
+    // Even if everything fails, try to navigate to garage
     navigate('#/garage');
   }
 }
@@ -367,6 +360,16 @@ function showWelcomeToast() {
 
 async function loadActivityFeed(feedListEl) {
   const { sync } = getApp();
+
+  // Guard: need Firebase to be available
+  if (!window._firebase) {
+    feedListEl.innerHTML = `
+      <div style="padding:var(--space-lg);text-align:center;color:var(--text-muted);font-size:var(--font-size-sm);">
+        Activity feed unavailable offline
+      </div>
+    `;
+    return;
+  }
 
   try {
     const entries = await sync.readFeed();
@@ -406,7 +409,7 @@ function buildFeedEntry(entry) {
   const el = document.createElement('div');
   el.className = 'feed-entry';
 
-  // Avatar circle with profile initial + color
+  // Avatar / icon
   const avatar = document.createElement('div');
   avatar.className = 'feed-avatar';
   avatar.textContent = icon;

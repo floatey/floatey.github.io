@@ -47,13 +47,9 @@ export class SyncManager {
 
   /**
    * Initialise sync for a given profile.
-   * Call after GameState.load(profileId).
-   *
-   * @param {string} profileId
    * @returns {{ status: 'ok'|'conflict', remoteData?: object }}
    */
   async init(profileId) {
-    // Grab Firebase references from window._firebase (set up by index.html)
     if (!window._firebase) {
       console.warn('[Sync] Firebase not available — running offline');
       this._syncStatus = Status.OFFLINE;
@@ -64,12 +60,11 @@ export class SyncManager {
     this._profileId  = profileId;
     this._profileRef = ref(this._db, `${PROFILES_PATH}/${profileId}`);
 
-    // Resolve the GameState singleton (imported lazily to avoid circular deps)
+    // Resolve the GameState singleton (lazy import avoids circular deps)
     const { getApp } = await import('./main.js');
     this._gameState = getApp().state;
 
     try {
-      // Read remote profile
       const snapshot = await get(this._profileRef);
       const remoteData = snapshot.exists() ? snapshot.val() : null;
 
@@ -78,17 +73,14 @@ export class SyncManager {
         const remoteModified = remoteData.lastModified || 0;
 
         if (remoteModified > localModified) {
-          // Remote is newer — surface conflict
           this._syncStatus    = Status.CONFLICT;
           this._conflictCache = remoteData;
           this._attachLifecycleListeners();
           return { status: 'conflict', remoteData };
         }
 
-        // Local is newer or equal — local wins, push to remote
         await this._writeToFirebase();
       } else {
-        // No remote data — write local defaults
         await this._writeToFirebase();
       }
 
@@ -106,10 +98,9 @@ export class SyncManager {
   }
 
   /**
-   * (Re)start sync for a profile — convenience alias called from main.js.
+   * (Re)start sync for a profile — convenience alias.
    */
   start(profileId) {
-    // If already running for this profile, skip re-init
     if (this._started && this._profileId === profileId) return;
     this.init(profileId);
   }
@@ -125,12 +116,10 @@ export class SyncManager {
     this._notifyHeader();
 
     try {
-      // Conflict guard: read remote lastModified before writing
       const snapshot = await get(this._profileRef);
       if (snapshot.exists()) {
         const remoteModified = snapshot.val().lastModified || 0;
         if (remoteModified > this._lastSyncedAt && this._lastSyncedAt > 0) {
-          // Another device wrote since our last sync
           this._syncStatus    = Status.CONFLICT;
           this._conflictCache = snapshot.val();
           this._notifyHeader();
@@ -150,8 +139,15 @@ export class SyncManager {
   }
 
   /**
+   * Explicit write request — used by shop.js and other modules.
+   * Defers to write() which guards on isDirty().
+   */
+  requestWrite() {
+    this.write();
+  }
+
+  /**
    * Read the remote profile data.
-   * @returns {object|null}
    */
   async read() {
     if (!this._profileRef) return null;
@@ -170,11 +166,9 @@ export class SyncManager {
    */
   async resolveConflict(choice) {
     if (choice === 'local') {
-      // Overwrite remote with local
       await this._writeToFirebase();
       this._syncStatus = Status.SAVED;
     } else if (choice === 'remote' && this._conflictCache) {
-      // Load remote into GameState
       this._gameState.setState(this._conflictCache);
       this._lastSyncedAt = this._conflictCache.lastModified || Date.now();
       this._gameState.clearDirty();
@@ -184,17 +178,19 @@ export class SyncManager {
     this._conflictCache = null;
     this._notifyHeader();
 
-    // Re-route to refresh the active view
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    // FIX: HashChangeEvent constructor requires oldURL/newURL in strict browsers;
+    // use plain Event which the router listens for just fine.
+    window.dispatchEvent(new Event('hashchange'));
   }
 
   /**
    * Post an event to the shared activity feed.
-   * @param {{ who: string, what: string, detail: string }} event
    */
   async postToFeed(event) {
-    if (!this._db) return;
-    const feedRef = ref(this._db, FEED_PATH);
+    // FIX: fall back to window._firebase.db if not yet initialized
+    const db = this._db || window._firebase?.db;
+    if (!db) return;
+    const feedRef = ref(db, FEED_PATH);
 
     try {
       const newEntryRef = push(feedRef);
@@ -205,8 +201,7 @@ export class SyncManager {
         when:   Date.now(),
       });
 
-      // Enforce max 50 entries
-      await this._trimFeed();
+      await this._trimFeed(db);
     } catch (err) {
       console.error('[Sync] postToFeed failed:', err);
     }
@@ -214,11 +209,13 @@ export class SyncManager {
 
   /**
    * Read the shared activity feed, newest first.
-   * @returns {Array<object>}
+   * FIX: falls back to window._firebase.db so the profile picker can show
+   *      the feed before any profile is loaded (sync not yet initialized).
    */
   async readFeed() {
-    if (!this._db) return [];
-    const feedRef = ref(this._db, FEED_PATH);
+    const db = this._db || window._firebase?.db;
+    if (!db) return [];
+    const feedRef = ref(db, FEED_PATH);
 
     try {
       const snapshot = await get(feedRef);
@@ -230,7 +227,6 @@ export class SyncManager {
         ...val,
       }));
 
-      // Sort newest first
       entries.sort((a, b) => (b.when || 0) - (a.when || 0));
       return entries;
     } catch (err) {
@@ -241,12 +237,12 @@ export class SyncManager {
 
   /**
    * Read another player's profile (for garage visits).
-   * @param {string} profileId
-   * @returns {object|null}
+   * FIX: falls back to window._firebase.db for pre-init calls.
    */
   async readProfile(profileId) {
-    if (!this._db) return null;
-    const profileRef = ref(this._db, `${PROFILES_PATH}/${profileId}`);
+    const db = this._db || window._firebase?.db;
+    if (!db) return null;
+    const profileRef = ref(db, `${PROFILES_PATH}/${profileId}`);
 
     try {
       const snapshot = await get(profileRef);
@@ -257,16 +253,8 @@ export class SyncManager {
     }
   }
 
-  /**
-   * Current sync status string.
-   */
-  getSyncStatus() {
-    return this._syncStatus;
-  }
+  getSyncStatus()  { return this._syncStatus; }
 
-  /**
-   * Emoji icon for the header indicator.
-   */
   getStatusIcon() {
     switch (this._syncStatus) {
       case Status.SAVED:    return '🟢';
@@ -277,9 +265,6 @@ export class SyncManager {
     }
   }
 
-  /**
-   * Human-readable label for the header indicator.
-   */
   getStatusLabel() {
     switch (this._syncStatus) {
       case Status.SAVED:    return 'Saved';
@@ -290,9 +275,6 @@ export class SyncManager {
     }
   }
 
-  /**
-   * Tear down listeners, timers; attempt final write.
-   */
   destroy() {
     if (this._syncTimer) {
       clearInterval(this._syncTimer);
@@ -300,13 +282,12 @@ export class SyncManager {
     }
 
     if (this._listener) {
-      this._listener();   // unsubscribe onValue
+      this._listener();
       this._listener = null;
     }
 
     this._detachLifecycleListeners();
 
-    // Final write attempt
     if (this._gameState && this._gameState.isDirty()) {
       this._writeToFirebase().catch(() => {});
     }
@@ -324,15 +305,7 @@ export class SyncManager {
 
   _handleBeforeUnload() {
     if (!this._gameState || !this._gameState.isDirty() || !this._profileRef) return;
-
-    // Attempt synchronous-ish write via sendBeacon as fallback
     try {
-      const state = this._gameState.getState();
-      state.lastModified = Date.now();
-      const payload = JSON.stringify(state);
-
-      // sendBeacon can't write to Firebase RTDB directly, but we still
-      // attempt a normal set() — the browser may allow it to complete.
       this._writeToFirebase().catch(() => {});
     } catch {
       // Best-effort; localStorage already has the latest data
@@ -351,9 +324,6 @@ export class SyncManager {
 
   // ── Internal helpers ────────────────────────────────────
 
-  /**
-   * Write the full profile object to Firebase in one set() call.
-   */
   async _writeToFirebase() {
     if (!this._gameState || !this._profileRef) return;
 
@@ -366,9 +336,6 @@ export class SyncManager {
     this._gameState.clearDirty();
   }
 
-  /**
-   * Start the 120-second auto-sync interval.
-   */
   _startAutoSync() {
     if (this._syncTimer) clearInterval(this._syncTimer);
 
@@ -379,9 +346,12 @@ export class SyncManager {
 
   /**
    * Trim the feed to FEED_MAX entries, deleting oldest.
+   * @param {Database} db  — pass explicitly so this works before _db is set
    */
-  async _trimFeed() {
-    const feedRef = ref(this._db, FEED_PATH);
+  async _trimFeed(db) {
+    const dbToUse = db || this._db;
+    if (!dbToUse) return;
+    const feedRef = ref(dbToUse, FEED_PATH);
 
     try {
       const snapshot = await get(feedRef);
@@ -392,16 +362,14 @@ export class SyncManager {
 
       if (keys.length <= FEED_MAX) return;
 
-      // Sort by `when` ascending (oldest first)
       const sorted = keys
         .map(k => ({ key: k, when: data[k].when || 0 }))
         .sort((a, b) => a.when - b.when);
 
-      // Delete oldest entries beyond the cap
       const toDelete = sorted.slice(0, keys.length - FEED_MAX);
 
       for (const entry of toDelete) {
-        const entryRef = ref(this._db, `${FEED_PATH}/${entry.key}`);
+        const entryRef = ref(dbToUse, `${FEED_PATH}/${entry.key}`);
         await remove(entryRef);
       }
     } catch (err) {
@@ -409,16 +377,10 @@ export class SyncManager {
     }
   }
 
-  /**
-   * Notify the header to re-render (import lazily to avoid circular deps).
-   */
   _notifyHeader() {
     import('./main.js').then(({ refreshHeader }) => refreshHeader()).catch(() => {});
   }
 
-  /**
-   * Show the conflict modal with cached remote data.
-   */
   _showConflictModal(remoteData) {
     const localData = this._gameState.getState();
     renderConflictModal(localData, remoteData, (choice) => {
@@ -431,15 +393,7 @@ export class SyncManager {
 //  Conflict Modal
 // ════════════════════════════════════════════════════════════
 
-/**
- * Render a blocking conflict-resolution modal.
- *
- * @param {object} localData   — local profile state
- * @param {object} remoteData  — remote profile state from Firebase
- * @param {function} onResolve — callback: onResolve('local') or onResolve('remote')
- */
 export function renderConflictModal(localData, remoteData, onResolve) {
-  // Remove any existing modal
   const existing = document.getElementById('sync-conflict-modal');
   if (existing) existing.remove();
 
@@ -450,7 +404,6 @@ export function renderConflictModal(localData, remoteData, onResolve) {
     ? new Date(remoteData.lastModified).toLocaleString()
     : 'Unknown';
 
-  // Build DOM
   const overlay = document.createElement('div');
   overlay.id = 'sync-conflict-modal';
   overlay.style.cssText = `
@@ -509,7 +462,6 @@ export function renderConflictModal(localData, remoteData, onResolve) {
   btnRemote.addEventListener('mouseenter', () => { btnRemote.style.background = 'rgba(247,164,107,0.15)'; });
   btnRemote.addEventListener('mouseleave', () => { btnRemote.style.background = 'transparent'; });
 
-  // Wire up resolution
   function resolve(choice) {
     overlay.remove();
     onResolve(choice);

@@ -667,6 +667,79 @@ export async function renderVisit(profileId) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  renderGarageVisit — rendering half for social.js delegation
+//
+//  social.js calls:
+//    const { renderGarageVisit } = await import('./garage.js');
+//    renderGarageVisit(remoteProfile, root);
+//
+//  It passes an already-fetched profile object and a container
+//  element. We render the full system-dots + condition-bar cards
+//  directly into that container (read-only, no sell/nickname UI).
+//
+//  FIX: garage.js previously only exported renderVisit(profileId)
+//  which re-fetches from Firebase itself. social.js tried to import
+//  renderGarageVisit — that name didn't exist, so the try/catch in
+//  social.js swallowed the ImportError silently and fell back to
+//  the simplified inline card grid (no system dots, no condition
+//  bars). Adding this export makes the delegation succeed.
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Render a read-only garage view for a pre-fetched remote profile.
+ *
+ * @param {object}      visitProfile  — profile data from sync.readProfile()
+ * @param {HTMLElement} container     — element to render into
+ */
+export async function renderGarageVisit(visitProfile, container) {
+  if (!visitProfile || !container) return;
+
+  // Stats row
+  const stats = visitProfile.stats || {};
+  const statsRow = el('div', {
+    style: 'display:flex; gap:24px; padding:0 0 16px; font-family:var(--font-data); font-size:var(--font-size-xs); color:var(--text-secondary);',
+  });
+  statsRow.innerHTML = `
+    <span>Cars Completed: <strong style="color:var(--text-primary);">${stats.carsCompleted || 0}</strong></span>
+    <span>Total Repairs: <strong style="color:var(--text-primary);">${stats.totalRepairs || 0}</strong></span>
+  `;
+  container.appendChild(statsRow);
+
+  // Load vehicles
+  const vehicles = visitProfile.garage ? visitProfile.garage.vehicles : {};
+  const ids = Object.keys(vehicles);
+
+  if (ids.length === 0) {
+    container.appendChild(emptyHint('This garage is empty.'));
+    return;
+  }
+
+  // Load part trees in parallel
+  const trees = {};
+  await Promise.all(ids.map(async id => {
+    const tree = await loadPartTree(vehicles[id].modelId);
+    if (tree) trees[id] = tree;
+  }));
+
+  // Group by status and render read-only vehicle cards
+  const groups = { in_progress: [], complete: [], showcase: [] };
+  for (const id of ids) {
+    const s = vehicles[id].status || 'in_progress';
+    (groups[s] || groups.in_progress).push(id);
+  }
+
+  for (const [status, group] of Object.entries(groups)) {
+    if (group.length === 0) continue;
+    if (status !== 'in_progress') {
+      container.appendChild(sectionDivider(status === 'complete' ? 'COMPLETED' : 'SHOWCASE'));
+    }
+    for (const id of group) {
+      container.appendChild(buildVehicleCard(id, vehicles[id], trees[id], /* readOnly */ true));
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 //  Tiny DOM helpers
 // ══════════════════════════════════════════════════════════════
 

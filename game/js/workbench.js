@@ -3,6 +3,8 @@
 // ════════════════════════════════════════════════════════════
 
 import { navigate, getApp, refreshHeader } from './main.js';
+// FIX: Import the real wrench mechanic (lives at js/mechanics/wrench.js)
+import { startWrenchWork } from './mechanics/wrench.js';
 
 // ── Part tree cache (shared with garage.js pattern) ─────────
 const partTreeCache = {};
@@ -47,11 +49,6 @@ function formatYen(amount) {
   return `¥${Number(amount).toLocaleString()}`;
 }
 
-function timeStamp() {
-  const d = new Date();
-  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-}
-
 // ── Condition helpers ────────────────────────────────────────
 
 const CONDITION_THRESHOLDS = [
@@ -72,11 +69,6 @@ function getConditionInfo(condition) {
     if (condition >= t.min) return { ...t, pct };
   }
   return { ...CONDITION_THRESHOLDS[CONDITION_THRESHOLDS.length - 1], pct };
-}
-
-function conditionDotColor(condition) {
-  const info = getConditionInfo(condition);
-  return info.color;
 }
 
 // ── Repair type helpers ──────────────────────────────────────
@@ -338,7 +330,6 @@ function renderWorkbenchUI() {
   const { state } = getApp();
   const { instanceId, partTree } = wb;
   const vehicle = state.getVehicle(instanceId);
-  const profile = state.getProfile();
 
   root.innerHTML = '';
 
@@ -356,8 +347,6 @@ function renderWorkbenchUI() {
     textContent: wb.mobileNavOpen ? 'Systems ▲' : 'Systems ▼',
   });
   mobileToggle.id = 'wb-mobile-toggle';
-  // Show only on mobile
-  mobileToggle.style.display = 'none';
   const mqMobile = window.matchMedia('(max-width: 639px)');
   function updateMobileToggle() {
     mobileToggle.style.display = mqMobile.matches ? 'block' : 'none';
@@ -515,11 +504,9 @@ function renderSystemList(container) {
     // Expanded content
     if (isExpanded) {
       if (system.type === 'bundle') {
-        // Bundle: single clickable item
         const bundleItem = renderBundleItem(system, vehicle);
         container.appendChild(bundleItem);
       } else if (system.type === 'detailed' && system.subsystems) {
-        // Detailed: show subsystems → parts
         const subList = el('div', { className: 'subsystem-list', style: 'max-height:1000px;' });
         for (const sub of system.subsystems) {
           const subItem = el('div', {
@@ -529,7 +516,6 @@ function renderSystemList(container) {
           subItem.textContent = sub.name;
           subList.appendChild(subItem);
 
-          // Parts under this subsystem
           if (sub.parts) {
             for (const part of sub.parts) {
               const partInstance = vehicle.parts[part.id];
@@ -589,7 +575,6 @@ function renderPartItem(partDef, partInstance) {
   const isSelected = wb.selectedPartId === partDef.id;
 
   if (!isRevealed) {
-    // Hidden part
     const item = el('div', { className: 'part-item part-item--hidden' });
     item.innerHTML = `<span style="display:flex;align-items:center;gap:var(--space-sm);">
       <span>🔒</span><span>???</span></span>`;
@@ -608,12 +593,10 @@ function renderPartItem(partDef, partInstance) {
     style: 'display:flex; align-items:center; gap:var(--space-sm); min-width:0; flex:1;',
   });
 
-  // Condition color dot
   left.appendChild(el('span', {
     style: `width:8px; height:8px; border-radius:50%; background:${condInfo.color}; flex-shrink:0;`,
   }));
 
-  // Part name
   left.appendChild(el('span', {
     style: 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;',
     textContent: partDef.name,
@@ -700,9 +683,9 @@ function renderPartDetail(container) {
   const isBundle = partDef._isBundle;
   const condition = partInstance.condition;
   const condInfo = getConditionInfo(condition);
-  const repairType = isBundle ? partDef.repairType : partDef.repairType;
+  const repairType = partDef.repairType || 'wrench';
   const repairInfo = getRepairTypeInfo(repairType);
-  const difficulty = isBundle ? (partDef.difficulty || 0.5) : (partDef.difficulty || 0.5);
+  const difficulty = partDef.difficulty || 0.5;
 
   const detail = el('div', { className: 'part-detail' });
 
@@ -747,13 +730,11 @@ function renderPartDetail(container) {
   // 4. Status + prerequisites check
   const statusSection = el('div', { style: 'margin-bottom:var(--space-md);' });
 
-  // Check prerequisites
   let prereqsMet = true;
   let prereqNames = [];
   if (!isBundle && partDef.prerequisites && partDef.prerequisites.length > 0) {
     for (const prereqId of partDef.prerequisites) {
       const prereqInstance = vehicle.parts[prereqId];
-      // Prerequisites: the prerequisite part must be at condition >= 0.70 (completed)
       if (!prereqInstance || prereqInstance.condition === null || prereqInstance.condition < 0.70) {
         prereqsMet = false;
         prereqNames.push(findPartName(partTree, prereqId));
@@ -768,7 +749,6 @@ function renderPartDetail(container) {
     }));
   }
 
-  // Status logic per GDD thresholds
   if (condition <= 0.10) {
     statusSection.appendChild(el('div', {
       style: 'color:var(--condition-destroyed); font-size:var(--font-size-sm); font-weight:600;',
@@ -792,7 +772,6 @@ function renderPartDetail(container) {
   const actions = el('div', { className: 'part-detail__actions' });
 
   if (condition <= 0.10) {
-    // DESTROYED — replace or donor
     const replaceCost = isBundle ? (partDef.bundleCost || 0) : (partDef.replaceCost || 0);
 
     const replaceBtn = el('button', {
@@ -802,7 +781,6 @@ function renderPartDetail(container) {
     replaceBtn.addEventListener('click', () => handleReplace(selectedPartId, replaceCost));
     actions.appendChild(replaceBtn);
 
-    // Donor part check
     const profile = state.getProfile();
     const platform = vehicle.modelId;
     const donorCount = (profile.currency.donorParts && profile.currency.donorParts[platform]) || 0;
@@ -815,7 +793,6 @@ function renderPartDetail(container) {
       actions.appendChild(donorBtn);
     }
   } else if (condition < 0.90) {
-    // REPAIRABLE
     const repairBtn = el('button', {
       className: 'btn btn--primary',
       textContent: 'Begin Repair',
@@ -826,7 +803,6 @@ function renderPartDetail(container) {
     repairBtn.addEventListener('click', () => handleBeginRepair(selectedPartId));
     actions.appendChild(repairBtn);
 
-    // Also show replace option for low condition parts
     if (condition < 0.30) {
       const replaceCost = isBundle ? (partDef.bundleCost || 0) : (partDef.replaceCost || 0);
       const replaceBtn = el('button', {
@@ -837,7 +813,6 @@ function renderPartDetail(container) {
       actions.appendChild(replaceBtn);
     }
   }
-  // condition >= 0.90 → no action buttons
 
   detail.appendChild(actions);
 
@@ -859,107 +834,47 @@ function renderPartDetail(container) {
 //  ACTION HANDLERS
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * FIX: Wire up the real startWrenchWork() from mechanics/wrench.js.
+ * The onComplete callback receives { newCondition, xpEarned, logEntries }.
+ */
 function handleBeginRepair(partId) {
-  const { partTree } = wb;
+  const { instanceId, partTree } = wb;
+  const { state } = getApp();
   const partDef = findPartDef(partTree, partId);
   if (!partDef) return;
 
-  const repairType = partDef.repairType || (partDef._isBundle ? partDef.repairType : 'wrench');
+  const vehicle = state.getVehicle(instanceId);
+  const partInstance = vehicle?.parts[partId];
+  if (!partInstance) return;
+
+  const repairType = partDef.repairType || 'wrench';
+  const mechanicArea = document.getElementById('wb-mechanic-area');
+  if (!mechanicArea) return;
 
   if (repairType === 'wrench') {
-    // Launch wrench mechanic in the mechanic area
-    const mechanicArea = document.getElementById('wb-mechanic-area');
-    if (mechanicArea) {
-      renderWrenchStub(mechanicArea, partId, partDef);
-    }
+    // Launch the full Wrench Work mechanic
+    startWrenchWork(partDef, partInstance, mechanicArea, ({ newCondition, xpEarned, logEntries }) => {
+      // Clear the mechanic UI area
+      mechanicArea.innerHTML = '';
+      mechanicArea.style.minHeight = '0';
+      // Apply the repair result
+      completeRepair(partId, { newCondition, xpEarned, logEntries });
+    });
   } else {
-    // Other mechanics not yet implemented
+    // Other mechanics are stubs for Phase 1
     showToast(`${getRepairTypeInfo(repairType).label} mechanic coming soon!`);
   }
 }
 
 /**
- * Wrench Work stub — provides a simple click-to-repair interface.
- * The actual full wrench mechanic module will replace this.
+ * Apply the result of a completed repair to game state and refresh the UI.
+ * Called by both the wrench mechanic callback and the replace handlers.
+ *
+ * @param {string} partId
+ * @param {object} overrides  - optional: { newCondition, xpEarned, logEntries }
  */
-function renderWrenchStub(container, partId, partDef) {
-  const { instanceId } = wb;
-  const { state } = getApp();
-
-  container.innerHTML = '';
-
-  const wrap = el('div', { style: 'padding:var(--space-base);' });
-
-  wrap.appendChild(el('div', {
-    className: 'mechanic-title',
-    style: 'color:var(--wrench-color);',
-    textContent: `🔧 WRENCH WORK — ${partDef.name}`,
-  }));
-
-  // Simple progress-based repair
-  let progress = 0;
-  const targetClicks = Math.max(10, Math.round(30 * (partDef.difficulty || 0.5)));
-
-  const progressBar = el('div', { className: 'wrench-progress' });
-  const progressFill = el('div', { className: 'wrench-progress-fill' });
-  progressBar.appendChild(progressFill);
-
-  const progressText = el('div', {
-    className: 'font-data',
-    style: 'font-size:var(--font-size-sm); color:var(--text-secondary); margin:var(--space-sm) 0;',
-    textContent: `Progress: 0% (0/${targetClicks} clicks)`,
-  });
-
-  const target = el('div', { className: 'wrench-target', textContent: '🔧 CLICK' });
-
-  const flavorEl = el('div', {
-    className: 'mechanic-flavor',
-    textContent: '"Get in there..."',
-  });
-
-  const cancelBtn = el('button', {
-    className: 'btn btn--ghost',
-    style: 'margin-top:var(--space-md);',
-    textContent: '← Back to Part Info',
-  });
-  cancelBtn.addEventListener('click', () => {
-    container.innerHTML = '';
-    container.style.minHeight = '0';
-  });
-
-  target.addEventListener('click', () => {
-    progress++;
-    const pct = Math.min(100, Math.round((progress / targetClicks) * 100));
-    progressFill.style.setProperty('--fill-pct', `${pct}%`);
-    progressText.textContent = `Progress: ${pct}% (${progress}/${targetClicks} clicks)`;
-
-    // Random flavor text on certain clicks
-    if (progress % 8 === 0) {
-      const phrases = [
-        '"Almost there..."', '"Keep going."', '"Three uggas in..."',
-        '"CRACK — it broke free!"', '"Like butter."', '"Backed it off, good call."',
-      ];
-      flavorEl.textContent = phrases[Math.floor(Math.random() * phrases.length)];
-    }
-
-    if (progress >= targetClicks) {
-      // Repair complete
-      completeRepair(partId);
-      container.innerHTML = '';
-      container.style.minHeight = '0';
-    }
-  });
-
-  wrap.appendChild(progressBar);
-  wrap.appendChild(progressText);
-  wrap.appendChild(target);
-  wrap.appendChild(flavorEl);
-  wrap.appendChild(cancelBtn);
-  container.appendChild(wrap);
-  container.style.minHeight = '200px';
-}
-
-function completeRepair(partId) {
+function completeRepair(partId, overrides = {}) {
   const { instanceId, partTree } = wb;
   const { state } = getApp();
   const vehicle = state.getVehicle(instanceId);
@@ -969,29 +884,54 @@ function completeRepair(partId) {
   const partInstance = vehicle.parts[partId];
   if (!partInstance) return;
 
-  // Improve condition
+  // ── Apply condition ──
   const oldCondition = partInstance.condition || 0;
-  const newCondition = Math.min(1.0, oldCondition + 0.30 + Math.random() * 0.25);
+  const newCondition = overrides.newCondition != null
+    ? overrides.newCondition
+    : parseFloat(Math.min(1.0, oldCondition + 0.30 + Math.random() * 0.25).toFixed(2));
+
   state.updatePart(instanceId, partId, { condition: parseFloat(newCondition.toFixed(2)) });
 
-  // Log
-  addLogEntry(instanceId, '✓', `Repaired ${partDef.name} (${Math.round(oldCondition * 100)}% → ${Math.round(newCondition * 100)}%)`);
+  // ── Log entries ──
+  if (overrides.logEntries && overrides.logEntries.length > 0) {
+    for (const entry of overrides.logEntries) {
+      addLogEntry(instanceId, '✓', entry);
+    }
+  } else {
+    addLogEntry(instanceId, '✓', `Repaired ${partDef.name} (${Math.round(oldCondition * 100)}% → ${Math.round(newCondition * 100)}%)`);
+  }
 
-  // Award XP
-  awardXP(partDef.repairType, partDef.difficulty || 0.5);
+  // ── XP award ──
+  // If wrench.js computed xpEarned (with combo multipliers), use it directly.
+  // Otherwise fall back to the workbench's own awardXP calculation.
+  if (overrides.xpEarned != null) {
+    const profile = state.getProfile();
+    const repairType = partDef.repairType || 'wrench';
+    if (profile.skills?.[repairType]) {
+      profile.skills[repairType].xp += overrides.xpEarned;
+      // FIX: recalculate xpToNext on each iteration of the level-up loop
+      while (profile.skills[repairType].level < 20) {
+        const xpToNext = profile.skills[repairType].level * 100;
+        if (profile.skills[repairType].xp < xpToNext) break;
+        profile.skills[repairType].xp -= xpToNext;
+        profile.skills[repairType].level++;
+        showToast(`⬆ ${repairType.charAt(0).toUpperCase() + repairType.slice(1)} leveled up to Lv.${profile.skills[repairType].level}!`, 4000);
+      }
+    }
+  } else {
+    awardXP(partDef.repairType, partDef.difficulty || 0.5);
+  }
 
-  // Update stats
+  // ── Stats ──
   const profile = state.getProfile();
   profile.stats.totalRepairs = (profile.stats.totalRepairs || 0) + 1;
   state.save();
 
-  // Check for hidden reveals
+  // ── Side effects ──
   checkHiddenReveal(partId, 'repair');
-
-  // Check system completion
   checkSystemCompletion(partId);
 
-  // Refresh UI
+  // ── Refresh UI ──
   refreshSystemList();
   refreshPartDetail();
   refreshRepairLog();
@@ -1011,7 +951,6 @@ function handleReplace(partId, cost) {
     return;
   }
 
-  // Confirm dialog
   const overlay = el('div', { className: 'modal-overlay' });
   const modal = el('div', { className: 'modal' });
   const partDef = findPartDef(partTree, partId);
@@ -1090,12 +1029,10 @@ function checkHiddenReveal(partId, action) {
   if (reveal.revealsOnAction !== action) return;
 
   const targetPartInstance = vehicle.parts[reveal.targetPartId];
-  if (!targetPartInstance || targetPartInstance.revealed) return; // Already revealed
+  if (!targetPartInstance || targetPartInstance.revealed) return;
 
-  // Chance roll
   if (Math.random() > reveal.chance) return;
 
-  // Reveal!
   const randomCondition = parseFloat((0.05 + Math.random() * 0.40).toFixed(2));
   state.updatePart(instanceId, reveal.targetPartId, {
     condition: randomCondition,
@@ -1106,10 +1043,8 @@ function checkHiddenReveal(partId, action) {
   const targetName = targetDef ? targetDef.name : reveal.targetPartId;
 
   addLogEntry(instanceId, '★', `Discovered: ${targetName} — ${reveal.flavorText}`);
-
   showToast(`★ Discovered: ${targetName}`, 4000);
 
-  // Refresh navigator to show new part with glow
   setTimeout(() => {
     refreshSystemList();
     refreshRepairLog();
@@ -1131,19 +1066,33 @@ function checkSystemCompletion(partId) {
   const completion = calcSystemCompletion(vehicle, systemPartIds);
 
   if (completion >= 1.0) {
-    // Check if already awarded
     if (!vehicle.completedSystems) vehicle.completedSystems = {};
     if (vehicle.completedSystems[system.id]) return;
 
     vehicle.completedSystems[system.id] = true;
 
-    // Award bonus
     const bonus = 200 + Math.floor(Math.random() * 300);
     state.updateCurrency('yen', bonus);
     state.save();
 
     addLogEntry(instanceId, '✅', `SYSTEM COMPLETE: ${system.name} — +${formatYen(bonus)} bonus!`);
     showToast(`✅ ${system.name} COMPLETE! +${formatYen(bonus)}`, 4000);
+
+    // Post to activity feed
+    try {
+      const { sync } = getApp();
+      const profile = state.getProfile();
+      if (sync && typeof sync.postToFeed === 'function') {
+        sync.postToFeed({
+          who: profile.profileId,
+          what: 'completed_system',
+          detail: `completed the ${system.name} on their ${partTree.displayName}`,
+          when: Date.now(),
+        });
+      }
+    } catch (e) {
+      console.warn('Could not post system completion to feed:', e);
+    }
 
     // Check for first start readiness
     const firstStartReady = state.isFirstStartReady(instanceId, systemsMap);
@@ -1157,7 +1106,7 @@ function checkSystemCompletion(partId) {
   }
 }
 
-// ── XP Award ─────────────────────────────────────────────────
+// ── XP Award (fallback for non-wrench mechanics) ─────────────
 
 function awardXP(repairType, difficulty) {
   const { state } = getApp();
@@ -1168,9 +1117,10 @@ function awardXP(repairType, difficulty) {
   const skill = profile.skills[repairType];
   skill.xp += baseXP;
 
-  // Level up check (logarithmic curve: XP to next = level * 100)
-  const xpToNext = skill.level * 100;
-  while (skill.xp >= xpToNext && skill.level < 20) {
+  // FIX: recalculate xpToNext per iteration
+  while (skill.level < 20) {
+    const xpToNext = skill.level * 100;
+    if (skill.xp < xpToNext) break;
     skill.xp -= xpToNext;
     skill.level++;
     showToast(`⬆ ${repairType.charAt(0).toUpperCase() + repairType.slice(1)} leveled up to Lv.${skill.level}!`, 4000);
@@ -1199,7 +1149,6 @@ function renderRepairLog(container) {
   for (const entry of log) {
     const isDiscovery = entry.icon === '★';
     const isComplete = entry.icon === '✅' || entry.icon === '✓';
-    const isCurrent = entry.icon === '→';
 
     const row = el('div', {
       className: 'log-entry' + (isDiscovery ? ' log-entry--discovery' : '') + (isComplete ? ' log-entry--complete' : ''),
@@ -1276,7 +1225,6 @@ function renderSkillBar(container) {
 function renderFirstStartOverlay(instanceId, partTree, vehicle) {
   const { state } = getApp();
 
-  // Remove existing overlay if any
   const existing = document.getElementById('first-start-overlay');
   if (existing) existing.remove();
 
@@ -1289,7 +1237,6 @@ function renderFirstStartOverlay(instanceId, partTree, vehicle) {
 
   const inner = el('div', { style: 'max-width:500px; width:100%;' });
 
-  // Title
   inner.appendChild(el('div', {
     style: `font-family:var(--font-data); font-size:var(--font-size-sm); letter-spacing:0.2em;
             color:var(--text-secondary); margin-bottom:var(--space-md);`,
@@ -1311,7 +1258,6 @@ function renderFirstStartOverlay(instanceId, partTree, vehicle) {
     textContent: 'All critical systems are go.',
   }));
 
-  // System checklist
   const criticalSystems = ['Engine', 'Fuel', 'Cooling', 'Exhaust', 'Electrical', 'Drivetrain'];
   const checkGrid = el('div', {
     style: 'display:grid; grid-template-columns:repeat(3, 1fr); gap:var(--space-sm); margin-bottom:var(--space-xl);',
@@ -1324,7 +1270,6 @@ function renderFirstStartOverlay(instanceId, partTree, vehicle) {
   }
   inner.appendChild(checkGrid);
 
-  // TURN THE KEY button
   const keyBtn = el('button', {
     className: 'btn btn--primary btn--large',
     style: `width:100%; max-width:300px; margin:0 auto var(--space-lg);
@@ -1378,7 +1323,6 @@ function renderFirstStartOverlay(instanceId, partTree, vehicle) {
   inner.appendChild(keyBtn);
   inner.appendChild(crankText);
 
-  // Skip / go back
   const skipBtn = el('button', {
     className: 'btn btn--ghost',
     style: 'margin-top:var(--space-xl);',
@@ -1397,25 +1341,22 @@ function renderFirstStartOverlay(instanceId, partTree, vehicle) {
 function triggerFirstStart(overlay, inner, instanceId, partTree, vehicle) {
   const { state } = getApp();
 
-  // Mark first start done
   vehicle.firstStartDone = true;
   vehicle.status = 'complete';
   state.save();
 
-  // Transition
   overlay.style.transition = 'background 1.5s ease';
   overlay.style.background = 'linear-gradient(180deg, #1a0a00 0%, #2d1800 50%, #0a0e1a 100%)';
 
   inner.innerHTML = '';
 
-  // Engine-specific text
   const firstStartText = partTree.firstStartText ||
-    'She catches. The engine settles into a steady idle. She\'s alive.';
+    "She catches. The engine settles into a steady idle. She's alive.";
 
   inner.appendChild(el('div', {
     style: `font-size:var(--font-size-xl); font-weight:700; color:var(--condition-good);
             margin-bottom:var(--space-lg); animation:fadeIn 800ms ease;`,
-    textContent: '🔑 SHE\'S ALIVE',
+    textContent: "🔑 SHE'S ALIVE",
   }));
 
   inner.appendChild(el('div', {
@@ -1431,7 +1372,6 @@ function triggerFirstStart(overlay, inner, instanceId, partTree, vehicle) {
     textContent: `${partTree.displayName} — First Start Complete`,
   }));
 
-  // Confetti!
   spawnConfetti(60);
 
   // Post to activity feed
@@ -1442,7 +1382,7 @@ function triggerFirstStart(overlay, inner, instanceId, partTree, vehicle) {
       sync.postToFeed({
         who: profile.profileId,
         what: 'completed_car',
-        detail: `${profile.profileId} started the ${partTree.displayName} for the first time!`,
+        detail: `started the ${partTree.displayName} for the first time!`,
         when: Date.now(),
       });
     }
@@ -1450,10 +1390,8 @@ function triggerFirstStart(overlay, inner, instanceId, partTree, vehicle) {
     console.warn('Could not post to feed:', e);
   }
 
-  // Add log entry
   addLogEntry(instanceId, '🔑', `FIRST START! ${partTree.displayName} is alive!`);
 
-  // Buttons
   const btnRow = el('div', {
     style: 'display:flex; gap:var(--space-md); justify-content:center; flex-wrap:wrap; animation:fadeIn 2000ms ease;',
   });

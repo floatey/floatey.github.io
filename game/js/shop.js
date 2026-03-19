@@ -20,7 +20,6 @@ const TOOLS = [
   { id: 'media_blaster',       name: 'Media Blaster',          mechanic: 'bodywork',  effect: 'Instant-clear rust zones',                 cost: 1200, icon: '💥' },
 ];
 
-// Mechanic badge colors (keyed to CSS variables)
 const MECHANIC_COLORS = {
   wrench:    'var(--wrench-color)',
   precision: 'var(--precision-color)',
@@ -28,7 +27,6 @@ const MECHANIC_COLORS = {
   bodywork:  'var(--bodywork-color)',
 };
 
-// Source rarity badge labels & colors
 const RARITY_LABELS = {
   common:   { label: 'Common',   color: 'var(--rarity-3)' },
   uncommon: { label: 'Uncommon', color: 'var(--accent)'   },
@@ -38,33 +36,27 @@ const RARITY_LABELS = {
 // ── Helpers ──────────────────────────────────────────────────
 
 /**
- * Walk every owned vehicle and collect parts with condition <= 0.10
- * (DESTROYED — must replace, cannot repair).
- *
- * Returns an array of:
- *   { instanceId, vehicleLabel, partId, partName, replaceCost, sourceRarity, modelId }
+ * Walk every owned vehicle and collect parts with condition <= 0.10 (DESTROYED).
+ * FIX: vehicleData is { vehicles: [...] } not a plain array.
  */
 function collectDestroyedParts(state, vehicleData) {
   const profile    = state.getProfile();
   const vehicles   = profile.garage.vehicles;
   const destroyed  = [];
 
+  // FIX: extract the vehicles array from the outer object
+  const vehicleList = vehicleData?.vehicles || [];
+
   for (const [instanceId, vehicle] of Object.entries(vehicles)) {
-    // Resolve display name from vehicleData if possible
-    const meta = (vehicleData || []).find(v => v.modelId === vehicle.modelId);
+    const meta = vehicleList.find(v => v.modelId === vehicle.modelId);
     const vehicleLabel = vehicle.nickname
       ? vehicle.nickname
       : (meta ? meta.displayName : vehicle.modelId.toUpperCase());
 
     for (const [partId, partState] of Object.entries(vehicle.parts)) {
-      // Skip hidden / unrevealed parts
       if (!partState.revealed || partState.condition === null) continue;
-      // DESTROYED threshold: 0.00–0.10
       if (partState.condition > 0.10) continue;
 
-      // Look up part definition for name, cost, and sourceRarity
-      // Part definitions live in vehicleData's partTree (loaded separately)
-      // We'll accept whatever partial info we can find and fall back gracefully
       const partDef = findPartDef(partId, meta);
       destroyed.push({
         instanceId,
@@ -82,9 +74,8 @@ function collectDestroyedParts(state, vehicleData) {
 }
 
 /**
- * Attempt to find a part definition in the vehicle's part tree.
- * vehicleData entries carry a `partTree` property if loaded, or we scan the
- * flat `parts` cache attached during data loading. Returns null if not found.
+ * Attempt to find a part definition in the vehicle meta's part tree.
+ * vehicleData entries carry a `systems` property if the tree was embedded.
  */
 function findPartDef(partId, vehicleMeta) {
   if (!vehicleMeta || !vehicleMeta.systems) return null;
@@ -102,22 +93,13 @@ function findPartDef(partId, vehicleMeta) {
   return null;
 }
 
-/**
- * Derive the platform key used in donorParts from modelId.
- * Mirrors the convention used in state.js (e.g. 'fc3s', 'ae86').
- */
 function platformKey(modelId) {
   return modelId ? modelId.toLowerCase() : '';
 }
 
 // ── Confirm dialog ───────────────────────────────────────────
 
-/**
- * Show a lightweight confirm modal.
- * Calls onConfirm() if the user accepts, dismisses otherwise.
- */
 function showConfirm(title, message, confirmLabel, onConfirm) {
-  // Remove any existing modal
   dismissConfirm();
 
   const overlay = document.createElement('div');
@@ -150,7 +132,6 @@ function showConfirm(title, message, confirmLabel, onConfirm) {
     onConfirm();
   });
 
-  // Close on backdrop click
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 }
 
@@ -161,9 +142,6 @@ function dismissConfirm() {
 
 // ── Section renderers ─────────────────────────────────────────
 
-/**
- * Render the currency summary bar at the top of the shop.
- */
 function renderCurrencyBar(profile) {
   const { yen, wrenchTokens, donorParts } = profile.currency;
 
@@ -175,7 +153,6 @@ function renderCurrencyBar(profile) {
   inner.className = 'panel-body';
   inner.style.cssText = 'display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-lg);';
 
-  // Yen
   const yenEl = document.createElement('div');
   yenEl.className = 'currency-display';
   yenEl.innerHTML = `
@@ -183,7 +160,6 @@ function renderCurrencyBar(profile) {
     <span style="font-size: var(--font-size-lg); color: var(--rarity-5);">${formatYen(yen)}</span>
   `;
 
-  // Wrench Tokens
   const wtEl = document.createElement('div');
   wtEl.className = 'currency-display';
   wtEl.innerHTML = `
@@ -193,7 +169,6 @@ function renderCurrencyBar(profile) {
 
   inner.append(yenEl, wtEl);
 
-  // Donor Parts (grouped by platform)
   if (donorParts && Object.keys(donorParts).length > 0) {
     const donorEl = document.createElement('div');
     donorEl.style.cssText = 'display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center;';
@@ -227,9 +202,6 @@ function renderCurrencyBar(profile) {
   return bar;
 }
 
-/**
- * Render the REPLACEMENT PARTS section.
- */
 function renderReplacementParts(destroyedParts, profile) {
   const panel = document.createElement('div');
   panel.className = 'panel';
@@ -265,9 +237,6 @@ function renderReplacementParts(destroyedParts, profile) {
   return panel;
 }
 
-/**
- * Render a single replacement-part row.
- */
 function renderReplacementRow(item, profile) {
   const { instanceId, vehicleLabel, partId, partName, replaceCost, sourceRarity, modelId } = item;
   const yen      = profile.currency.yen;
@@ -287,9 +256,7 @@ function renderReplacementRow(item, profile) {
     padding: var(--space-md) var(--space-base);
     border-bottom: 1px solid var(--border);
   `;
-  row.style.setProperty('--row-hover', 'var(--bg-hover)');
 
-  // Part name + vehicle label
   const infoEl = document.createElement('div');
   infoEl.style.cssText = 'flex: 1; min-width: 140px;';
   infoEl.innerHTML = `
@@ -297,7 +264,6 @@ function renderReplacementRow(item, profile) {
     <div style="font-size: var(--font-size-xs); color: var(--text-muted); font-family: var(--font-data);">${vehicleLabel}</div>
   `;
 
-  // Rarity badge
   const rarityBadge = document.createElement('span');
   rarityBadge.className = 'font-data';
   rarityBadge.style.cssText = `
@@ -311,20 +277,18 @@ function renderReplacementRow(item, profile) {
   `;
   rarityBadge.textContent = rarityInfo.label;
 
-  // Actions area
   const actions = document.createElement('div');
   actions.style.cssText = 'display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0;';
 
-  // ── Buy button ──────────────────────────────────────
   const buyBtn = document.createElement('button');
   if (canAfford) {
     buyBtn.className = 'btn btn--primary';
-    buyBtn.innerHTML = `Buy &nbsp;<span class="shop-price" style="font-size: var(--font-size-xs);">¥${formatYen(replaceCost)}</span>`;
+    buyBtn.innerHTML = `Buy &nbsp;<span class="shop-price" style="font-size: var(--font-size-xs);">${formatYen(replaceCost)}</span>`;
     buyBtn.addEventListener('click', () => {
       showConfirm(
         `Replace ${partName}`,
-        `Buy a replacement <strong>${partName}</strong> for <strong style="color: var(--rarity-5);">¥${formatYen(replaceCost)}</strong>?`,
-        `Buy — ¥${formatYen(replaceCost)}`,
+        `Buy a replacement <strong>${partName}</strong> for <strong style="color: var(--rarity-5);">${formatYen(replaceCost)}</strong>?`,
+        `Buy — ${formatYen(replaceCost)}`,
         () => executeBuyReplacement(instanceId, partId, replaceCost, false)
       );
     });
@@ -333,13 +297,12 @@ function renderReplacementRow(item, profile) {
     buyBtn.disabled = true;
     buyBtn.innerHTML = `
       <span style="color: var(--text-muted); font-size: var(--font-size-xs);">
-        Need ¥${formatYen(replaceCost - yen)} more
+        Need ${formatYen(replaceCost - yen)} more
       </span>
     `;
   }
   actions.appendChild(buyBtn);
 
-  // ── Donor Parts button (free alternative) ──────────
   if (hasDonor) {
     const donorBtn = document.createElement('button');
     donorBtn.className = 'btn btn--secondary';
@@ -360,10 +323,6 @@ function renderReplacementRow(item, profile) {
   return row;
 }
 
-/**
- * Execute a replacement part purchase (paid or donor).
- * Sets the part's condition to 0.95, deducts yen (or donor), re-renders.
- */
 function executeBuyReplacement(instanceId, partId, cost, useDonor, platform) {
   const { state, sync } = getApp();
 
@@ -376,14 +335,11 @@ function executeBuyReplacement(instanceId, partId, cost, useDonor, platform) {
   state.updatePart(instanceId, partId, { condition: 0.95 });
   state.markDirty();
 
-  if (sync) sync.requestWrite();
+  if (sync) sync.requestWrite?.();
   refreshHeader();
-  renderShop(); // re-render shop to reflect new state
+  renderShop();
 }
 
-/**
- * Render the TOOLS & UPGRADES section.
- */
 function renderToolsSection(profile) {
   const panel = document.createElement('div');
   panel.className = 'panel';
@@ -404,9 +360,6 @@ function renderToolsSection(profile) {
   return panel;
 }
 
-/**
- * Render a single tool card.
- */
 function renderToolCard(tool, profile) {
   const { state } = getApp();
   const tools    = profile.tools || {};
@@ -418,25 +371,21 @@ function renderToolCard(tool, profile) {
   const count        = isConsumable ? (typeof ownedVal === 'number' ? ownedVal : 0) : 0;
   const canAfford    = yen >= tool.cost;
 
-  // Card state classes
   let cardClass = 'shop-item';
-  if (isOwned)       cardClass += ' shop-item--owned';
+  if (isOwned)        cardClass += ' shop-item--owned';
   else if (canAfford) cardClass += ' shop-item--affordable';
 
   const card = document.createElement('div');
   card.className = cardClass;
 
-  // Icon
   const iconEl = document.createElement('div');
   iconEl.style.cssText = 'font-size: 28px; line-height: 1;';
   iconEl.textContent = tool.icon;
 
-  // Name
   const nameEl = document.createElement('div');
   nameEl.className = 'shop-item__name';
   nameEl.textContent = tool.name;
 
-  // Mechanic badge
   const mechanicColor = MECHANIC_COLORS[tool.mechanic] || 'var(--accent)';
   const badge = document.createElement('span');
   badge.className = 'font-data';
@@ -453,49 +402,43 @@ function renderToolCard(tool, profile) {
   `;
   badge.textContent = tool.mechanic;
 
-  // Effect description
   const effectEl = document.createElement('div');
   effectEl.className = 'shop-item__desc';
   effectEl.textContent = tool.effect;
 
-  // Price / status row
   const bottomRow = document.createElement('div');
   bottomRow.style.cssText = 'display: flex; flex-direction: column; gap: var(--space-xs); margin-top: auto;';
 
   if (isOwned) {
-    // Non-consumable, already owned — card handles the "OWNED ✓" via CSS ::after
     const ownedLabel = document.createElement('span');
     ownedLabel.className = 'shop-price';
     ownedLabel.style.cssText = 'color: var(--condition-good); font-size: var(--font-size-xs);';
     ownedLabel.textContent = 'OWNED ✓';
     bottomRow.appendChild(ownedLabel);
   } else {
-    // Price label
     const priceEl = document.createElement('div');
     priceEl.className = 'shop-price';
     if (!canAfford) {
       priceEl.style.cssText = 'color: var(--text-muted);';
     }
-    priceEl.textContent = `¥${formatYen(tool.cost)}`;
+    priceEl.textContent = `${formatYen(tool.cost)}`;
 
-    // Consumable: show remaining count
     if (isConsumable && count > 0) {
       priceEl.textContent += ` — ${count} remaining`;
     }
 
-    // Buy button
     const buyBtn = document.createElement('button');
     buyBtn.className = canAfford ? 'btn btn--primary' : 'btn btn--secondary';
     buyBtn.disabled  = !canAfford;
-    buyBtn.textContent = canAfford ? `Buy — ¥${formatYen(tool.cost)}` : `Need ¥${formatYen(tool.cost - yen)} more`;
+    buyBtn.textContent = canAfford ? `Buy — ${formatYen(tool.cost)}` : `Need ${formatYen(tool.cost - yen)} more`;
 
     if (canAfford) {
       buyBtn.addEventListener('click', () => {
         showConfirm(
           `Buy ${tool.name}`,
-          `Purchase <strong>${tool.name}</strong> for <strong style="color: var(--rarity-5);">¥${formatYen(tool.cost)}</strong>?<br>
+          `Purchase <strong>${tool.name}</strong> for <strong style="color: var(--rarity-5);">${formatYen(tool.cost)}</strong>?<br>
            <span style="font-size: var(--font-size-xs); color: var(--text-secondary); font-style: italic;">${tool.effect}</span>`,
-          `Buy — ¥${formatYen(tool.cost)}`,
+          `Buy — ${formatYen(tool.cost)}`,
           () => executeBuyTool(tool)
         );
       });
@@ -508,10 +451,6 @@ function renderToolCard(tool, profile) {
   return card;
 }
 
-/**
- * Execute a tool purchase.
- * Consumable tools increment a count; permanent tools set to true.
- */
 function executeBuyTool(tool) {
   const { state, sync } = getApp();
   const profile = state.getProfile();
@@ -522,7 +461,7 @@ function executeBuyTool(tool) {
     const current = typeof profile.tools[tool.id] === 'number'
       ? profile.tools[tool.id]
       : 0;
-    profile.tools[tool.id] = current + 10; // penetrating oil comes in ×10
+    profile.tools[tool.id] = current + 10;
   } else {
     profile.tools[tool.id] = true;
   }
@@ -531,9 +470,9 @@ function executeBuyTool(tool) {
   state.markDirty();
   state.save();
 
-  if (sync) sync.requestWrite();
+  if (sync) sync.requestWrite?.();
   refreshHeader();
-  renderShop(); // re-render to reflect owned state
+  renderShop();
 }
 
 // ── Main render entry point ───────────────────────────────────
@@ -547,7 +486,6 @@ export function renderShop() {
 
   const profile = state.getProfile();
 
-  // Build the page
   root.innerHTML = '';
 
   const content = document.createElement('div');
@@ -557,7 +495,6 @@ export function renderShop() {
   container.className = 'game-container';
   container.style.cssText = 'padding-top: var(--space-base);';
 
-  // Page title
   const titleRow = document.createElement('div');
   titleRow.style.cssText = `
     display: flex;
@@ -574,21 +511,16 @@ export function renderShop() {
   titleRow.appendChild(titleEl);
   container.appendChild(titleRow);
 
-  // Currency bar
   container.appendChild(renderCurrencyBar(profile));
 
-  // Collect destroyed parts across all vehicles
   const destroyedParts = collectDestroyedParts(state, vehicleData);
 
-  // Replacement Parts section
   container.appendChild(renderReplacementParts(destroyedParts, profile));
 
-  // Spacer
   const spacer = document.createElement('div');
   spacer.style.cssText = 'height: var(--space-base);';
   container.appendChild(spacer);
 
-  // Tools & Upgrades section
   container.appendChild(renderToolsSection(profile));
 
   content.appendChild(container);
