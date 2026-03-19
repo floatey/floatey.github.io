@@ -1175,6 +1175,156 @@ const SYNTHS = {
   },
 
 
+  // ── wrench_hold_press — hold note onset ──────────────────────────────────
+  //
+  // Replaces the plain ratchet on hold-start so holds feel weighted and
+  // different from isolated taps.  Two layers:
+  //   1. A darker ratchet (pitch × 0.82) — the lower centre-of-gravity
+  //      immediately communicates "grip", not "click".
+  //   2. A descending sine glide (220→80 Hz) — a short "thunk" that implies
+  //      something has been loaded / locked under tension.  Taps have no such
+  //      glide; holds start with one.  This single element is the primary
+  //      perceptual separator between the two note types.
+
+  wrench_hold_press(ctx, out, vol, pitch, at) {
+    const now = at || ctx.currentTime;
+
+    // Darker ratchet base
+    SYNTHS._ratchet(ctx, out, vol * 0.90, (pitch || 1.0) * 0.82, now);
+
+    // Low "loading" glide — not present on a plain tap
+    const glide = ctx.createOscillator();
+    glide.type  = 'sine';
+    glide.frequency.setValueAtTime(220 * (pitch || 1.0), now);
+    glide.frequency.exponentialRampToValueAtTime(80 * (pitch || 1.0), now + 0.10);
+    const glideGain = ctx.createGain();
+    adsr(glideGain.gain, ctx, { t: now, attack: 0.001, hold: 0.006, decay: 0.085, peak: 0.42 * vol });
+    glide.connect(glideGain); glideGain.connect(out);
+    glide.start(now); glide.stop(now + 0.13);
+
+    return null;
+  },
+
+
+  // ── wrench_hold_sustain — looping hold tension ────────────────────────────
+  //
+  // Audible feedback that the player IS holding.  A very quiet metallic hum
+  // in the 380–680 Hz band — the sound of a ratchet under constant load.
+  // The LFO at 6 Hz creates a slight mechanical "strain" flutter that makes
+  // it feel alive rather than like a static drone.
+  //
+  // Kept deliberately low (peak ~9% vol) so it never masks the call-phase
+  // audio playing underneath it, but is clearly audible in the response
+  // silence.  Duration is auto-capped at 8 s; caller must call stop() on
+  // release to fade it out cleanly.
+  //
+  // Returns { stop(fadeTime?) } — same contract as bodywork_pad / sand_loop.
+
+  wrench_hold_sustain(ctx, out, vol) {
+    const dur    = 8.0;
+    const buf    = noiseBuffer(ctx, dur);
+    const src    = ctx.createBufferSource();
+    src.buffer   = buf;
+    src.loop     = true;
+    src.loopStart = 0.05;
+    src.loopEnd  = dur - 0.05;
+
+    // Narrow bandpass centred on the "metallic string" zone
+    const bp1 = filter(ctx, 'bandpass', 420, 3.2);
+    const bp2 = filter(ctx, 'bandpass', 640, 4.0);
+
+    // Merge both bands
+    const merge = ctx.createGain();
+    merge.gain.value = 1;
+
+    // Strain flutter LFO
+    const lfo      = ctx.createOscillator();
+    lfo.type       = 'sine';
+    lfo.frequency.value = 6.0;
+    const lfoGain  = ctx.createGain();
+    lfoGain.gain.value  = 0.18;
+
+    const masterGain = ctx.createGain();
+    const now        = ctx.currentTime;
+    masterGain.gain.setValueAtTime(0, now);
+    masterGain.gain.linearRampToValueAtTime(0.09 * vol, now + 0.06); // quick fade-in
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(masterGain.gain);
+    src.connect(bp1); bp1.connect(merge);
+    src.connect(bp2); bp2.connect(merge);
+    merge.connect(masterGain); masterGain.connect(out);
+
+    src.start(now); lfo.start(now);
+
+    const autoStop = now + dur;
+    src.stop(autoStop); lfo.stop(autoStop);
+
+    return {
+      stop(fadeTime = 0.06) {
+        const t = ctx.currentTime;
+        masterGain.gain.cancelScheduledValues(t);
+        masterGain.gain.setValueAtTime(masterGain.gain.value, t);
+        masterGain.gain.linearRampToValueAtTime(0.0001, t + fadeTime);
+        try { src.stop(t + fadeTime + 0.01); } catch (_) { /* already stopped */ }
+        try { lfo.stop(t + fadeTime + 0.01); } catch (_) { /* already stopped */ }
+      }
+    };
+  },
+
+
+  // ── wrench_hold_release — hold completion snap ────────────────────────────
+  //
+  // The sound of a bolt unseating under sustained torque — heavier and
+  // brighter than a plain ratchet click.  Three layers:
+  //   1. Noise crack (HP filtered at 2 kHz) — the physical "snap"
+  //   2. Short metallic ring (triangle at Gb4 = 370 Hz, pentatonic root) —
+  //      a brief resonant tone that signals "correct landing"
+  //   3. Low thud (sine 140→50 Hz) — confirms something moved with weight
+  //
+  // The ring distinguishes this from both a plain tap (no ring) and from
+  // the hold-press (which has no high crack).  Players quickly learn the
+  // full signature: press-thud → hum → snap-ring.
+
+  wrench_hold_release(ctx, out, vol, pitch, at) {
+    const now = at || ctx.currentTime;
+    const p   = pitch || 1.0;
+
+    // High crack — the snap
+    const crackBuf  = noiseBuffer(ctx, 0.08);
+    const crack     = ctx.createBufferSource();
+    crack.buffer    = crackBuf;
+    const crackHP   = filter(ctx, 'highpass', 2000 * p, 0.9);
+    const crackGain = ctx.createGain();
+    adsr(crackGain.gain, ctx, { t: now, attack: 0.001, hold: 0.003, decay: 0.055, peak: 0.50 * vol });
+    crack.connect(crackHP); crackHP.connect(crackGain); crackGain.connect(out);
+    crack.start(now); crack.stop(now + 0.09);
+
+    // Metallic ring — pentatonic Gb4 (369.99 Hz), confirms correct timing
+    const ring = ctx.createOscillator();
+    ring.type  = 'triangle';
+    ring.frequency.setValueAtTime(370 * p, now);
+    ring.frequency.exponentialRampToValueAtTime(220 * p, now + 0.12);
+    const ringBP   = filter(ctx, 'bandpass', 370 * p, 6);
+    const ringGain = ctx.createGain();
+    adsr(ringGain.gain, ctx, { t: now, attack: 0.001, hold: 0.008, decay: 0.10, peak: 0.28 * vol });
+    ring.connect(ringBP); ringBP.connect(ringGain); ringGain.connect(out);
+    ring.start(now); ring.stop(now + 0.16);
+
+    // Low thud — confirms physical weight
+    const thud = ctx.createOscillator();
+    thud.type  = 'sine';
+    thud.frequency.setValueAtTime(140 * p, now);
+    thud.frequency.exponentialRampToValueAtTime(50 * p, now + 0.08);
+    const thudGain = ctx.createGain();
+    adsr(thudGain.gain, ctx, { t: now, attack: 0.001, hold: 0.005, decay: 0.07, peak: 0.36 * vol });
+    thud.connect(thudGain); thudGain.connect(out);
+    thud.start(now); thud.stop(now + 0.11);
+
+    return null;
+  },
+
+
   // ── metronome_tick — count-in beat ───────────────────────────────────────
   //
   // A clean woodblock-style click used during the 4-beat count-in before
@@ -2338,6 +2488,31 @@ export class AudioManager {
   }
 
   // ── Wrench rhythm sounds ───────────────────────────────────────────────
+
+  /** playWrenchHoldPress(pitch?) — weighted onset sound for hold notes */
+  playWrenchHoldPress(pitch = 1.0) {
+    return this.play('wrench_hold_press', { pitch });
+  }
+
+  /**
+   * playWrenchHoldSustain() — start the looping hold-tension hum.
+   * Returns a { stop() } handle. Call stop() when the hold ends.
+   */
+  playWrenchHoldSustain() {
+    if (!this._supported || !this._initialized || this._muted) return null;
+    this._resume();
+    try {
+      return SYNTHS.wrench_hold_sustain(this._ctx, this._masterGain, this._volume);
+    } catch (err) {
+      console.warn('[AudioManager] wrench_hold_sustain error:', err);
+      return null;
+    }
+  }
+
+  /** playWrenchHoldRelease(pitch?) — snap on correct hold completion */
+  playWrenchHoldRelease(pitch = 1.0) {
+    return this.play('wrench_hold_release', { pitch });
+  }
 
   /**
    * playWrenchCallBeat(pitch?) — guide beat during call phase.
