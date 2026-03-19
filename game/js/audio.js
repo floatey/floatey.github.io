@@ -1137,6 +1137,49 @@ const SYNTHS = {
   },
 
 
+  // ── metronome_tick — count-in beat ───────────────────────────────────────
+  //
+  // A clean woodblock-style click used during the 4-beat count-in before
+  // the first Wrench pattern.  Two tiers:
+  //   pitch = 1  → normal beat  (high, short)
+  //   pitch = 2  → accent beat  (lower, slightly heavier — signals the "1" coming)
+  //
+  // Structurally: bandpass noise burst (the "wood" of the woodblock) +
+  // a short sine pitch drop (body resonance).  Kept deliberately dry so
+  // it doesn't bleed into the pattern that follows.
+
+  metronome_tick(ctx, out, vol, pitch) {
+    const now      = ctx.currentTime;
+    const isAccent = pitch >= 2;
+
+    // Transient click — bandpass filtered noise
+    const noiseBuf  = noiseBuffer(ctx, 0.04);
+    const noise     = ctx.createBufferSource();
+    noise.buffer    = noiseBuf;
+    const bp        = filter(ctx, 'bandpass', isAccent ? 1400 : 2200, 2.5);
+    const noiseGain = ctx.createGain();
+    adsr(noiseGain.gain, ctx, { attack: 0.001, hold: 0.002, decay: 0.028, peak: 0.45 * vol });
+    noise.connect(bp); bp.connect(noiseGain); noiseGain.connect(out);
+    noise.start(now); noise.stop(now + 0.05);
+
+    // Body resonance — accent is lower/longer (more weight)
+    const tone     = ctx.createOscillator();
+    tone.type      = 'sine';
+    tone.frequency.setValueAtTime(isAccent ? 280 : 420, now);
+    tone.frequency.exponentialRampToValueAtTime(isAccent ? 90 : 180, now + 0.055);
+    const toneGain = ctx.createGain();
+    adsr(toneGain.gain, ctx, {
+      attack: 0.001, hold: 0.004,
+      decay:  isAccent ? 0.065 : 0.040,
+      peak:   (isAccent ? 0.38 : 0.24) * vol,
+    });
+    tone.connect(toneGain); toneGain.connect(out);
+    tone.start(now); tone.stop(now + 0.09);
+
+    return null;
+  },
+
+
   // ── bodywork_pad ──────────────────────────────────────────────────────────
   //
   // The core of the Bodywork mechanic's soundscape: a sustaining pad tone
@@ -2234,6 +2277,15 @@ export class AudioManager {
   /** playWrenchSequenceBreak() — tapped on a rest / missed an active beat */
   playWrenchSequenceBreak() {
     return this.play('wrench_sequence_break');
+  }
+
+  /**
+   * playMetronomeTick(isAccent?) — count-in metronome click.
+   * Called by WrenchMechanic._runCountIn() on each of the 4 lead-in beats.
+   * @param {boolean} [isAccent=false] — true = accent beat (beat 4, signals "1" coming)
+   */
+  playMetronomeTick(isAccent = false) {
+    return this.play('metronome_tick', { pitch: isAccent ? 2 : 1 });
   }
 
   // ── Bodywork rhythm sounds ─────────────────────────────────────────────
