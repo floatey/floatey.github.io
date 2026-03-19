@@ -1799,7 +1799,11 @@ export class RhythmEngine {
   static generateMap(partId, difficulty, mechanicType) {
     const rng  = seededRNG(partId + mechanicType);
     const bpm  = RhythmEngine._difficultyToBPM(difficulty);
-    const swing = (mechanicType === 'wrench' || mechanicType === 'bodywork') ? 0.12 : 0.0;
+    // Wrench uses straight timing (swingRatio 0) so the visual grid cells
+    // and audio beats land at identical intervals. Swing on a call/response
+    // grid means odd cells look evenly spaced but hit ~15ms late — unlearnable.
+    // Bodywork keeps swing (0.12) because it's a flowing hold mechanic, not a grid.
+    const swing = mechanicType === 'bodywork' ? 0.12 : 0.0;
 
     const map = {
       partId,
@@ -2122,19 +2126,14 @@ export class RhythmEngine {
 
     switch (map.mechanicType) {
       case 'wrench': {
-        // During call phase (step 0–7 of current pattern): play call beat
-        // During response phase (step 8–15): play softer guide tick only if
-        // the call had this step active — the guide fades out over 3 cycles
-        const isCallPhase = step < 8;
-        const callStep    = isCallPhase ? step : step - 8;
-        if (isCallPhase) {
+        // Only play the call beat sound during the CALL phase (steps 0–7).
+        // During response (steps 8–15) we stay silent so the player can hear
+        // themselves clearly and the call/response boundary is unambiguous.
+        // A fading guide was here before but it played on the response-half
+        // of the pattern which can differ from the call (turnaround), making
+        // it actively misleading.
+        if (step < 8) {
           setTimeout(() => SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0), delay * 1000);
-        } else {
-          // Response phase guide: quieter version (fades each cycle)
-          const guideVol = Math.max(0, vol * (0.4 - this._cycleCount * 0.12));
-          if (guideVol > 0) {
-            setTimeout(() => SYNTHS.wrench_call_beat(ctx, out, guideVol, 0.92), delay * 1000);
-          }
         }
         break;
       }
