@@ -238,20 +238,24 @@ window.GarageView = (function () {
     var profileId  = GameState.getProfileId();
     var yen        = GameState.get("currency.yen") || 0;
     var wt         = GameState.get("currency.wrenchTokens") || 0;
-    // Capitalise the profile ID as display name (e.g. "tarro" → "Tarro")
-    var playerName = profileId
-      ? profileId.charAt(0).toUpperCase() + profileId.slice(1)
-      : "Garage";
+    var playerName = App.getProfileName(profileId) || "Garage";
 
     var summary = document.createElement("div");
     summary.className = "garage-summary card";
     summary.innerHTML =
       "<div class='summary-name'>" + _esc(playerName) + "'s Garage</div>" +
-      "<div class='summary-currency font-data'>" +
-        "<span class='yen-balance'>" + Utils.formatCurrency(yen) + "</span>" +
-        "<span class='text-muted'> · </span>" +
-        "<span class='wt-balance'>" + Utils.formatWT(wt) + "</span>" +
+      "<div class='summary-right'>" +
+        "<div class='summary-currency font-data'>" +
+          "<span class='yen-balance'>" + Utils.formatCurrency(yen) + "</span>" +
+          "<span class='text-muted'> · </span>" +
+          "<span class='wt-balance'>" + Utils.formatWT(wt) + "</span>" +
+        "</div>" +
+        "<button class='btn-switch-profile' id='btn-switch-profile'>Switch Profile</button>" +
       "</div>";
+
+    summary.querySelector("#btn-switch-profile").addEventListener("click", function () {
+      App.navigate("#/");
+    });
     container.appendChild(summary);
 
     // ── Vehicle Cards ────────────────────────────────────────────
