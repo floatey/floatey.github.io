@@ -2326,15 +2326,35 @@ export class RhythmEngine {
       isTrap = !!(entry?.traps?.includes(step));
     }
 
+    // Detect hold step type for call-phase audio so holds sound distinct from taps.
+    // 'typed' is null for rests/traps; 'hold' = start, 'held' = body, 'hold-end' = end.
+    let holdStepType    = null;   // null | 'hold' | 'held' | 'hold-end'
+    let holdDurationSec = 0;      // total hold length in seconds (set for 'hold' steps only)
+    if (map.composition && step < 8 && isActive && !isTrap) {
+      const offset  = map._compositionOffset ?? map._countInCycles ?? 1;
+      const compIdx = Math.max(0, this._cycleCount - offset);
+      const entry   = map.composition[compIdx % map.composition.length];
+      const typed   = entry?.typed?.[step];
+      if (typed?.t === 'hold') {
+        holdStepType    = 'hold';
+        const stepDur   = 60 / map.bpm / 4;
+        holdDurationSec = typed.len * stepDur;
+      } else if (typed?.t === 'held') {
+        holdStepType = 'held';
+      } else if (typed?.t === 'hold-end') {
+        holdStepType = 'hold-end';
+      }
+    }
+
     // Notify UI via callback (scheduled for the exact audio time)
     const delay = Math.max(0, (time - (this._audio._ctx?.currentTime ?? 0)) * 1000);
     setTimeout(() => this._onBeat(step, time, isActive), delay);
 
     if (!isActive) return;
-    this._playBeatSound(step, time, isActive, isTrap);
+    this._playBeatSound(step, time, isActive, isTrap, holdStepType, holdDurationSec);
   }
 
-  _playBeatSound(step, time, isActive, isTrap = false) {
+  _playBeatSound(step, time, isActive, isTrap = false, holdStepType = null, holdDurationSec = 0) {
     if (!isActive) return;
     const map  = this._map;
     const ctx  = this._audio._ctx;
@@ -2357,15 +2377,89 @@ export class RhythmEngine {
       case 'wrench': {
         // Only play call-phase sounds (steps 0-7). Response (8-15) is silent
         // so the boundary is unambiguous and the player can hear themselves.
-        // Trap beats use wrench_trap_beat — same ratchet transient but with
-        // a dissonant buzz so the player hears "skip this" immediately.
-        if (step < 8) {
-          if (isTrap) {
-            SYNTHS.wrench_trap_beat(ctx, out, vol * 0.85, 1.0, time);
-          } else {
-            SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0, time);
-          }
+        if (step >= 8) break;
+
+        if (isTrap) {
+          // Trap beats: dissonant buzz so the player hears "back off" immediately.
+          SYNTHS.wrench_trap_beat(ctx, out, vol * 0.85, 1.0, time);
+          break;
         }
+
+        // ── Hold-aware call-phase audio ───────────────────────────────
+        // Holds must sound completely different from taps during the call
+        // so the player builds an accurate template before the response phase.
+        //
+        //   hold start → press thud (no call-beat ring)
+        //              + sustain hum scheduled to auto-stop at hold end
+        //   held body  → silence (sustain from start step is still running)
+        //   hold end   → release snap (no call-beat ring)
+        //   plain tap  → wrench_call_beat (unchanged)
+
+        if (holdStepType === 'hold') {
+          // Onset: weighted press thud (same as player response hold start)
+          SYNTHS.wrench_hold_press(ctx, out, vol * 0.85, 1.0, time);
+
+          // Inline sustain: schedule a narrow bandpass noise burst for the
+          // full hold duration directly on the Web Audio timeline.
+          // Uses the same tonal character as wrench_hold_sustain but without
+          // a looping handle — start and stop are both pre-scheduled here.
+          if (holdDurationSec > 0) {
+            const sustainDur = Math.max(0.05, holdDurationSec - 0.04); // stop just before release
+            const buf  = noiseBuffer(ctx, Math.min(sustainDur + 0.1, 4.0));
+            const src  = ctx.createBufferSource();
+            src.buffer = buf;
+
+            const bp1 = ctx.createBiquadFilter();
+            bp1.type            = 'bandpass';
+            bp1.frequency.value = 420;
+            bp1.Q.value         = 3.2;
+
+            const bp2 = ctx.createBiquadFilter();
+            bp2.type            = 'bandpass';
+            bp2.frequency.value = 640;
+            bp2.Q.value         = 4.0;
+
+            const merge = ctx.createGain();
+            merge.gain.value = 1;
+
+            const lfo     = ctx.createOscillator();
+            lfo.type      = 'sine';
+            lfo.frequency.value = 6.0;
+            const lfoGain = ctx.createGain();
+            lfoGain.gain.value  = 0.18;
+
+            const masterGain = ctx.createGain();
+            masterGain.gain.setValueAtTime(0, time);
+            masterGain.gain.linearRampToValueAtTime(0.09 * vol, time + 0.06);
+            masterGain.gain.setValueAtTime(0.09 * vol, time + sustainDur - 0.05);
+            masterGain.gain.linearRampToValueAtTime(0.0001, time + sustainDur);
+
+            lfo.connect(lfoGain);
+            lfoGain.connect(masterGain.gain);
+            src.connect(bp1); bp1.connect(merge);
+            src.connect(bp2); bp2.connect(merge);
+            merge.connect(masterGain); masterGain.connect(out);
+
+            src.start(time); lfo.start(time);
+            src.stop(time + sustainDur + 0.01);
+            lfo.stop(time + sustainDur + 0.01);
+          }
+          break;
+        }
+
+        if (holdStepType === 'held') {
+          // Body steps: sustain is already running from the start step — play nothing.
+          break;
+        }
+
+        if (holdStepType === 'hold-end') {
+          // Release snap: marks the boundary where the player must let go.
+          SYNTHS.wrench_hold_release(ctx, out, vol * 0.85, 1.0, time);
+          break;
+        }
+
+        // Plain tap: unchanged call-beat sound.
+        SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0, time);
         break;
       }
 
