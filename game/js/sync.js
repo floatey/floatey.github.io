@@ -3,7 +3,7 @@
 //  localStorage is primary; Firebase is the sync layer.
 // ════════════════════════════════════════════════════════════
 
-import { getDatabase, ref, set, get, onValue, push, remove, query, orderByChild, limitToLast }
+import { ref, set, get, push, remove }
   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
 
 // ── Paths ───────────────────────────────────────────────────

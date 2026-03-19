@@ -35,52 +35,31 @@ const RARITY_LABELS = {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-/**
- * Walk every owned vehicle and collect parts with condition <= 0.10 (DESTROYED).
- * FIX: vehicleData is { vehicles: [...] } not a plain array.
- */
-function collectDestroyedParts(state, vehicleData) {
-  const profile    = state.getProfile();
-  const vehicles   = profile.garage.vehicles;
-  const destroyed  = [];
+// FIX: Part tree cache — vehicles.json only has metadata, not part definitions.
+// We load the real part tree JSON (e.g. data/parts/ae86.json) and cache it here.
+const _partTreeCache = {};
 
-  // FIX: extract the vehicles array from the outer object
-  const vehicleList = vehicleData?.vehicles || [];
-
-  for (const [instanceId, vehicle] of Object.entries(vehicles)) {
-    const meta = vehicleList.find(v => v.modelId === vehicle.modelId);
-    const vehicleLabel = vehicle.nickname
-      ? vehicle.nickname
-      : (meta ? meta.displayName : vehicle.modelId.toUpperCase());
-
-    for (const [partId, partState] of Object.entries(vehicle.parts)) {
-      if (!partState.revealed || partState.condition === null) continue;
-      if (partState.condition > 0.10) continue;
-
-      const partDef = findPartDef(partId, meta);
-      destroyed.push({
-        instanceId,
-        vehicleLabel,
-        partId,
-        partName:     partDef ? partDef.name        : partId,
-        replaceCost:  partDef ? partDef.replaceCost  : 200,
-        sourceRarity: partDef ? partDef.sourceRarity : 'common',
-        modelId:      vehicle.modelId,
-      });
-    }
+async function loadPartTreeForShop(modelId) {
+  if (_partTreeCache[modelId]) return _partTreeCache[modelId];
+  try {
+    const resp = await fetch(`data/parts/${modelId}.json`);
+    if (!resp.ok) return null;
+    const tree = await resp.json();
+    _partTreeCache[modelId] = tree;
+    return tree;
+  } catch {
+    return null;
   }
-
-  return destroyed;
 }
 
 /**
- * Attempt to find a part definition in the vehicle meta's part tree.
- * vehicleData entries carry a `systems` property if the tree was embedded.
+ * Walk a real part-tree JSON to find a part definition by ID.
+ * Handles both 'detailed' systems (with subsystems/parts) and 'bundle' systems.
  */
-function findPartDef(partId, vehicleMeta) {
-  if (!vehicleMeta || !vehicleMeta.systems) return null;
-
-  for (const system of vehicleMeta.systems) {
+function findPartDefInTree(partId, partTree) {
+  if (!partTree || !partTree.systems) return null;
+  for (const system of partTree.systems) {
+    if (system.type === 'bundle' && system.id === partId) return system;
     if (system.type === 'detailed' && system.subsystems) {
       for (const sub of system.subsystems) {
         if (sub.parts) {
@@ -91,6 +70,47 @@ function findPartDef(partId, vehicleMeta) {
     }
   }
   return null;
+}
+
+/**
+ * Walk every owned vehicle and collect parts with condition <= 0.10 (DESTROYED).
+ * Now async so it can load the real part-tree JSON for accurate names and costs.
+ */
+async function collectDestroyedParts(state, vehicleData) {
+  const profile    = state.getProfile();
+  const vehicles   = profile.garage.vehicles;
+  const destroyed  = [];
+
+  // vehicleData is { vehicles: [...] } — extract the array
+  const vehicleList = vehicleData?.vehicles || [];
+
+  for (const [instanceId, vehicle] of Object.entries(vehicles)) {
+    const meta = vehicleList.find(v => v.modelId === vehicle.modelId);
+    const vehicleLabel = vehicle.nickname
+      ? vehicle.nickname
+      : (meta ? meta.displayName : vehicle.modelId.toUpperCase());
+
+    // Load the real part tree so we get actual part names and replace costs
+    const partTree = await loadPartTreeForShop(vehicle.modelId);
+
+    for (const [partId, partState] of Object.entries(vehicle.parts)) {
+      if (!partState.revealed || partState.condition === null) continue;
+      if (partState.condition > 0.10) continue;
+
+      const partDef = findPartDefInTree(partId, partTree);
+      destroyed.push({
+        instanceId,
+        vehicleLabel,
+        partId,
+        partName:     partDef ? partDef.name        : partId,
+        replaceCost:  partDef ? (partDef.replaceCost || 200) : 200,
+        sourceRarity: partDef ? (partDef.sourceRarity || 'common') : 'common',
+        modelId:      vehicle.modelId,
+      });
+    }
+  }
+
+  return destroyed;
 }
 
 function platformKey(modelId) {
@@ -477,7 +497,7 @@ function executeBuyTool(tool) {
 
 // ── Main render entry point ───────────────────────────────────
 
-export function renderShop() {
+export async function renderShop() {
   const root = document.getElementById('game-root');
   if (!root) return;
 
@@ -513,7 +533,7 @@ export function renderShop() {
 
   container.appendChild(renderCurrencyBar(profile));
 
-  const destroyedParts = collectDestroyedParts(state, vehicleData);
+  const destroyedParts = await collectDestroyedParts(state, vehicleData);
 
   container.appendChild(renderReplacementParts(destroyedParts, profile));
 
