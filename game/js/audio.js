@@ -1079,35 +1079,34 @@ const SYNTHS = {
 
   // ── wrench_trap_beat ──────────────────────────────────────────────────────
   //
-  // Played for trap beats during the call phase — beats the player must HEAR
-  // but must NOT tap during response. Deliberately sounds wrong vs the normal
-  // call beat so the player can distinguish "tap this" vs "skip this" by ear.
-  //
-  // Same ratchet transient (so it reads as part of the rhythm), but the
-  // consonant triangle ring is replaced by:
-  //   1. Sawtooth buzz Eb4→Eb3 (tritone descent, 70ms) — the most dissonant
-  //      interval in the Eb pentatonic minor scale already used for Wrench.
-  //   2. Square ping at 880Hz (highpassed, 28ms decay) — electric "zap".
+  // Played for trap beats during the call phase.  Same ratchet transient as
+  // the normal call beat (so it reads as part of the rhythm) but the consonant
+  // triangle ring is replaced by dissonant layers so the player can tell "skip
+  // this" from "tap this" purely by ear:
+  //   1. Sawtooth buzz Eb4→Eb3 (tritone descent, 70 ms)
+  //      The tritone is the most dissonant interval in the Eb pentatonic minor
+  //      scale already used for Wrench (theory §7).
+  //   2. Square ping at 880 Hz (highpassed, 28 ms decay) — electric "zap".
 
   wrench_trap_beat(ctx, out, vol, pitch, at) {
     const now = at || ctx.currentTime;
     SYNTHS._ratchet(ctx, out, vol * 0.90, pitch, now);
 
-    const buzz      = ctx.createOscillator();
-    buzz.type       = 'sawtooth';
+    const buzz     = ctx.createOscillator();
+    buzz.type      = 'sawtooth';
     buzz.frequency.setValueAtTime(311 * pitch, now);
     buzz.frequency.exponentialRampToValueAtTime(155 * pitch, now + 0.07);
-    const buzzBP    = filter(ctx, 'bandpass', 230 * pitch, 3.5);
-    const buzzGain  = ctx.createGain();
+    const buzzBP   = filter(ctx, 'bandpass', 230 * pitch, 3.5);
+    const buzzGain = ctx.createGain();
     adsr(buzzGain.gain, ctx, { t: now, attack: 0.001, hold: 0.004, decay: 0.065, peak: 0.30 * vol });
     buzz.connect(buzzBP); buzzBP.connect(buzzGain); buzzGain.connect(out);
     buzz.start(now); buzz.stop(now + 0.10);
 
-    const ping      = ctx.createOscillator();
-    ping.type       = 'square';
+    const ping     = ctx.createOscillator();
+    ping.type      = 'square';
     ping.frequency.value = 880 * pitch;
-    const pingHP    = filter(ctx, 'highpass', 700 * pitch, 1.5);
-    const pingGain  = ctx.createGain();
+    const pingHP   = filter(ctx, 'highpass', 700 * pitch, 1.5);
+    const pingGain = ctx.createGain();
     adsr(pingGain.gain, ctx, { t: now, attack: 0.001, hold: 0.002, decay: 0.028, peak: 0.12 * vol });
     ping.connect(pingHP); pingHP.connect(pingGain); pingGain.connect(out);
     ping.start(now); ping.stop(now + 0.05);
@@ -2077,12 +2076,17 @@ export class RhythmEngine {
   static applyVariation(map, cycleIndex) {
     // ── Composition mode: indexed lookup (no race condition) ───
     if (map.composition) {
-      const countIn = map._countInCycles ?? 0;
-      const compIdx = cycleIndex - countIn;
-      if (compIdx < 0) return new Array(16).fill(false); // count-in: silence
-      // Modulo so the session loops cleanly rather than freezing on the last entry.
-      const idx = compIdx % map.composition.length;
-      const entry = map.composition[idx];
+      // _compositionOffset (set at start() time, never mutated) tells us how many
+      // engine cycles to subtract to get the composition array index.
+      //   offset=1 normal: cycle 1 → comp[0], cycle 2 → comp[1], ...
+      //   offset=2 intro double-call: cycles 1 AND 2 → comp[0], cycle 3 → comp[1]
+      // Math.max(0,...) clamps so count-in / pre-offset cycles hit comp[0] instead
+      // of returning silence — the _countInCycles check in _playBeatSound handles
+      // actual audio silence for the count-in cycle independently.
+      const offset  = map._compositionOffset ?? map._countInCycles ?? 1;
+      const compIdx = Math.max(0, cycleIndex - offset);
+      const idx     = compIdx % map.composition.length;
+      const entry   = map.composition[idx];
       if (entry) return [...entry.call, ...entry.response];
     }
 
@@ -2158,29 +2162,25 @@ export class RhythmEngine {
   }
 
   _scheduleStep(step, time) {
-    const map     = this._map;
-    const pattern = RhythmEngine.applyVariation(map, this._cycleCount);
+    const map      = this._map;
+    const pattern  = RhythmEngine.applyVariation(map, this._cycleCount);
     const isActive = pattern[step] ?? false;
 
-    // Detect trap steps so _playBeatSound can use a different timbre.
-    // Uses the same offset arithmetic as applyVariation (modulo-looped).
+    // Detect trap steps using the same _compositionOffset logic as applyVariation
+    // so audio timbre and composition index are always in sync.
     let isTrap = false;
     if (map.composition && step < 8) {
-      const countIn = map._countInCycles ?? 0;
-      const compIdx = this._cycleCount - countIn;
-      if (compIdx >= 0) {
-        const entry = map.composition[compIdx % map.composition.length];
-        isTrap = !!(entry?.traps?.includes(step));
-      }
+      const offset  = map._compositionOffset ?? map._countInCycles ?? 1;
+      const compIdx = Math.max(0, this._cycleCount - offset);
+      const entry   = map.composition[compIdx % map.composition.length];
+      isTrap = !!(entry?.traps?.includes(step));
     }
 
     // Notify UI via callback (scheduled for the exact audio time)
-    // Uses setTimeout to align approximately with audio playback
     const delay = Math.max(0, (time - (this._audio._ctx?.currentTime ?? 0)) * 1000);
     setTimeout(() => this._onBeat(step, time, isActive), delay);
 
     if (!isActive) return;
-
     this._playBeatSound(step, time, isActive, isTrap);
   }
 
@@ -2202,18 +2202,13 @@ export class RhythmEngine {
     // Call synths directly with the scheduled `time` parameter.
     // Web Audio API schedules oscillator.start(time) and gain envelope
     // ramps at sample-level precision — no setTimeout jitter.
-    //
-    // Before this fix, synths were wrapped in setTimeout and read
-    // ctx.currentTime when the timer fired (±20–50ms jitter).
-    // The player heard the beat late, but input was judged against
-    // the scheduled time → every tap felt early/late by the jitter amount.
 
     switch (map.mechanicType) {
       case 'wrench': {
-        // Only play call-phase sounds (steps 0-7). Stay silent during
-        // response so the boundary is clear and the player hears themselves.
-        // Trap beats use a dissonant buzz timbre — same ratchet transient
-        // so they register as part of the rhythm, but clearly "wrong".
+        // Only play call-phase sounds (steps 0-7). Response (8-15) is silent
+        // so the boundary is unambiguous and the player can hear themselves.
+        // Trap beats use wrench_trap_beat — same ratchet transient but with
+        // a dissonant buzz so the player hears "skip this" immediately.
         if (step < 8) {
           if (isTrap) {
             SYNTHS.wrench_trap_beat(ctx, out, vol * 0.85, 1.0, time);

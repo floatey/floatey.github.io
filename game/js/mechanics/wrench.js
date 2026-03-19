@@ -726,9 +726,8 @@ export class WrenchMechanic {
     this._totalCycles   = Math.max(4, Math.round((1 - condition) * 10));
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
     // One 16th-note step — matches the engine _advance() formula (60/bpm/4).
-    // Previously 60/bpm (a quarter note = 4x too long).
-    this._stepDuration  = (60 / this._map.bpm / 4) * 1000;  // ms  per 16th-note step
-    this._stepDurSec    = 60 / this._map.bpm / 4;            // sec per 16th-note step
+    this._stepDuration  = (60 / this._map.bpm / 4) * 1000;  // ms  per 16th-note
+    this._stepDurSec    = 60 / this._map.bpm / 4;            // sec per 16th-note
 
     // ── Pre-compose entire session (motif-centric) ──────────────
     //
@@ -746,8 +745,15 @@ export class WrenchMechanic {
     // Attach composition to the map — the scheduler reads it directly.
     // _countInCycles tells the scheduler that engine cycle 0 is the
     // count-in (returns silence), and cycle N (N≥1) = composition[N-1].
-    this._map.composition     = this._composition.composition;
-    this._map._countInCycles  = 1;
+    this._map.composition        = this._composition.composition;
+    this._map._countInCycles      = 1;    // audio silence during literal count-in
+    // _compositionOffset controls the composition array index offset for the
+    // audio scheduler AND trap detection.  Set here, before the engine starts,
+    // so it is never mutated at runtime and never races with the scheduler.
+    //   offset 1 = normal: cycle N maps to composition[N-1]
+    //   offset 2 = intro double-call: cycles 1 AND 2 both map to composition[0]
+    //              (clamped via Math.max(0,...) so negative indices hit [0] too)
+    this._map._compositionOffset  = this.skillLevel <= 5 ? 2 : 1;
 
     this._introCallsDone = 0;
     this._countInDone    = false;
@@ -1106,7 +1112,6 @@ export class WrenchMechanic {
     // UI and audio derive from the same static data.
 
     const comp = this._map.composition;
-    // Modulo so patterns loop once all cycles are complete.
     const ci   = comp ? (this._cycleIndex % comp.length) : 0;
     const entry = comp?.[ci];
 
@@ -1245,15 +1250,11 @@ export class WrenchMechanic {
     // Only if we actually came through the call phase
     if (this._phase !== 'call' && this._phase !== 'ready') return;
 
-    // Intro double-call: replay call instead of starting response (skill 1–5, first cycle)
+    // Intro double-call: replay call instead of starting response (skill 1–5, first cycle).
+    // _compositionOffset was already set to 2 in start() so the scheduler maps
+    // both engine cycle 1 and 2 to composition[0] without any runtime mutation.
     if (this.skillLevel <= 5 && this._cycleIndex === 0 && this._introCallsDone < 1) {
       this._introCallsDone++;
-      // The engine will tick through one full extra cycle while the UI replays
-      // composition[0]. Increment _countInCycles so applyVariation subtracts
-      // the extra cycle and keeps audio locked to the same composition entry
-      // as the UI. Without this, audio plays composition[1] while the UI
-      // shows composition[0], and that 1-cycle offset persists for the whole session.
-      this._map._countInCycles++;
       this._setBannerState('call', 'LISTEN AGAIN');
       this._setStatus('Listen again — then echo it back');
       this._renderCallRow(false);
