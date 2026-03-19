@@ -23,14 +23,17 @@
   <script type="module">
     // ── Firebase Realtime Database Init ──────────────────────────
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
-    import { getDatabase, ref, set, get, onValue, push }
+    import { getDatabase, ref, set, get, onValue, push, remove }
       from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
 
     const firebaseConfig = {
-      apiKey:        "YOUR_API_KEY",
-      authDomain:    "YOUR_PROJECT.firebaseapp.com",
-      databaseURL:   "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-      projectId:     "YOUR_PROJECT"
+      apiKey:            "AIzaSyAOVZlazcx9gktgnIthaM3iB_Q1-9wyarA",
+      authDomain:        "test-531f9.firebaseapp.com",
+      databaseURL:       "https://test-531f9-default-rtdb.firebaseio.com",
+      projectId:         "test-531f9",
+      storageBucket:     "test-531f9.firebasestorage.app",
+      messagingSenderId: "365348741958",
+      appId:             "1:365348741958:web:2886ae3d47789021917b47"
     };
 
     const app = initializeApp(firebaseConfig, "jdm-game");
@@ -43,7 +46,8 @@
       set,
       get,
       onValue,
-      push
+      push,
+      remove
     };
 
     window.dispatchEvent(new Event("firebaseReady"));
