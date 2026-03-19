@@ -317,7 +317,7 @@ window.GarageView = (function () {
    * Read-only view of another player's garage, loaded directly from Firebase.
    */
   function renderVisit(container, visitProfileId) {
-    var profile = PROFILES.find(function (p) { return p.id === visitProfileId; });
+    var profile = App.getVisitProfiles().find(function (p) { return p.id === visitProfileId; });
     var name    = profile ? profile.name : visitProfileId;
 
     container.innerHTML =

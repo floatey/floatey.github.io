@@ -90,10 +90,8 @@ window.App = (function () {
 
     if (hash.startsWith("#/visit/")) {
       const profileId = hash.replace("#/visit/", "");
-      const profile   = VISIT_PROFILES.find(function (p) { return p.id === profileId; });
-      const name      = profile ? profile.name : profileId;
-      root.innerHTML =
-        "<p style='padding:2rem;color:#eee'>" + name + "\u2019s garage \u2014 coming soon</p>";
+      root.innerHTML = "";
+      GarageView.renderVisit(root, profileId);
       return;
     }
 
