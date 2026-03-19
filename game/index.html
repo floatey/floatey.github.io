@@ -47,17 +47,22 @@
        from console.firebase.google.com
   ═══════════════════════════════════════ -->
   <script>
-    const firebaseConfig = {
-      apiKey:            "REPLACE_WITH_YOUR_API_KEY",
-      authDomain:        "tmcc-game.firebaseapp.com",
-      databaseURL:       "https://tmcc-game-default-rtdb.firebaseio.com",
-      projectId:         "tmcc-game",
-      storageBucket:     "tmcc-game.appspot.com",
-      messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
-      appId:             "REPLACE_WITH_YOUR_APP_ID"
-    };
-
-    firebase.initializeApp(firebaseConfig);
+    // Wrap in try/catch so a missing or placeholder config never
+    // blocks the rest of the game scripts from loading.
+    try {
+      const firebaseConfig = {
+        apiKey:            "REPLACE_WITH_YOUR_API_KEY",
+        authDomain:        "tmcc-game.firebaseapp.com",
+        databaseURL:       "https://tmcc-game-default-rtdb.firebaseio.com",
+        projectId:         "tmcc-game",
+        storageBucket:     "tmcc-game.appspot.com",
+        messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
+        appId:             "REPLACE_WITH_YOUR_APP_ID"
+      };
+      firebase.initializeApp(firebaseConfig);
+    } catch (e) {
+      console.warn("[Firebase] Init skipped — replace placeholder config values:", e.message);
+    }
   </script>
 
   <!-- ═══════════════════════════════════════
@@ -69,10 +74,10 @@
   <script src="js/audio.js"></script>
   <script src="js/garage.js"></script>
   <script src="js/workbench.js"></script>
-  <script src="js/mechanics/wrench.js"></script>
-  <script src="js/mechanics/precision.js"></script>
-  <script src="js/mechanics/diagnosis.js"></script>
-  <script src="js/mechanics/bodywork.js"></script>
+  <script src="js/wrench.js"></script>
+  <script src="js/precision.js"></script>
+  <script src="js/diagnosis.js"></script>
+  <script src="js/bodywork.js"></script>
   <script src="js/gacha.js"></script>
   <script src="js/shop.js"></script>
   <script src="js/social.js"></script>
