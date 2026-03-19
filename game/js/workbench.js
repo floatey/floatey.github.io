@@ -562,6 +562,7 @@ function renderBundleItem(system, vehicle) {
 
   item.addEventListener('click', (e) => {
     e.stopPropagation();
+    try { window.audioManager?.playClick(); } catch (_) {}
     wb.selectedPartId = system.id;
     refreshPartDetail();
     refreshSystemList();
@@ -628,6 +629,7 @@ function renderPartItem(partDef, partInstance) {
 
   item.addEventListener('click', (e) => {
     e.stopPropagation();
+    try { window.audioManager?.playClick(); } catch (_) {}
     wb.selectedPartId = partDef.id;
     refreshPartDetail();
     refreshSystemList();
@@ -818,7 +820,10 @@ function renderPartDetail(container) {
     if (!prereqsMet) {
       repairBtn.disabled = true;
     }
-    repairBtn.addEventListener('click', () => handleBeginRepair(selectedPartId));
+    repairBtn.addEventListener('click', () => {
+      try { window.audioManager?.playClick(); } catch (_) {}
+      handleBeginRepair(selectedPartId);
+    });
     actions.appendChild(repairBtn);
 
     if (condition < 0.30) {
@@ -1113,6 +1118,9 @@ function checkSystemCompletion(partId) {
     addLogEntry(instanceId, '✅', `SYSTEM COMPLETE: ${system.name} — +${formatYen(bonus)} bonus!`);
     showToast(`✅ ${system.name} COMPLETE! +${formatYen(bonus)}`, 4000);
 
+    // 🔊 Four-note ascending arpeggio reward
+    try { window.audioManager?.play('system_complete'); } catch (_) { /* audio not yet ready */ }
+
     // Post to activity feed
     try {
       const { sync } = getApp();
@@ -1379,6 +1387,11 @@ function triggerFirstStart(overlay, inner, instanceId, partTree, vehicle) {
   vehicle.firstStartDone = true;
   vehicle.status = 'complete';
   state.save();
+
+  // 🔊 The centrepiece moment — play the full crank → catch → idle sequence.
+  // The synth's 2.1 s crank phase aligns naturally with the overlay transition,
+  // and the idle rumble plays through the "SHE'S ALIVE" text reveal.
+  try { window.audioManager?.play('engine_start'); } catch (_) { /* audio not yet ready */ }
 
   overlay.style.transition = 'background 1.5s ease';
   overlay.style.background = 'linear-gradient(180deg, #1a0a00 0%, #2d1800 50%, #0a0e1a 100%)';

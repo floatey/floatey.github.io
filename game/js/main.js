@@ -10,7 +10,7 @@ import { renderWorkbench }    from './workbench.js';
 import { renderJunkyard }     from './gacha.js';
 import { renderShop }         from './shop.js';
 import { renderVisit }        from './social.js';
-import { AudioManager }       from './audio.js';
+import { AudioManager, renderAudioControls } from './audio.js';
 import { formatYen }          from './utils.js';
 
 // ── Singleton instances ─────────────────────────────────────
@@ -141,7 +141,10 @@ function renderHeader() {
   const backBtn = document.createElement('button');
   backBtn.className = 'btn btn--ghost';
   backBtn.textContent = backText;
-  backBtn.addEventListener('click', () => navigate(backHash));
+  backBtn.addEventListener('click', () => {
+    audio?.playClick();
+    navigate(backHash);
+  });
 
   const titleEl = document.createElement('span');
   titleEl.className = 'game-header__title';
@@ -163,6 +166,10 @@ function renderHeader() {
   syncEl.textContent = `${syncIcon} ${syncLabel}`;
 
   actionsEl.append(currencyEl, syncEl);
+
+  // Mount the mute/volume controls into the header actions area
+  if (audio) renderAudioControls(actionsEl, audio);
+
   header.append(backBtn, titleEl, actionsEl);
 
   // ── Nav tabs ──────────────────────────────
@@ -182,7 +189,10 @@ function renderHeader() {
     btn.textContent = tab.label;
     if (tab.disabled) btn.disabled = true;
     btn.addEventListener('click', () => {
-      if (!tab.disabled) navigate(tab.hash);
+      if (!tab.disabled) {
+        audio?.playClick();
+        navigate(tab.hash);
+      }
     });
     nav.appendChild(btn);
   }
