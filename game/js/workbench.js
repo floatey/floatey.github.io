@@ -196,6 +196,46 @@ function findSystemForPart(partTree, partId) {
   return null;
 }
 
+// ── Sequence helpers ────────────────────────────────────────
+
+/**
+ * Find all multi-mechanic sequences that include a given part.
+ * Returns array of { sequence, stepIndex }.
+ */
+function findSequencesForPart(partTree, partId) {
+  if (!partTree || !Array.isArray(partTree.sequences)) return [];
+  const results = [];
+  for (const seq of partTree.sequences) {
+    for (let i = 0; i < seq.steps.length; i++) {
+      if (seq.steps[i].partId === partId) {
+        results.push({ sequence: seq, stepIndex: i });
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Check whether a sequence is actionable — at least one step's part
+ * is below 0.90 condition and revealed.
+ */
+function isSequenceActionable(sequence, vehicle) {
+  for (const step of sequence.steps) {
+    const partId = step.partId;
+    if (!partId) continue;
+    const inst = vehicle.parts[partId];
+    if (!inst) continue;
+    if (!inst.revealed) continue;
+    if (inst.condition !== null && inst.condition < 0.90) return true;
+  }
+  return false;
+}
+
+// ── Active sequence state ───────────────────────────────────
+
+/** @type {{ sequence: object, currentStep: number, totalXP: number, logs: string[] } | null} */
+let _activeSequence = null;
+
 // ── Toast notifications ──────────────────────────────────────
 
 function showToast(message, durationMs = 3000) {
@@ -413,6 +453,7 @@ export async function renderWorkbench(vehicleInstanceId) {
   }
 
   // Initialize workbench state
+  _activeSequence = null;  // Clear any running sequence from previous vehicle
   wb = {
     instanceId: vehicleInstanceId,
     partTree,
@@ -950,6 +991,42 @@ function renderPartDetail(container) {
 
   detail.appendChild(actions);
 
+  // 5b. Multi-mechanic sequence buttons
+  if (!isBundle && condition > 0.10 && condition < 0.90) {
+    const sequences = findSequencesForPart(partTree, selectedPartId);
+    if (sequences.length > 0) {
+      const seqSection = el('div', {
+        style: `margin-top:var(--space-sm); padding-top:var(--space-sm);
+                border-top:1px solid var(--border);`,
+      });
+
+      seqSection.appendChild(el('div', {
+        style: 'font-size:var(--font-size-xs); color:var(--text-muted); margin-bottom:var(--space-xs); text-transform:uppercase; letter-spacing:0.05em;',
+        textContent: 'Multi-step sequences',
+      }));
+
+      for (const { sequence } of sequences) {
+        const seqActionable = isSequenceActionable(sequence, vehicle);
+        const seqBtn = el('button', {
+          className: 'btn btn--secondary',
+          style: 'width:100%; margin-bottom:4px; text-align:left;',
+        });
+        seqBtn.innerHTML = `⚡ ${escHtml(sequence.name)} <span style="color:var(--text-muted); font-size:var(--font-size-xs);">(${sequence.steps.length} steps)</span>`;
+
+        if (!prereqsMet || !seqActionable || _activeSequence) {
+          seqBtn.disabled = true;
+        }
+        seqBtn.addEventListener('click', () => {
+          try { window.audioManager?.playClick(); } catch (_) {}
+          startSequence(sequence);
+        });
+        seqSection.appendChild(seqBtn);
+      }
+
+      detail.appendChild(seqSection);
+    }
+  }
+
   // 6. Flavor text
   const flavorTexts = partDef.flavorText || [];
   if (flavorTexts.length > 0) {
@@ -1162,6 +1239,12 @@ function _launchDiagnosis(scenario, mechanicArea) {
  * except Diagnosis which has its own handler.
  */
 function handleBeginRepair(partId) {
+  // Don't allow individual repairs while a multi-mechanic sequence is running
+  if (_activeSequence) {
+    showToast('Complete or abort the current sequence first.', 2500);
+    return;
+  }
+
   const { instanceId, partTree } = wb;
   const { state } = getApp();
   const partDef = findPartDef(partTree, partId);
@@ -1496,6 +1579,293 @@ function awardXP(repairType, difficulty) {
   const baseXP   = Math.round(10 + difficulty * 40);
   const levelUps = state.addSkillXP(repairType, baseXP);
   _handleLevelUps(levelUps);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MULTI-MECHANIC SEQUENCE RUNNER
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Start a multi-mechanic sequence.
+ * Renders a step header, runs each mechanic in order, and accumulates results.
+ */
+function startSequence(sequenceDef) {
+  const { instanceId, partTree } = wb;
+  const { state } = getApp();
+
+  _activeSequence = {
+    sequence: sequenceDef,
+    currentStep: 0,
+    totalXP: 0,
+    logs: [],
+  };
+
+  addLogEntry(instanceId, '⚡', `Starting sequence: ${sequenceDef.name}`);
+  refreshRepairLog();
+
+  _runSequenceStep();
+}
+
+/**
+ * Run the current step of the active sequence.
+ */
+function _runSequenceStep() {
+  if (!_activeSequence) return;
+
+  const { sequence, currentStep } = _activeSequence;
+  const step = sequence.steps[currentStep];
+  if (!step) {
+    _completeSequence();
+    return;
+  }
+
+  const { instanceId, partTree } = wb;
+  const { state } = getApp();
+  const vehicle = state.getVehicle(instanceId);
+
+  const mechanicArea = document.getElementById('wb-mechanic-area');
+  if (!mechanicArea) return;
+
+  _teardownMechanic(mechanicArea);
+
+  // ── Render step progress header ──────────────────────────
+  const stepHeader = el('div', {
+    className: 'sequence-step-header',
+    style: `background:var(--bg-elevated); border:1px solid var(--border);
+            border-radius:var(--radius-md); padding:var(--space-sm) var(--space-base);
+            margin-bottom:var(--space-sm); display:flex; align-items:center;
+            justify-content:space-between; gap:var(--space-sm);`,
+  });
+
+  const stepLabel = el('div', {
+    style: 'display:flex; align-items:center; gap:var(--space-sm);',
+  });
+
+  stepLabel.appendChild(el('span', {
+    style: `font-family:var(--font-data); font-size:var(--font-size-xs);
+            letter-spacing:0.08em; color:var(--text-muted); text-transform:uppercase;`,
+    textContent: `${sequence.name}`,
+  }));
+
+  stepLabel.appendChild(el('span', {
+    style: `font-family:var(--font-data); font-size:var(--font-size-sm);
+            font-weight:600; color:var(--text-primary);`,
+    textContent: `Step ${currentStep + 1}/${sequence.steps.length}`,
+  }));
+
+  const stepDesc = el('span', {
+    style: 'font-size:var(--font-size-sm); color:var(--text-secondary);',
+    textContent: step.label || `${step.mechanic} — ${step.partId}`,
+  });
+
+  // ── Step dots ──
+  const dotsWrap = el('div', { style: 'display:flex; gap:4px; align-items:center;' });
+  for (let i = 0; i < sequence.steps.length; i++) {
+    const dot = el('span', {
+      style: `width:10px; height:10px; border-radius:50%; display:inline-block;
+              border:1px solid var(--border);
+              background:${i < currentStep ? 'var(--condition-good)' : i === currentStep ? 'var(--wrench-color)' : 'var(--bg-primary)'};
+              transition:background 300ms ease;`,
+    });
+    dotsWrap.appendChild(dot);
+  }
+
+  const abortBtn = el('button', {
+    className: 'btn btn--ghost',
+    style: 'font-size:var(--font-size-xs); padding:4px 8px;',
+    textContent: 'Abort',
+  });
+  abortBtn.addEventListener('click', () => {
+    _abortSequence();
+  });
+
+  stepHeader.appendChild(stepLabel);
+  stepHeader.appendChild(stepDesc);
+  stepHeader.appendChild(dotsWrap);
+  stepHeader.appendChild(abortBtn);
+  mechanicArea.appendChild(stepHeader);
+
+  // ── Create a sub-container for the actual mechanic UI ──
+  const mechSubArea = el('div', { id: 'wb-sequence-mechanic-sub' });
+  mechanicArea.appendChild(mechSubArea);
+
+  // ── Launch the mechanic for this step ──
+  const partId = step.partId;
+  const partDef = findPartDef(partTree, partId);
+  if (!partDef) {
+    showToast(`Sequence error: part ${partId} not found in tree.`);
+    _advanceSequenceStep(mechSubArea);
+    return;
+  }
+
+  const partInstance = vehicle?.parts[partId];
+  if (!partInstance) {
+    showToast(`Sequence error: no instance data for ${partDef.name}.`);
+    _advanceSequenceStep(mechSubArea);
+    return;
+  }
+
+  // If this part is already at ≥0.90, skip it automatically
+  if (partInstance.condition !== null && partInstance.condition >= 0.90) {
+    showToast(`${partDef.name} is already in great shape — skipping.`, 2000);
+    _activeSequence.logs.push(`Skipped ${partDef.name} (already ${Math.round(partInstance.condition * 100)}%)`);
+    setTimeout(() => _advanceSequenceStep(mechSubArea), 800);
+    return;
+  }
+
+  const mechanic = step.mechanic || partDef.repairType || 'wrench';
+  const playerTools = _getPlayerTools();
+  const skillLevel  = _getSkillLevel(mechanic);
+
+  // onComplete handler for this sequence step
+  function onStepComplete({ newCondition, xpEarned, logEntries }) {
+    // Apply repair results to state
+    completeRepair(partId, { newCondition, xpEarned, logEntries });
+
+    // Accumulate XP for sequence summary
+    _activeSequence.totalXP += (xpEarned || 0);
+    if (logEntries?.length) {
+      _activeSequence.logs.push(...logEntries);
+    } else {
+      _activeSequence.logs.push(`Completed ${partDef.name}`);
+    }
+
+    _advanceSequenceStep(mechSubArea);
+  }
+
+  switch (mechanic) {
+    case 'wrench':
+      startWrenchWork(partDef, partInstance, mechSubArea, onStepComplete, playerTools, skillLevel);
+      break;
+    case 'precision':
+      startPrecisionWork(partDef, partInstance, mechSubArea, onStepComplete, playerTools, skillLevel);
+      break;
+    case 'diagnosis': {
+      const scenario = _findDiagnosticScenario(partId);
+      if (!scenario) {
+        showToast(`No diagnostic scenario for ${partDef.name} — skipping.`);
+        _activeSequence.logs.push(`No scenario for ${partDef.name}`);
+        setTimeout(() => _advanceSequenceStep(mechSubArea), 600);
+        return;
+      }
+      const vehicleParts = _enrichedVehicleParts();
+      startDiagnosis(
+        scenario,
+        vehicleParts,
+        mechSubArea,
+        (result) => {
+          // Handle diagnosis result within sequence context
+          _teardownMechanic(mechSubArea);
+          if (result.logEntries?.length) {
+            for (const entry of result.logEntries) {
+              addLogEntry(wb.instanceId, result.wasCorrect ? '✓' : '✗', entry);
+            }
+          }
+          if (result.xpEarned > 0) {
+            const levelUps = getApp().state.addSkillXP('diagnosis', result.xpEarned);
+            _handleLevelUps(levelUps);
+            _activeSequence.totalXP += result.xpEarned;
+          }
+          if (result.wasCorrect) {
+            completeRepair(result.correctPartId, { xpEarned: 0, logEntries: [] });
+            _activeSequence.logs.push(`Diagnosed ${findPartName(wb.partTree, result.correctPartId)}`);
+          } else {
+            if (result.yenPenalty > 0) {
+              getApp().state.updateCurrency('yen', -result.yenPenalty);
+              refreshHeader();
+            }
+            _activeSequence.logs.push(`Wrong diagnosis — ${formatYen(result.yenPenalty)} lost`);
+          }
+          _advanceSequenceStep(mechSubArea);
+        },
+        playerTools,
+        skillLevel,
+      );
+      break;
+    }
+    case 'bodywork':
+      startBodywork(partDef, partInstance, mechSubArea, onStepComplete, playerTools, skillLevel);
+      break;
+    default:
+      showToast(`Unknown mechanic: ${mechanic}`);
+      _advanceSequenceStep(mechSubArea);
+      break;
+  }
+}
+
+function _advanceSequenceStep(mechSubArea) {
+  if (!_activeSequence) return;
+
+  _activeSequence.currentStep++;
+
+  if (_activeSequence.currentStep >= _activeSequence.sequence.steps.length) {
+    _completeSequence();
+    return;
+  }
+
+  // Brief transition delay between steps
+  const mechanicArea = document.getElementById('wb-mechanic-area');
+  if (mechanicArea) {
+    _teardownMechanic(mechanicArea);
+
+    const transitionEl = el('div', {
+      style: `text-align:center; padding:var(--space-lg); color:var(--text-secondary);
+              font-family:var(--font-data); animation:fadeIn 300ms ease;`,
+    });
+    transitionEl.textContent = `Next: Step ${_activeSequence.currentStep + 1}/${_activeSequence.sequence.steps.length}…`;
+    mechanicArea.appendChild(transitionEl);
+  }
+
+  setTimeout(() => {
+    const mechanicArea2 = document.getElementById('wb-mechanic-area');
+    if (mechanicArea2) {
+      _teardownMechanic(mechanicArea2);
+    }
+    _runSequenceStep();
+  }, 800);
+}
+
+function _completeSequence() {
+  if (!_activeSequence) return;
+  const { sequence, totalXP, logs } = _activeSequence;
+  const { instanceId, partTree } = wb;
+
+  addLogEntry(instanceId, '⚡', `Sequence complete: ${sequence.name} (${logs.length} steps, +${totalXP} XP)`);
+  showToast(`⚡ ${sequence.name} — Sequence Complete!`, 4000);
+
+  try { window.audioManager?.play('system_complete'); } catch (_) {}
+
+  _activeSequence = null;
+
+  // Refresh all UI
+  const mechanicArea = document.getElementById('wb-mechanic-area');
+  if (mechanicArea) _teardownMechanic(mechanicArea);
+
+  refreshSystemList();
+  refreshPartDetail();
+  refreshRepairLog();
+  refreshSkillBar();
+  refreshHeader();
+}
+
+function _abortSequence() {
+  if (!_activeSequence) return;
+  const { sequence } = _activeSequence;
+  const { instanceId } = wb;
+
+  addLogEntry(instanceId, '⚠', `Sequence aborted: ${sequence.name}`);
+  showToast(`Sequence aborted.`, 2000);
+
+  _activeSequence = null;
+
+  const mechanicArea = document.getElementById('wb-mechanic-area');
+  if (mechanicArea) _teardownMechanic(mechanicArea);
+
+  refreshSystemList();
+  refreshPartDetail();
+  refreshRepairLog();
+  refreshSkillBar();
+  refreshHeader();
 }
 
 // ══════════════════════════════════════════════════════════════

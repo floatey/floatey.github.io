@@ -34,7 +34,10 @@ function defaultState(profileId) {
       carsCompleted: 0,
       totalRepairs: 0,
       totalYenEarned: 0
-    }
+    },
+    dailyLoginTs: 0,
+    lastDailyWalkTs: 0,
+    lastGiftSent: 0
   };
 }
 
@@ -420,5 +423,54 @@ export class GameState {
     }
 
     return false;
+  }
+
+  // ── Daily system helpers ───────────────────────────────
+
+  /**
+   * Check if 24+ hours have passed since last login.
+   * If so, award 100¥ and update timestamp.
+   * Returns { awarded: boolean, amount: number }.
+   */
+  checkDailyLoginBonus() {
+    if (!this._state) return { awarded: false, amount: 0 };
+    const now = Date.now();
+    const last = this._state.dailyLoginTs || 0;
+    const COOLDOWN = 24 * 60 * 60 * 1000;
+
+    if (now - last >= COOLDOWN) {
+      this._state.dailyLoginTs = now;
+      this._state.currency.yen = (this._state.currency.yen || 0) + 100;
+      this.save();
+      return { awarded: true, amount: 100 };
+    }
+    return { awarded: false, amount: 0 };
+  }
+
+  /** Get/set the daily junkyard walk timestamp (per-profile). */
+  getDailyWalkTs() {
+    return this._state?.lastDailyWalkTs || 0;
+  }
+
+  setDailyWalkTs(ts) {
+    if (!this._state) return;
+    this._state.lastDailyWalkTs = ts;
+    this.save();
+  }
+
+  isDailyWalkAvailable() {
+    const COOLDOWN = 24 * 60 * 60 * 1000;
+    return Date.now() - this.getDailyWalkTs() >= COOLDOWN;
+  }
+
+  /** Get/set the daily gift sent timestamp (per-profile). */
+  getDailyGiftTs() {
+    return this._state?.lastGiftSent || 0;
+  }
+
+  setDailyGiftTs(ts) {
+    if (!this._state) return;
+    this._state.lastGiftSent = ts;
+    this.save();
   }
 }

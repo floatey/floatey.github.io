@@ -9,7 +9,7 @@ import { renderGarage }       from './garage.js';
 import { renderWorkbench }    from './workbench.js';
 import { renderJunkyard }     from './gacha.js';
 import { renderShop }         from './shop.js';
-import { renderVisit }        from './social.js';
+import { renderVisit, checkPendingGifts } from './social.js';
 import { AudioManager, renderAudioControls } from './audio.js';
 import { formatYen }          from './utils.js';
 
@@ -209,7 +209,46 @@ function setActiveTab(tabId) {
 export function onProfileSelected(profileId) {
   state.load(profileId);
   if (sync) sync.start(profileId);
+
+  // ── Daily login bonus ──────────────────────────────────
+  const loginResult = state.checkDailyLoginBonus();
+  if (loginResult.awarded) {
+    // Show notification after a brief delay so the UI is ready
+    setTimeout(() => {
+      _showDailyLoginNotification(loginResult.amount);
+    }, 600);
+  }
+
+  // ── Consume any pending gifts from other players ───────
+  checkPendingGifts().catch(e => console.warn('Gift check failed:', e));
+
   navigate('#/garage');
+}
+
+/** Render a small toast-style notification for the daily login bonus */
+function _showDailyLoginNotification(amount) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText = `position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+            z-index:400; display:flex; flex-direction:column; gap:8px;
+            align-items:center; pointer-events:none;`;
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.style.cssText = `background:var(--bg-elevated,#1c1c1c); border:1px solid var(--rarity-5,#f59e0b);
+          border-radius:8px; padding:10px 18px;
+          font-size:14px; color:var(--text-primary,#fff);
+          font-family:var(--font-data,monospace); pointer-events:auto;
+          animation:fadeUp 300ms ease; box-shadow:0 4px 24px rgba(245,158,11,0.25);`;
+  toast.textContent = `Daily bonus: ¥${amount}`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 300ms ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
 }
 
 /** Re-render the header (e.g. after currency changes) */

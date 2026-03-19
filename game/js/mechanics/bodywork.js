@@ -800,7 +800,7 @@ export function startBodywork(
     const allDone = zoneFill.every(f => f >= 1.0);
     if (!allDone) return;
 
-    _playAudio('systemComplete');
+    _playAudio('system_complete');
 
     if (currentStep < totalSteps - 1) {
       // Advance to next step

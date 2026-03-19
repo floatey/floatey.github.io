@@ -11,8 +11,42 @@ import { timeAgo }                         from './utils.js';
 
 const COST_SINGLE      = 10;
 const COST_TEN         = 90;
-const DAILY_WALK_KEY   = 'jdm_gacha_daily_walk';
 const DAILY_COOLDOWN   = 24 * 60 * 60 * 1000; // 24 hours in ms
+
+// ── Part tree cache for gacha (so we can generate real parts on pull) ──
+const _gachaPartTreeCache = {};
+
+async function _loadPartTreeForGacha(modelId) {
+  if (_gachaPartTreeCache[modelId]) return _gachaPartTreeCache[modelId];
+  try {
+    const resp = await fetch(`data/parts/${modelId}.json`);
+    if (!resp.ok) return null;
+    const tree = await resp.json();
+    _gachaPartTreeCache[modelId] = tree;
+    return tree;
+  } catch (e) {
+    console.warn(`[gacha] Could not load part tree for ${modelId}:`, e);
+    return null;
+  }
+}
+
+// ── Track which vehicles have available part trees (populated on first render) ──
+let _availableModelIds = null;
+
+async function _resolveAvailableModels() {
+  if (_availableModelIds) return _availableModelIds;
+  const roster = getVehicleRoster();
+  const checks = await Promise.all(
+    roster.map(async v => {
+      try {
+        const resp = await fetch(`data/parts/${v.modelId}.json`, { method: 'HEAD' });
+        return resp.ok ? v.modelId : null;
+      } catch { return null; }
+    })
+  );
+  _availableModelIds = new Set(checks.filter(Boolean));
+  return _availableModelIds;
+}
 
 const FLAVOR_TEXTS = [
   'Sitting under a tarp behind the shop. Hasn\'t run in years.',
@@ -616,12 +650,16 @@ function pushToHistory(vehicleName, rarity, timestamp = Date.now()) {
 
 // ── Daily walk helpers ───────────────────────────────────────
 
+// ── Daily walk helpers (per-profile via state) ──────────────
+
 function getLastDailyWalkTs() {
-  return parseInt(localStorage.getItem(DAILY_WALK_KEY) ?? '0', 10);
+  const { state } = getApp();
+  return state?.getDailyWalkTs?.() ?? 0;
 }
 
 function setLastDailyWalkTs(ts) {
-  localStorage.setItem(DAILY_WALK_KEY, String(ts));
+  const { state } = getApp();
+  state?.setDailyWalkTs?.(ts);
 }
 
 function isDailyWalkAvailable() {
@@ -653,8 +691,8 @@ function estimateArrivalCondition(rarity) {
 
 // ── Core pull logic ──────────────────────────────────────────
 
-function resolvePull(gachaState, forcedRarityMin = 0) {
-  const roster = getVehicleRoster();
+function resolvePull(gachaState, forcedRarityMin = 0, filteredRoster = null) {
+  const roster = filteredRoster || getVehicleRoster();
   let rarity;
 
   if (gachaState.pity5 >= 49) {
@@ -673,26 +711,37 @@ function resolvePull(gachaState, forcedRarityMin = 0) {
   if (forcedRarityMin === 3 && rarity > 3) rarity = 3; // daily walk cap
   if (forcedRarityMin === 4 && rarity < 4) rarity = 4; // 10-pull guarantee
 
-  const pool    = roster.filter(v => v.rarity === rarity);
+  // Graceful rarity fallback: if no vehicles exist at this rarity in the
+  // filtered roster (e.g. no part trees for legendaries yet), step down
+  // until we find a populated pool.
+  let pool = roster.filter(v => v.rarity === rarity);
+  let effectiveRarity = rarity;
+  while (pool.length === 0 && effectiveRarity > 3) {
+    effectiveRarity--;
+    pool = roster.filter(v => v.rarity === effectiveRarity);
+  }
+
   const vehicle = pool.length
     ? pool[Math.floor(Math.random() * pool.length)]
     : null;
 
-  if (rarity === 5) { gachaState.pity4 = 0; gachaState.pity5 = 0; }
-  else if (rarity === 4) { gachaState.pity4 = 0; gachaState.pity5++; }
+  // Pity counters use the effective rarity (after fallback) so players
+  // don't lose pity progress when a rarity tier has no available vehicles.
+  if (effectiveRarity === 5) { gachaState.pity4 = 0; gachaState.pity5 = 0; }
+  else if (effectiveRarity === 4) { gachaState.pity4 = 0; gachaState.pity5++; }
   else { gachaState.pity4++; gachaState.pity5++; }
 
   gachaState.totalPulls = (gachaState.totalPulls ?? 0) + 1;
 
-  return { vehicle, rarity };
+  return { vehicle, rarity: effectiveRarity };
 }
 
-function resolveTenPull(gachaState) {
+function resolveTenPull(gachaState, filteredRoster = null) {
   const results    = [];
   let hasRare      = false;
 
   for (let i = 0; i < 10; i++) {
-    const r = resolvePull(gachaState);
+    const r = resolvePull(gachaState, 0, filteredRoster);
     if (r.rarity >= 4) hasRare = true;
     results.push(r);
   }
@@ -703,7 +752,7 @@ function resolveTenPull(gachaState) {
     if (last.rarity === 3) {
       // Upgrade last pull to ★★★★
       gachaState.pity4 = 0; // Already incremented, reset
-      const upgraded = resolvePull(gachaState, 4);
+      const upgraded = resolvePull(gachaState, 4, filteredRoster);
       results[results.length - 1] = upgraded;
     }
   }
@@ -726,10 +775,18 @@ function handleDuplicate(modelId) {
 
 // ── Send vehicle to garage ───────────────────────────────────
 
-function sendToGarage(vehicle, rarity, profileName) {
+// ── Send vehicle to garage ───────────────────────────────
+
+async function sendToGarage(vehicle, rarity, profileName) {
   const { state } = getApp();
-  const template  = { systems: [] }; // Minimal — real template loaded from parts/*.json
-  const instanceId = state.addVehicle(template, rarity, vehicle.modelId);
+
+  // Load the actual part tree so addVehicle can generate real part instances
+  const template = await _loadPartTreeForGacha(vehicle.modelId);
+  if (!template) {
+    console.warn(`[gacha] No part tree for ${vehicle.modelId} — using empty template`);
+  }
+
+  const instanceId = state.addVehicle(template || { systems: [] }, rarity, vehicle.modelId);
   state.save();
   refreshHeader();
 
@@ -1044,10 +1101,19 @@ function delay(ms) {
 async function executeSinglePull(isDailyWalk = false) {
   const { state }  = getApp();
   const gachaState = getGachaState();
-  const roster     = getVehicleRoster();
+  const fullRoster = getVehicleRoster();
+
+  if (!fullRoster.length) {
+    alert('Vehicle data not loaded. Please refresh.');
+    return;
+  }
+
+  // Filter roster to only vehicles with available part tree files
+  const availableIds = await _resolveAvailableModels();
+  const roster = fullRoster.filter(v => availableIds.has(v.modelId));
 
   if (!roster.length) {
-    alert('Vehicle data not loaded. Please refresh.');
+    alert('No vehicles with part data available yet. Check back after more part trees are added.');
     return;
   }
 
@@ -1064,7 +1130,7 @@ async function executeSinglePull(isDailyWalk = false) {
         gachaState.totalPulls = (gachaState.totalPulls ?? 0) + 1;
         return { vehicle: v, rarity: r };
       })()
-    : resolvePull(gachaState);
+    : resolvePull(gachaState, 0, roster);
 
   state.save();
 
@@ -1093,7 +1159,7 @@ async function executeSinglePull(isDailyWalk = false) {
 
   // Handle user action
   if (result.action === 'garage' && vehicle) {
-    const instanceId = sendToGarage(vehicle, pullResult.rarity, state.getCurrentProfileId());
+    await sendToGarage(vehicle, pullResult.rarity, state.getCurrentProfileId());
     removeOverlay();
     navigate('#/garage');
   } else if (result.action === 'details' && vehicle) {
@@ -1110,14 +1176,23 @@ async function executeSinglePull(isDailyWalk = false) {
 async function executeTenPull() {
   const { state }  = getApp();
   const gachaState = getGachaState();
-  const roster     = getVehicleRoster();
+  const fullRoster = getVehicleRoster();
 
-  if (!roster.length) {
+  if (!fullRoster.length) {
     alert('Vehicle data not loaded. Please refresh.');
     return;
   }
 
-  const results      = resolveTenPull(gachaState);
+  // Filter roster to only vehicles with available part tree files
+  const availableIds = await _resolveAvailableModels();
+  const roster = fullRoster.filter(v => availableIds.has(v.modelId));
+
+  if (!roster.length) {
+    alert('No vehicles with part data available yet.');
+    return;
+  }
+
+  const results      = resolveTenPull(gachaState, roster);
   state.save();
 
   // Determine duplicates and handle them
@@ -1149,7 +1224,7 @@ async function executeTenPull() {
     const profileName = state.getCurrentProfileId();
     for (let i = 0; i < results.length; i++) {
       if (!duplicateMap[i] && results[i].vehicle) {
-        sendToGarage(results[i].vehicle, results[i].rarity, profileName);
+        await sendToGarage(results[i].vehicle, results[i].rarity, profileName);
       }
     }
     removeOverlay();
