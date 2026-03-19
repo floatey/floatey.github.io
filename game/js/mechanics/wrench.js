@@ -673,7 +673,7 @@ export function startWrenchWork(
     }
 
     nextHazardAt      = randomInt(15, 30);
-    clicksSinceHazard = 0;
+    // clicksSinceHazard was already reset before startHazard was called
   }
 
   function completeWork() {
@@ -776,6 +776,20 @@ export function startWrenchWork(
       }
     }
 
+    // ── Hazard check BEFORE progress — prevents the trigger click
+    //    from giving a small progress bump right before a failure.
+    //    If a hazard fires here, skip all progress for this click.
+    if (clicksSinceHazard >= nextHazardAt) {
+      clicksSinceHazard = 0;
+      startHazard();
+      // Animate the tap so the click still feels responsive, but
+      // do NOT add progress — the hazard swallows this click.
+      animateTap();
+      playAudio('ratchet');
+      return;
+    }
+
+    // ── Normal click: rhythm detection + progress ──────────────
     let inRhythm = false;
     if (lastClickTime > 0) {
       const delta = now - lastClickTime;
@@ -807,10 +821,6 @@ export function startWrenchWork(
     updateProgressDisplay();
 
     playAudio('ratchet');
-
-    if (clicksSinceHazard >= nextHazardAt && !inHazard) {
-      startHazard();
-    }
 
     if (clicksSinceCritical >= nextCriticalAt) {
       triggerCritical();
