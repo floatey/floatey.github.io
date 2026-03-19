@@ -784,6 +784,19 @@ function App() {
         {/* Clock */}
         <SidebarClock />
 
+        {/* Garage Game Link */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid " + T.border }}>
+          <a href="game/index.html" style={{ textDecoration: "none", display: "block" }}>
+            <div style={{ ...btnBase, padding: "9px 10px", fontSize: 12, width: "100%", textAlign: "left", background: "#b87fff12", color: "#b87fff", borderRadius: 7, display: "flex", alignItems: "center", gap: 8, border: "1px solid #b87fff25", cursor: "pointer", transition: "all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#b87fff22"; e.currentTarget.style.borderColor = "#b87fff50"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "#b87fff12"; e.currentTarget.style.borderColor = "#b87fff25"; }}>
+              <span style={{ fontSize: 14 }}>🔧</span>
+              <span style={{ fontWeight: 600, letterSpacing: "0.2px" }}>JDM Garage</span>
+              <span style={{ marginLeft: "auto", fontSize: 10, opacity: 0.5 }}>↗</span>
+            </div>
+          </a>
+        </div>
+
         {/* Settings */}
         <div style={{ padding: "10px 12px", borderTop: "1px solid " + T.border }}>
           <button onClick={() => setShowSettings(true)} style={{ ...btnBase, padding: "8px 10px", fontSize: 12, width: "100%", textAlign: "left", background: "transparent", color: T.textMuted, borderRadius: 7, display: "flex", alignItems: "center", gap: 8 }}>

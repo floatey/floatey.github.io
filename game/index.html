@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JDM Restoration Garage</title>
+  <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+
+  <div id="game-root"></div>
+
+  <!-- ═══════════════════════════════════════
+       Firebase Compat SDK (CDN)
+  ═══════════════════════════════════════ -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+  <!-- ═══════════════════════════════════════
+       Firebase Config — replace placeholder
+       values with your real project config
+       from console.firebase.google.com
+  ═══════════════════════════════════════ -->
+  <script>
+    const firebaseConfig = {
+      apiKey:            "REPLACE_WITH_YOUR_API_KEY",
+      authDomain:        "tmcc-game.firebaseapp.com",
+      databaseURL:       "https://tmcc-game-default-rtdb.firebaseio.com",
+      projectId:         "tmcc-game",
+      storageBucket:     "tmcc-game.appspot.com",
+      messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
+      appId:             "REPLACE_WITH_YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+  <!-- ═══════════════════════════════════════
+       Game Scripts — dependency order
+  ═══════════════════════════════════════ -->
+  <script src="js/utils.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/garage.js"></script>
+  <script src="js/workbench.js"></script>
+  <script src="js/mechanics/wrench.js"></script>
+  <script src="js/mechanics/precision.js"></script>
+  <script src="js/mechanics/diagnosis.js"></script>
+  <script src="js/mechanics/bodywork.js"></script>
+  <script src="js/gacha.js"></script>
+  <script src="js/shop.js"></script>
+  <script src="js/social.js"></script>
+  <script src="js/main.js"></script>
+
+</body>
+</html>
