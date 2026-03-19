@@ -18,6 +18,7 @@ let state      = null;
 let sync       = null;
 let audio      = null;
 let vehicleData = null;   // contents of data/vehicles.json  ({ vehicles: [...] })
+let lastWorkbenchId = null; // last vehicle viewed on workbench (for tab navigation)
 
 /** Expose app-wide singletons for any module that needs them */
 export function getApp() {
@@ -53,13 +54,28 @@ function route() {
   if (hash === '#/garage') {
     setActiveTab('garage');
     renderGarage();
-  } else if (hash.startsWith('#/workbench/')) {
-    const instanceId = hash.split('/')[2];
-    // Guard: if no instanceId, fall back to garage
+  } else if (hash.startsWith('#/workbench')) {
+    let instanceId = hash.split('/')[2];
+
+    // Bare #/workbench (from tab click) — resolve to last viewed or first vehicle
     if (!instanceId) {
-      navigate('#/garage');
-      return;
+      if (lastWorkbenchId && state.getVehicle(lastWorkbenchId)) {
+        instanceId = lastWorkbenchId;
+      } else {
+        // Fall back to first vehicle in garage
+        const vehicles = state.getProfile()?.garage?.vehicles;
+        if (vehicles) {
+          const firstId = Object.keys(vehicles)[0];
+          if (firstId) instanceId = firstId;
+        }
+      }
+      if (!instanceId) {
+        navigate('#/garage');
+        return;
+      }
     }
+
+    lastWorkbenchId = instanceId;
     setActiveTab('workbench');
     renderWorkbench(instanceId);
   } else if (hash === '#/shop') {
@@ -121,7 +137,7 @@ function renderHeader() {
     backText = '← Profiles';
     backHash = '#/';
     title = 'Garage';
-  } else if (hash.startsWith('#/workbench/')) {
+  } else if (hash.startsWith('#/workbench')) {
     title = 'Workbench';
   } else if (hash === '#/shop') {
     title = 'Shop';
@@ -175,9 +191,11 @@ function renderHeader() {
   // ── Nav tabs ──────────────────────────────
   nav.innerHTML = '';
 
+  const hasVehicles = Object.keys(profile?.garage?.vehicles || {}).length > 0;
+
   const tabs = [
     { label: 'Garage',    hash: '#/garage',   id: 'garage'   },
-    { label: 'Workbench', hash: '#/workbench', id: 'workbench', disabled: true },
+    { label: 'Workbench', hash: '#/workbench', id: 'workbench', disabled: !hasVehicles },
     { label: 'Shop',      hash: '#/shop',     id: 'shop'     },
     { label: 'Junkyard',  hash: '#/junkyard', id: 'junkyard' },
   ];
@@ -209,6 +227,7 @@ function setActiveTab(tabId) {
 export function onProfileSelected(profileId) {
   state.load(profileId);
   if (sync) sync.start(profileId);
+  lastWorkbenchId = null;
 
   // ── Daily login bonus ──────────────────────────────────
   const loginResult = state.checkDailyLoginBonus();

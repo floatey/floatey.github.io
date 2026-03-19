@@ -686,7 +686,7 @@ function renderSystemList(container) {
         const bundleItem = renderBundleItem(system, vehicle);
         container.appendChild(bundleItem);
       } else if (system.type === 'detailed' && system.subsystems) {
-        const subList = el('div', { className: 'subsystem-list', style: 'max-height:1000px;' });
+        const subList = el('div', { className: 'subsystem-list' });
         for (const sub of system.subsystems) {
           const subItem = el('div', {
             className: 'subsystem-item',
@@ -742,6 +742,7 @@ function renderBundleItem(system, vehicle) {
   item.addEventListener('click', (e) => {
     e.stopPropagation();
     try { window.audioManager?.playClick(); } catch (_) {}
+    _onSelectionChange();
     wb.selectedSequenceId = null;
     wb.selectedPartId = system.id;
     refreshPartDetail();
@@ -806,6 +807,7 @@ function renderSequenceNavItem(seq, vehicle) {
   item.addEventListener('click', (e) => {
     e.stopPropagation();
     try { window.audioManager?.playClick(); } catch (_) {}
+    _onSelectionChange();
     wb.selectedSequenceId = seq.id;
     wb.selectedPartId = null;
     refreshPartDetail();
@@ -880,6 +882,7 @@ function renderPartItem(partDef, partInstance) {
   item.addEventListener('click', (e) => {
     e.stopPropagation();
     try { window.audioManager?.playClick(); } catch (_) {}
+    _onSelectionChange();
     wb.selectedSequenceId = null;
     wb.selectedPartId = partDef.id;
     refreshPartDetail();
@@ -917,6 +920,17 @@ function refreshRepairLog() {
 function refreshSkillBar() {
   const skillEl = document.getElementById('wb-skill-bar');
   if (skillEl) renderSkillBar(skillEl);
+}
+
+/**
+ * Central handler for when the user clicks a different part or sequence.
+ * Tears down any running mechanic to prevent overlapping UI.
+ */
+function _onSelectionChange() {
+  const mechanicArea = document.getElementById('wb-mechanic-area');
+  if (mechanicArea && mechanicArea.innerHTML.trim() !== '') {
+    _teardownMechanic(mechanicArea);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
