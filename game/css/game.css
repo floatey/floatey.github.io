@@ -1,23 +1,58 @@
 /* ═══════════════════════════════════════════════════════════════════
-   JDM RESTORATION GARAGE — game.css  (Cluster 01 Foundation)
+   JDM RESTORATION GARAGE — game.css
+   Table of contents:
+     00. Google Fonts
+     01. Custom Properties (design tokens)
+     02. Reset & Base
+     03. Scrollbar
+     04. Header
+     05. Main Content Root
+     06. Typography & Utility Classes
+     07. Condition Classes
+     08. Rarity Classes
+     09. Progress Bar
+     10. Buttons
+     11. Card
+     12. Badge
+     13. Sync Indicator
+     14. Animations & Transitions
+     15. Profile Picker
+     16. Garage View
+     17. Workbench View
+     18. Part Row / Part Detail
+     19. Wrench Mini-game
+     20. Precision Mini-game
+     21. Diagnosis View
+     22. Bodywork View
+     23. Gacha View
+     24. Shop View
+     25. Social / Visit View
+     26. Modals & Overlays
+     27. Toast Notifications
+     28. Skill XP / Level-up
+     29. Empty States & Loading
+     30. Mobile Breakpoints
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ─── Google Fonts ─────────────────────────────────────────────── */
+
+/* ─── 00. Google Fonts ──────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
 
-/* ─── Custom Properties ────────────────────────────────────────── */
+
+/* ─── 01. Custom Properties ─────────────────────────────────────── */
 :root {
   /* Backgrounds */
   --bg-primary:   #0d0d0d;
   --bg-secondary: #1a1a1a;
   --bg-tertiary:  #252525;
+  --bg-raised:    #2e2e2e;
 
   /* Text */
   --text-primary:   #e0e0e0;
   --text-secondary: #888888;
   --text-muted:     #555555;
 
-  /* Mechanic accent colors */
+  /* Mechanic skill accents */
   --accent-wrench:    #f59e0b;
   --accent-precision: #3b82f6;
   --accent-diagnosis: #10b981;
@@ -44,14 +79,21 @@
 
   /* Layout */
   --header-height: 60px;
+  --sidebar-width: 220px;
 
-  /* Radii / spacing */
+  /* Radii */
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-xl: 18px;
+
+  /* Shadows */
+  --shadow-card:  0 2px 12px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.7);
 }
 
-/* ─── Reset & Base ─────────────────────────────────────────────── */
+
+/* ─── 02. Reset & Base ──────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -72,34 +114,23 @@ body {
   padding-top: var(--header-height);
 }
 
-/* Selection */
 ::selection {
   background-color: var(--accent-wrench);
   color: #000;
 }
 
-/* ─── Scrollbar ─────────────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
-}
 
-/* ─── Header ────────────────────────────────────────────────────── */
+/* ─── 03. Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+
+
+/* ─── 04. Header ────────────────────────────────────────────────── */
 #game-header {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 0; left: 0; right: 0;
   height: var(--header-height);
   background-color: var(--bg-secondary);
   border-bottom: 1px solid #2a2a2a;
@@ -112,7 +143,6 @@ body {
 }
 
 .header-title {
-  font-family: 'Inter', system-ui, sans-serif;
   font-weight: 700;
   font-size: 1rem;
   color: var(--text-primary);
@@ -139,54 +169,102 @@ body {
   gap: 6px;
 }
 
-/* ─── Main Content Area ─────────────────────────────────────────── */
+/* Optional in-header nav tabs (workbench sub-views, shop categories) */
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.header-nav::-webkit-scrollbar { display: none; }
+
+.header-nav-tab {
+  padding: 0.3rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  transition: color 150ms, background-color 150ms;
+}
+.header-nav-tab:hover  { color: var(--text-primary); background-color: var(--bg-tertiary); }
+.header-nav-tab.active { color: var(--accent-wrench); background-color: #2a2218; }
+
+
+/* ─── 05. Main Content Root ─────────────────────────────────────── */
 #game-root {
   max-width: 960px;
   margin: 0 auto;
   padding: 1.5rem 1.25rem;
 }
 
-/* ─── Typography ────────────────────────────────────────────────── */
-.font-data {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-}
 
-.font-body {
-  font-family: 'Inter', system-ui, sans-serif;
-}
+/* ─── 06. Typography & Utility ──────────────────────────────────── */
+.font-data { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+.font-body { font-family: 'Inter', system-ui, sans-serif; }
 
 .text-muted     { color: var(--text-muted); }
 .text-secondary { color: var(--text-secondary); }
+.text-primary   { color: var(--text-primary); }
+.text-wrench    { color: var(--accent-wrench); }
+.text-precision { color: var(--accent-precision); }
+.text-diagnosis { color: var(--accent-diagnosis); }
+.text-bodywork  { color: var(--accent-bodywork); }
 
-/* ─── Condition Classes (text color) ───────────────────────────── */
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  border: 0;
+}
+
+
+/* ─── 07. Condition Classes ─────────────────────────────────────── */
 .condition-destroyed { color: var(--condition-destroyed); }
-.condition-critical  { color: var(--condition-critical); }
-.condition-poor      { color: var(--condition-poor); }
-.condition-fair      { color: var(--condition-fair); }
-.condition-good      { color: var(--condition-good); }
+.condition-critical  { color: var(--condition-critical);  }
+.condition-poor      { color: var(--condition-poor);      }
+.condition-fair      { color: var(--condition-fair);      }
+.condition-good      { color: var(--condition-good);      }
 .condition-excellent { color: var(--condition-excellent); }
 
-/* ─── Rarity Classes ────────────────────────────────────────────── */
+/* Subtle background tints (part rows, workbench highlights) */
+.condition-destroyed-bg { background-color: rgba(239, 68,  68,  0.12); }
+.condition-critical-bg  { background-color: rgba(249, 115, 22,  0.12); }
+.condition-poor-bg      { background-color: rgba(234, 179, 8,   0.10); }
+.condition-fair-bg      { background-color: rgba(134, 239, 172, 0.08); }
+.condition-good-bg      { background-color: rgba(34,  197, 94,  0.08); }
+.condition-excellent-bg { background-color: rgba(74,  222, 128, 0.08); }
+
+
+/* ─── 08. Rarity Classes ────────────────────────────────────────── */
 .rarity-3 { color: var(--rarity-3); }
 .rarity-4 { color: var(--rarity-4); }
 .rarity-5 { color: var(--rarity-5); }
 
-.rarity-3-bg {
-  color: var(--bg-primary);
-  background-color: var(--rarity-3);
-}
-.rarity-4-bg {
-  color: #fff;
-  background-color: var(--rarity-4);
-}
-.rarity-5-bg {
-  color: var(--bg-primary);
-  background-color: var(--rarity-5);
-}
+.rarity-3-bg { color: var(--bg-primary); background-color: var(--rarity-3); }
+.rarity-4-bg { color: #fff;             background-color: var(--rarity-4); }
+.rarity-5-bg { color: var(--bg-primary); background-color: var(--rarity-5); }
 
-/* ─── Progress Bar ──────────────────────────────────────────────── */
+.rarity-3-border { border-color: var(--rarity-3) !important; }
+.rarity-4-border { border-color: var(--rarity-4) !important; }
+.rarity-5-border { border-color: var(--rarity-5) !important; }
+
+
+/* ─── 09. Progress Bar ──────────────────────────────────────────── */
 .progress-bar {
-  width: 100%;
+  flex: 1;
   height: 8px;
   background-color: var(--bg-primary);
   border-radius: 4px;
@@ -196,14 +274,29 @@ body {
 .progress-fill {
   height: 100%;
   border-radius: 4px;
-  transition: width 300ms ease;
+  transition: width 400ms ease;
   background-color: var(--accent-wrench);
 }
 
-/* ─── Buttons ───────────────────────────────────────────────────── */
+/* Size variants */
+.progress-bar.thin  { height: 4px; }
+.progress-bar.thick { height: 12px; }
+
+/* Colour variants */
+.progress-fill.fill-precision { background-color: var(--accent-precision); }
+.progress-fill.fill-diagnosis { background-color: var(--accent-diagnosis); }
+.progress-fill.fill-bodywork  { background-color: var(--accent-bodywork);  }
+.progress-fill.fill-good      { background-color: var(--condition-good);   }
+.progress-fill.fill-critical  { background-color: var(--condition-critical); }
+
+
+/* ─── 10. Buttons ───────────────────────────────────────────────── */
 .btn-primary,
 .btn-secondary,
-.btn-danger {
+.btn-danger,
+.btn-precision,
+.btn-diagnosis,
+.btn-bodywork {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -216,41 +309,48 @@ body {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: opacity 150ms, background-color 200ms, transform 200ms, color 150ms;
+  transition: opacity 150ms, background-color 200ms, transform 150ms;
   min-height: 38px;
+  text-decoration: none;
 }
 
-.btn-primary {
-  background-color: var(--accent-wrench);
-  color: #000;
-}
-.btn-primary:hover  { opacity: 0.85; }
-.btn-primary:active { transform: scale(0.97); }
+.btn-primary   { background-color: var(--accent-wrench);    color: #000; }
+.btn-secondary { background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid #333; }
+.btn-danger    { background-color: var(--accent-bodywork);  color: #fff; }
+.btn-precision { background-color: var(--accent-precision); color: #fff; }
+.btn-diagnosis { background-color: var(--accent-diagnosis); color: #000; }
+.btn-bodywork  { background-color: var(--accent-bodywork);  color: #fff; }
 
-.btn-secondary {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid #333;
-}
-.btn-secondary:hover  { background-color: #2e2e2e; }
-.btn-secondary:active { transform: scale(0.97); }
+.btn-primary:hover,
+.btn-danger:hover,
+.btn-precision:hover,
+.btn-diagnosis:hover,
+.btn-bodywork:hover { opacity: 0.85; }
 
-.btn-danger {
-  background-color: var(--accent-bodywork);
-  color: #fff;
-}
-.btn-danger:hover  { opacity: 0.85; }
-.btn-danger:active { transform: scale(0.97); }
+.btn-secondary:hover { background-color: var(--bg-raised); }
+
+.btn-primary:active,
+.btn-secondary:active,
+.btn-danger:active,
+.btn-precision:active,
+.btn-diagnosis:active,
+.btn-bodywork:active { transform: scale(0.97); }
 
 .btn-primary:disabled,
 .btn-secondary:disabled,
-.btn-danger:disabled {
+.btn-danger:disabled,
+.btn-precision:disabled,
+.btn-diagnosis:disabled,
+.btn-bodywork:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   transform: none;
 }
 
-/* Icon-only button (header mute toggle) */
+/* Full-width */
+.btn-block { width: 100%; }
+
+/* Icon-only */
 .btn-icon {
   background: none;
   border: none;
@@ -264,45 +364,90 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 150ms, background-color 200ms;
+  transition: background-color 200ms;
+  color: var(--text-primary);
 }
 .btn-icon:hover { background-color: var(--bg-tertiary); }
 
-/* ─── Card ──────────────────────────────────────────────────────── */
+/* Back / breadcrumb */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.3rem 0;
+  margin-bottom: 1rem;
+  transition: color 150ms;
+}
+.btn-back:hover { color: var(--text-primary); }
+
+
+/* ─── 11. Card ──────────────────────────────────────────────────── */
 .card {
   background-color: var(--bg-tertiary);
   border: 1px solid #2e2e2e;
   border-radius: var(--radius-lg);
   padding: 1.25rem;
+  box-shadow: var(--shadow-card);
 }
 
-/* ─── Badge ─────────────────────────────────────────────────────── */
+.card-flat {
+  background-color: var(--bg-secondary);
+  border: 1px solid #222;
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+
+/* Clickable / hover-lift */
+.card-hover {
+  cursor: pointer;
+  transition: border-color 200ms, background-color 200ms, transform 150ms;
+}
+.card-hover:hover  { border-color: var(--accent-wrench); background-color: var(--bg-raised); transform: translateY(-2px); }
+.card-hover:active { transform: translateY(0); }
+
+
+/* ─── 12. Badge ─────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.15em 0.55em;
+  padding: 0.15em 0.6em;
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 600;
-  font-family: 'Inter', system-ui, sans-serif;
   background-color: var(--bg-secondary);
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
-/* ─── Sync Indicator ────────────────────────────────────────────── */
+.badge-progress  { background-color: #1a2a3a; color: var(--accent-precision); }
+.badge-complete  { background-color: #132213; color: var(--condition-good); }
+.badge-showcase  { background-color: #2a2008; color: var(--accent-wrench); }
+.badge-new       { background-color: #1a2a1a; color: var(--accent-diagnosis); }
+.badge-locked    { background-color: #1e1e1e; color: var(--text-muted); }
+.badge-pity      { background-color: #2a1a2a; color: var(--rarity-4); }
+.badge-wrench    { background-color: #2a1e08; color: var(--accent-wrench);    }
+.badge-precision { background-color: #0e1e38; color: var(--accent-precision); }
+.badge-diagnosis { background-color: #061e14; color: var(--accent-diagnosis); }
+.badge-bodywork  { background-color: #2a0e0e; color: var(--accent-bodywork);  }
+
+
+/* ─── 13. Sync Indicator ────────────────────────────────────────── */
 .sync-dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 8px; height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
   transition: background-color 300ms;
 }
-
 .sync-dot.sync-saved    { background-color: var(--sync-saved); }
-.sync-dot.sync-saving   { background-color: var(--sync-saving); animation: pulse 1s infinite; }
-.sync-dot.sync-offline  { background-color: var(--sync-offline); }
+.sync-dot.sync-saving   { background-color: var(--sync-saving);   animation: pulse 1s infinite; }
+.sync-dot.sync-offline  { background-color: var(--sync-offline);  }
 .sync-dot.sync-conflict { background-color: var(--sync-conflict); animation: pulse 1s infinite; }
 
 .sync-label {
@@ -311,62 +456,186 @@ body {
   white-space: nowrap;
 }
 
+
+/* ─── 14. Animations & Transitions ─────────────────────────────── */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+  50%       { opacity: 0.35; }
 }
 
-/* ─── Transition Utility ────────────────────────────────────────── */
-.transition-all {
-  transition: opacity 150ms, background-color 200ms, transform 200ms, color 150ms;
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ─── Mobile ────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  #game-header {
-    flex-wrap: wrap;
-    height: auto;
-    min-height: var(--header-height);
-    padding: 0.6rem 1rem;
-    gap: 0.5rem;
-  }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
-  .header-title {
-    font-size: 0.9rem;
-  }
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to   { background-position:  400px 0; }
+}
 
-  .header-right {
-    gap: 0.65rem;
-  }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
-  /* Ensure tap targets are at least 44px */
-  .btn-primary,
-  .btn-secondary,
-  .btn-danger {
-    min-height: 44px;
-    padding: 0.6rem 1rem;
-  }
+@keyframes gacha-reveal {
+  0%   { transform: scale(0.6) rotate(-8deg); opacity: 0; }
+  60%  { transform: scale(1.08) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); }
+}
 
-  .btn-icon {
-    min-height: 44px;
-    min-width: 44px;
-  }
+@keyframes xp-pop {
+  0%   { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-32px) scale(1.2); opacity: 0; }
+}
 
-  body {
-    padding-top: calc(var(--header-height) + 10px);
-  }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(110%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 
-  #game-root {
-    padding: 1rem 0.75rem;
-  }
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(110%); }
+}
+
+@keyframes scan-line {
+  0%   { top: 0%;   opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.transition-all { transition: opacity 150ms, background-color 200ms, transform 200ms, color 150ms; }
+.animate-fade-in { animation: fadeIn 250ms ease both; }
+
+
+/* ─── 15. Profile Picker ────────────────────────────────────────── */
+.profile-picker {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem 0 3rem;
+}
+
+.picker-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: 1.75rem;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.profile-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.1rem;
+  cursor: pointer;
+  transition: border-color 200ms, background-color 200ms, transform 150ms;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  user-select: none;
+}
+.profile-card:hover  { border-color: var(--accent-wrench); background-color: var(--bg-tertiary); transform: translateY(-2px); }
+.profile-card:active { transform: translateY(0); }
+
+.card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.card-project {
+  font-size: 0.82rem;
+  color: var(--accent-wrench);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-last-active {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.card-yen {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.card-loading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  animation: pulse 1s infinite;
+}
+
+/* Activity Feed */
+.feed-section {
+  border-top: 1px solid #2a2a2a;
+  padding-top: 1.5rem;
+}
+
+.feed-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 0.85rem;
+}
+
+.feed-entry {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid #1e1e1e;
+  font-size: 0.85rem;
+}
+.feed-entry:last-child { border-bottom: none; }
+
+.feed-text {
+  color: var(--text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed-time {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 
-/* ═══════════════════════════════════════════════════════════════════
-   CLUSTER 06 — Garage View
-   ═══════════════════════════════════════════════════════════════════ */
+/* ─── 16. Garage View ───────────────────────────────────────────── */
+.garage-loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
 
-/* ─── Garage Summary ────────────────────────────────────────────── */
 .garage-summary {
   display: flex;
   align-items: center;
@@ -382,15 +651,10 @@ body {
   color: var(--text-primary);
 }
 
-.summary-currency {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-}
-
+.summary-currency { font-size: 0.9rem; color: var(--text-secondary); }
 .yen-balance { color: var(--accent-wrench); }
 .wt-balance  { color: var(--accent-precision); }
 
-/* ─── Garage Grid ───────────────────────────────────────────────── */
 .garage-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -398,7 +662,6 @@ body {
   margin-bottom: 2rem;
 }
 
-/* ─── Vehicle Card ──────────────────────────────────────────────── */
 .garage-vehicle-card {
   display: flex;
   flex-direction: column;
@@ -406,8 +669,8 @@ body {
 }
 
 .garage-card-loading {
-  opacity: 0.6;
-  min-height: 180px;
+  opacity: 0.5;
+  min-height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -432,12 +695,6 @@ body {
   letter-spacing: 0.05em;
 }
 
-/* Status badges */
-.badge-progress  { background-color: #2a3a4a; color: var(--accent-precision); }
-.badge-complete  { background-color: #1a3a1a; color: var(--condition-good); }
-.badge-showcase  { background-color: #3a2a0a; color: var(--accent-wrench); }
-
-/* ─── Completion Bar ────────────────────────────────────────────── */
 .vehicle-completion {
   display: flex;
   align-items: center;
@@ -446,6 +703,7 @@ body {
 
 .completion-label {
   font-size: 0.75rem;
+  color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
   width: 72px;
@@ -459,7 +717,6 @@ body {
   text-align: right;
 }
 
-/* ─── System Rows ───────────────────────────────────────────────── */
 .vehicle-systems {
   display: flex;
   flex-direction: column;
@@ -474,9 +731,10 @@ body {
 }
 
 .system-name {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -485,23 +743,17 @@ body {
 
 .system-dots {
   font-size: 0.9rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   flex-shrink: 0;
 }
 
 .dot-filled { color: var(--accent-wrench); }
 .dot-empty  { color: var(--text-muted); }
 
-/* ─── Card Footer ───────────────────────────────────────────────── */
-.vehicle-card-footer {
-  margin-top: auto;
-}
+.vehicle-card-footer { margin-top: auto; }
+.btn-workbench { width: 100%; }
 
-.btn-workbench {
-  width: 100%;
-}
-
-/* ─── Visit Other Garages ───────────────────────────────────────── */
+/* Visit section */
 .garage-visits {
   margin-top: 2rem;
   padding-top: 1.5rem;
@@ -509,11 +761,11 @@ body {
 }
 
 .visits-title {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  color: var(--text-secondary);
   margin-bottom: 0.75rem;
 }
 
@@ -526,28 +778,1140 @@ body {
 .visit-link {
   text-decoration: none;
   font-size: 0.85rem;
+  transition: color 150ms;
+}
+.visit-link:hover { color: var(--accent-wrench); }
+
+
+/* ─── 17. Workbench View ────────────────────────────────────────── */
+.workbench-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  gap: 1.5rem;
+  align-items: start;
 }
 
-.visit-link:hover {
+.workbench-sidebar {
+  position: sticky;
+  top: calc(var(--header-height) + 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.workbench-sidebar-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  padding: 0 0.5rem 0.5rem;
+}
+
+.system-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  transition: background-color 150ms, color 150ms;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.system-tab:hover  { background-color: var(--bg-tertiary); color: var(--text-primary); }
+.system-tab.active { background-color: #2a1e08; color: var(--accent-wrench); }
+
+.system-tab-dots {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.workbench-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.workbench-panel-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.workbench-panel-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.workbench-bundle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bundle-condition {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+
+/* ─── 18. Part Row / Part Detail ────────────────────────────────── */
+.part-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.part-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid #2a2a2a;
+  background-color: var(--bg-secondary);
+  cursor: pointer;
+  transition: border-color 150ms, background-color 150ms;
+}
+.part-row:hover    { border-color: #444; background-color: var(--bg-tertiary); }
+.part-row.selected { border-color: var(--accent-wrench); background-color: #1e1800; }
+.part-row.hidden   { opacity: 0.45; cursor: default; pointer-events: none; }
+
+.part-row-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  width: 26px;
+  text-align: center;
+}
+
+.part-row-info { flex: 1; min-width: 0; }
+
+.part-row-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.part-row.hidden .part-row-name {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.part-row-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.part-row-condition {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+  width: 52px;
+  text-align: right;
+}
+
+.part-row-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  width: 70px;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Part detail panel */
+.part-detail {
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  animation: fadeIn 180ms ease both;
+}
+
+.part-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.part-detail-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.part-detail-condition {
+  font-size: 2rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.part-detail-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+
+/* ─── 19. Wrench Mini-game ──────────────────────────────────────── */
+.wrench-game {
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.wrench-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.wrench-part-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.wrench-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+/* Timing bar */
+.wrench-timing-track {
+  position: relative;
+  width: 100%;
+  height: 56px;
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  user-select: none;
+}
+
+.wrench-target-zone {
+  position: absolute;
+  top: 0; bottom: 0;
+  background-color: rgba(245, 158, 11, 0.18);
+  border-left:  2px solid var(--accent-wrench);
+  border-right: 2px solid var(--accent-wrench);
+  pointer-events: none;
+}
+
+.wrench-cursor {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 3px;
+  background-color: var(--text-primary);
+  border-radius: 2px;
+  pointer-events: none;
+  transition: background-color 80ms;
+}
+.wrench-cursor.hit     { background-color: var(--accent-diagnosis); }
+.wrench-cursor.miss    { background-color: var(--accent-bodywork); }
+.wrench-cursor.perfect { background-color: var(--rarity-5); }
+
+.wrench-result-flash {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  min-height: 1.6em;
+  letter-spacing: 0.04em;
+}
+.wrench-result-flash.hit     { color: var(--accent-diagnosis); }
+.wrench-result-flash.miss    { color: var(--accent-bodywork); }
+.wrench-result-flash.perfect { color: var(--rarity-5); }
+
+.wrench-pips {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: center;
+}
+
+.wrench-pip {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background-color: var(--text-muted);
+  transition: background-color 200ms;
+}
+.wrench-pip.hit     { background-color: var(--accent-diagnosis); }
+.wrench-pip.miss    { background-color: var(--accent-bodywork); }
+.wrench-pip.perfect { background-color: var(--rarity-5); }
+
+.wrench-action-btn {
+  width: 100%;
+  min-height: 52px;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+}
+
+
+/* ─── 20. Precision Mini-game ───────────────────────────────────── */
+.precision-game {
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.precision-dial-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  height: 220px;
+}
+
+.precision-dial {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  border: 3px solid #2e2e2e;
+  background: radial-gradient(circle at 50% 50%, var(--bg-tertiary), var(--bg-secondary));
+  position: relative;
+  box-shadow: 0 0 0 6px var(--bg-primary), 0 0 0 7px #2e2e2e;
+}
+
+.precision-needle {
+  position: absolute;
+  bottom: 50%;
+  left: 50%;
+  width: 3px;
+  height: 70px;
+  background: linear-gradient(to top, var(--accent-precision), transparent);
+  transform-origin: bottom center;
+  transform: translateX(-50%) rotate(0deg);
+  border-radius: 2px 2px 0 0;
+  transition: transform 60ms linear;
+}
+
+.precision-value {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--accent-precision);
+  white-space: nowrap;
+}
+
+.precision-label {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.precision-result-flash {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 600;
+  min-height: 1.6em;
+}
+.precision-result-flash.success { color: var(--accent-precision); }
+.precision-result-flash.fail    { color: var(--accent-bodywork); }
+.precision-result-flash.perfect { color: var(--rarity-5); }
+
+
+/* ─── 21. Diagnosis View ────────────────────────────────────────── */
+.diagnosis-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.diagnosis-scanner {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--accent-diagnosis);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.diagnosis-scanner::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-diagnosis), transparent);
+  animation: scan-line 2.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.diagnosis-scanner-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent-diagnosis);
+  margin-bottom: 0.75rem;
+}
+
+.diagnosis-finding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.diagnosis-finding {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.diagnosis-finding-icon {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.diagnosis-finding-icon.critical { background-color: var(--condition-critical); color: #000; }
+.diagnosis-finding-icon.warning  { background-color: var(--condition-poor);     color: #000; }
+.diagnosis-finding-icon.ok       { background-color: var(--condition-good);     color: #000; }
+
+.diagnosis-finding-part { font-weight: 600; }
+
+.diagnosis-finding-note {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.diagnosis-cost {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  padding: 0.6rem 0;
+  border-top: 1px solid #2a2a2a;
+}
+
+.diagnosis-cost-value {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent-diagnosis);
+  font-weight: 600;
+}
+
+
+/* ─── 22. Bodywork View ─────────────────────────────────────────── */
+.bodywork-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.bodywork-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.6rem;
+}
+
+.bodywork-panel-btn {
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 150ms, background-color 150ms;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.bodywork-panel-btn:hover  { border-color: var(--accent-bodywork); background-color: var(--bg-tertiary); }
+.bodywork-panel-btn.active { border-color: var(--accent-bodywork); background-color: #1e0a0a; }
+
+.bodywork-panel-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.bodywork-panel-btn.active .bodywork-panel-label { color: var(--accent-bodywork); }
+
+.bodywork-stage-track {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.bodywork-stage {
+  flex: 1;
+  height: 6px;
+  background-color: var(--bg-secondary);
+  border: 1px solid #2a2a2a;
+  transition: background-color 300ms;
+}
+.bodywork-stage:first-child { border-radius: 3px 0 0 3px; }
+.bodywork-stage:last-child  { border-radius: 0 3px 3px 0; }
+.bodywork-stage.done   { background-color: var(--accent-bodywork); }
+.bodywork-stage.active { background-color: var(--accent-bodywork); animation: pulse 1s infinite; }
+
+.bodywork-color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.bodywork-swatch {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color 150ms, transform 150ms;
+  flex-shrink: 0;
+}
+.bodywork-swatch:hover    { transform: scale(1.15); }
+.bodywork-swatch.selected { border-color: var(--text-primary); }
+
+
+/* ─── 23. Gacha View ────────────────────────────────────────────── */
+.gacha-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.gacha-banner {
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.gacha-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 70% 50%, rgba(234,179,8,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.gacha-banner-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.gacha-banner-sub {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.gacha-pity-bar-wrap {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.gacha-pity-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.gacha-pity-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--rarity-4);
+  flex-shrink: 0;
+}
+
+.gacha-pull-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.gacha-pull-btn {
+  flex: 1;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-tertiary);
+  border: 1px solid #333;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 150ms, background-color 150ms, transform 150ms;
+}
+.gacha-pull-btn:hover    { border-color: var(--rarity-5); background-color: var(--bg-raised); transform: translateY(-2px); }
+.gacha-pull-btn:active   { transform: translateY(0); }
+.gacha-pull-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+.gacha-pull-count {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gacha-pull-cost {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
   color: var(--accent-wrench);
 }
 
-/* ─── Garage Loading State ──────────────────────────────────────── */
-.garage-loading {
-  text-align: center;
-  padding: 3rem;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
+.gacha-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
 }
 
-/* ─── Mobile Adjustments ────────────────────────────────────────── */
-@media (max-width: 640px) {
-  .garage-grid {
+.gacha-result-card {
+  background-color: var(--bg-secondary);
+  border: 2px solid #2e2e2e;
+  border-radius: var(--radius-lg);
+  padding: 1rem 0.75rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  animation: gacha-reveal 500ms ease both;
+}
+
+.gacha-result-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.gacha-result-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.gacha-result-type {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gacha-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.gacha-history-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.gacha-history-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #1a1a1a;
+  color: var(--text-secondary);
+}
+
+.gacha-history-table tr:last-child td { border-bottom: none; }
+
+
+/* ─── 24. Shop View ─────────────────────────────────────────────── */
+.shop-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.shop-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid #2a2a2a;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.shop-tabs::-webkit-scrollbar { display: none; }
+
+.shop-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  transition: color 150ms, border-color 150ms;
+  white-space: nowrap;
+}
+.shop-tab:hover  { color: var(--text-primary); }
+.shop-tab.active { color: var(--accent-wrench); border-bottom-color: var(--accent-wrench); }
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1rem;
+}
+
+.shop-item-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 150ms, background-color 150ms;
+}
+.shop-item-card:hover    { border-color: #444; background-color: var(--bg-tertiary); }
+.shop-item-card.owned    { border-color: var(--condition-good); }
+.shop-item-card.soldout  { opacity: 0.45; }
+
+.shop-item-icon { font-size: 2rem; line-height: 1; }
+
+.shop-item-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.shop-item-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  flex: 1;
+  line-height: 1.45;
+}
+
+.shop-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.shop-item-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.88rem;
+  color: var(--accent-wrench);
+  font-weight: 600;
+}
+.shop-item-price.wt-price { color: var(--accent-precision); }
+
+.shop-item-buy {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+  min-height: 32px;
+}
+
+.shop-owned-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--condition-good);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.shop-daily-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-secondary);
+  border: 1px solid #2e2e2e;
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.shop-daily-timer .countdown {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent-wrench);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+
+/* ─── 25. Social / Visit View ───────────────────────────────────── */
+.visit-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: fadeIn 200ms ease both;
+}
+
+.visit-profile-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.visit-avatar {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-raised));
+  border: 2px solid #2e2e2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.visit-profile-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.visit-profile-sub {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.visit-vehicle-card {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.9;
+}
+
+.visit-cheer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background-color: var(--bg-tertiary);
+  border: 1px solid #333;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms;
+}
+.visit-cheer-btn:hover   { border-color: var(--accent-wrench); color: var(--accent-wrench); }
+.visit-cheer-btn.cheered { background-color: #2a1e08; border-color: var(--accent-wrench); color: var(--accent-wrench); }
+
+.visit-cheer-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+}
+
+
+/* ─── 26. Modals & Overlays ─────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 1rem;
+  animation: fadeIn 150ms ease both;
+}
+
+.modal-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid #333;
+  border-radius: var(--radius-xl);
+  padding: 2rem 1.75rem;
+  max-width: 440px;
+  width: 100%;
+  box-shadow: var(--shadow-modal);
+  animation: slideUp 200ms ease both;
+}
+
+.modal-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.modal-body {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-bottom: 1.5rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.65rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Conflict modal variant */
+.modal-card.conflict-modal { border-color: var(--sync-conflict); }
+.conflict-modal .modal-title { color: var(--sync-conflict); }
+
+
+/* ─── 27. Toast Notifications ───────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 9500;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.toast {
+  background-color: var(--bg-raised);
+  border: 1px solid #3a3a3a;
+  border-radius: var(--radius-md);
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  max-width: 300px;
+  box-shadow: var(--shadow-card);
+  animation: toast-in 250ms ease both;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.toast.leaving { animation: toast-out 250ms ease forwards; }
+.toast-icon    { font-size: 1rem; flex-shrink: 0; }
+
+.toast.toast-success { border-color: var(--condition-good); }
+.toast.toast-error   { border-color: var(--accent-bodywork); }
+.toast.toast-info    { border-color: var(--accent-precision); }
+.toast.toast-rarity5 { border-color: var(--rarity-5); background-color: #1a1400; }
+
+
+/* ─── 28. Skill XP / Level-up ───────────────────────────────────── */
+.skill-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.skill-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
+}
+
+.skill-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.skill-level {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+  width: 30px;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+/* Floating XP number */
+.xp-popup {
+  position: fixed;
+  pointer-events: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  font-weight: 700;
+  animation: xp-pop 900ms ease forwards;
+  z-index: 9200;
+}
+.xp-popup.wrench    { color: var(--accent-wrench); }
+.xp-popup.precision { color: var(--accent-precision); }
+.xp-popup.diagnosis { color: var(--accent-diagnosis); }
+.xp-popup.bodywork  { color: var(--accent-bodywork); }
+
+/* Level-up banner */
+.level-up-banner {
+  background: linear-gradient(90deg, transparent, rgba(245,158,11,0.12), transparent);
+  border: 1px solid var(--accent-wrench);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-wrench);
+  animation: fadeIn 300ms ease both;
+}
+
+
+/* ─── 29. Empty States & Loading ────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.empty-state-icon  { font-size: 2.5rem; opacity: 0.4; }
+.empty-state-title { font-size: 0.95rem; font-weight: 600; color: var(--text-secondary); }
+
+.empty-state-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-text  { height: 0.85em; border-radius: 3px; }
+.skeleton-block { height: 120px; border-radius: var(--radius-lg); }
+
+/* Spinner */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--accent-wrench);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+
+
+/* ─── 30. Mobile Breakpoints ────────────────────────────────────── */
+
+/* Tablet */
+@media (max-width: 768px) {
+  #game-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--header-height);
+    padding: 0.6rem 1rem;
+    gap: 0.5rem;
+  }
+
+  .header-title { font-size: 0.9rem; }
+  .header-right { gap: 0.65rem; }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-precision,
+  .btn-diagnosis,
+  .btn-bodywork  { min-height: 44px; padding: 0.6rem 1rem; }
+
+  .btn-icon { min-height: 44px; min-width: 44px; }
+
+  body       { padding-top: calc(var(--header-height) + 10px); }
+  #game-root { padding: 1rem 0.75rem; }
+
+  /* Workbench: collapse sidebar into horizontal pill row */
+  .workbench-layout {
     grid-template-columns: 1fr;
   }
 
-  .garage-summary {
-    flex-direction: column;
-    align-items: flex-start;
+  .workbench-sidebar {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem;
   }
+
+  .system-tab {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.78rem;
+  }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .garage-grid    { grid-template-columns: 1fr; }
+  .garage-summary { flex-direction: column; align-items: flex-start; }
+
+  .gacha-result-grid { grid-template-columns: repeat(3, 1fr); }
+  .gacha-pull-row    { flex-direction: column; }
+  .gacha-pull-btn    { width: 100%; min-width: unset; }
+
+  .shop-grid         { grid-template-columns: 1fr 1fr; }
+
+  .bodywork-panel-grid { grid-template-columns: repeat(3, 1fr); }
+
+  .modal-card { padding: 1.5rem 1.25rem; }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions .btn-primary,
+  .modal-actions .btn-secondary { width: 100%; }
+
+  .toast-container { left: 1rem; right: 1rem; }
+  .toast { max-width: 100%; }
+}
+
+/* Extra small */
+@media (max-width: 400px) {
+  .profile-grid      { grid-template-columns: 1fr; }
+  .shop-grid         { grid-template-columns: 1fr; }
+  .gacha-result-grid { grid-template-columns: repeat(2, 1fr); }
 }
