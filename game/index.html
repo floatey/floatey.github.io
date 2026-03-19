@@ -16,14 +16,13 @@
 
     <div class="header-right">
       <div class="header-currency font-data">
-        <span id="hdr-yen">¥0</span>
+        <span id="header-yen">¥0</span>
         <span class="text-muted"> · </span>
-        <span id="hdr-wt">0 WT</span>
+        <span id="header-wt">0 WT</span>
       </div>
 
-      <div class="header-sync" id="hdr-sync">
-        <span class="sync-dot sync-saved" id="sync-dot"></span>
-        <span class="sync-label" id="sync-label">Saved</span>
+      <div class="header-sync" id="sync-indicator">
+        🟢 Saved
       </div>
 
       <button class="btn-icon" id="btn-mute" title="Toggle sound" aria-label="Toggle sound">🔊</button>
@@ -42,26 +41,22 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 
   <!-- ═══════════════════════════════════════
-       Firebase Config — replace placeholder
-       values with your real project config
-       from console.firebase.google.com
+       Firebase Config
   ═══════════════════════════════════════ -->
   <script>
-    // Wrap in try/catch so a missing or placeholder config never
-    // blocks the rest of the game scripts from loading.
     try {
       const firebaseConfig = {
-        apiKey:            "REPLACE_WITH_YOUR_API_KEY",
-        authDomain:        "tmcc-game.firebaseapp.com",
+        apiKey:            "AIzaSyAOVZlazcx9gktgnIthaM3iB_Q1-9wyarA",
+        authDomain:        "test-531f9.firebaseapp.com",
         databaseURL:       "https://tmcc-game-default-rtdb.firebaseio.com",
-        projectId:         "tmcc-game",
-        storageBucket:     "tmcc-game.appspot.com",
-        messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
-        appId:             "REPLACE_WITH_YOUR_APP_ID"
+        projectId:         "test-531f9",
+        storageBucket:     "test-531f9.firebasestorage.app",
+        messagingSenderId: "365348741958",
+        appId:             "1:365348741958:web:2886ae3d47789021917b47"
       };
       firebase.initializeApp(firebaseConfig);
     } catch (e) {
-      console.warn("[Firebase] Init skipped — replace placeholder config values:", e.message);
+      console.warn("[Firebase] Init failed:", e.message);
     }
   </script>
 
