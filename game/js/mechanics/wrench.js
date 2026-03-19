@@ -27,6 +27,7 @@
 // ════════════════════════════════════════════════════════════
 
 import { RhythmEngine } from '../audio.js';
+import { composeWrenchSession } from '../rhythm-composer.js';
 import { pickRandom, clamp } from '../utils.js';
 
 // ── One-time CSS injection ────────────────────────────────────
@@ -756,12 +757,32 @@ export class WrenchMechanic {
     this._timingWindow  = RhythmEngine.getTimingWindow('wrench', this.skillLevel, this._map.bpm) * 1.4;
     this._totalCycles   = Math.max(4, Math.round((1 - condition) * 10));
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
-    this._hazardInterval = this._map.hazardInterval ?? 4;
     this._stepDuration  = (60 / this._map.bpm) * 1000;  // ms
     this._stepDurSec    = 60 / this._map.bpm;             // seconds
     this._hazardDuration = this._stepDuration * 8;
 
-    // Deterministic hash for hold generation
+    // ── NEW: Pre-compose entire session (motif-centric) ─────────────
+    //
+    // Generates all cycle patterns up front as a single composition[].
+    // Both the UI (_startCallPhase) and the audio scheduler
+    // (applyVariation → _currentPattern) read from this same array,
+    // eliminating audio/visual desync by construction.
+    //
+    // See rhythm-composer.js for the motif-cell catalog and
+    // transformation operators (displacement, inversion, retrograde).
+
+    this._composition = composeWrenchSession(
+      this.part.id ?? 'unknown',
+      difficulty,
+      this._totalCycles
+    );
+
+    // Attach composition data to the map so applyVariation can use it
+    this._map.composition     = this._composition.composition;
+    this._map.hazardCycles    = this._composition.hazardCycles;
+    this._hazardInterval      = this._composition.hazardInterval;
+
+    // Deterministic hash for hold generation (legacy fallback, kept for safety)
     this._partHash = [...(this.part.id ?? 'x')]
       .reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 0);
 
@@ -777,6 +798,10 @@ export class WrenchMechanic {
     this._countdownEl.style.display = 'flex';
     this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
     this._setFlavor('Count yourself in…');
+
+    // Silence the beat scheduler during count-in — no call beats should fire
+    // until _startCallPhase sets the real pattern
+    this._map._currentPattern = new Array(16).fill(false);
 
     // Engine starts immediately — first cycle is the count-in (see _onBeat)
     this.engine.start(this._map, (step, time, isActive) => {
@@ -1113,14 +1138,34 @@ export class WrenchMechanic {
     this._holdPressEval = false;
     this._holdResultSet = false;
 
-    const variedCall = RhythmEngine.applyVariation(this._map, this._cycleIndex);
-    this._callPattern     = variedCall.slice(0, 8);
-    this._responsePattern = (this._map.responsePattern ?? [...this._callPattern]).map((v, i) =>
-      i < variedCall.length ? variedCall[i] : v
-    );
+    // ── Composition-based pattern (single source of truth) ─────
+    //
+    // Read the pre-composed cycle from the composition array.
+    // Set _currentPattern on the map so the audio scheduler's
+    // applyVariation() reads the EXACT same pattern we display.
+    // This eliminates the audio/visual desync bug (see design doc §1.2).
 
-    // Upgrade booleans to typed pattern (taps + holds)
-    this._typedPattern = this._upgradePattern(this._callPattern, this._cycleIndex);
+    const comp = this._map.composition;
+    const ci   = Math.min(this._cycleIndex, (comp?.length ?? 1) - 1);
+    const entry = comp?.[ci];
+
+    if (entry) {
+      this._callPattern     = [...entry.call];
+      this._responsePattern = [...entry.response];
+      this._typedPattern    = entry.typed;   // pre-composed with holds
+
+      // Set on map → scheduler reads this instead of generating its own
+      this._map._currentPattern = [...entry.call, ...entry.response];
+    } else {
+      // Fallback to legacy generation if composition is missing
+      const variedCall = RhythmEngine.applyVariation(this._map, this._cycleIndex);
+      this._callPattern     = variedCall.slice(0, 8);
+      this._responsePattern = (this._map.responsePattern ?? [...this._callPattern]).map((v, i) =>
+        i < variedCall.length ? variedCall[i] : v
+      );
+      this._typedPattern = this._upgradePattern(this._callPattern, this._cycleIndex);
+      this._map._currentPattern = [...this._callPattern, ...this._responsePattern];
+    }
 
     // Clear all cells
     this._callCells.forEach(c => { c.className = 'wv2-cell'; });
@@ -1139,6 +1184,19 @@ export class WrenchMechanic {
     this._setStatus('');
     this._countdownEl.style.display = 'none';
     this._holdBarWrap.classList.remove('wv2-hold-bar-wrap--visible');
+
+    // Phase-aware flavor cue — tells the player what's changing
+    if (entry) {
+      const phaseLabels = {
+        exposition:  'Learn the rhythm. Lock it in.',
+        development: 'Pattern\'s shifting. Stay with it.',
+        variation:   'Hold notes now. Feel the change.',
+        climax:      'Full send. Everything\'s moving.',
+      };
+      if (this._cycleIndex === 0 || (ci > 0 && comp[ci - 1]?.phase !== entry.phase)) {
+        this._setFlavor(phaseLabels[entry.phase] ?? '');
+      }
+    }
   }
 
   // Render the call row with preview (dim) or played state
@@ -1247,6 +1305,9 @@ export class WrenchMechanic {
     this._phase        = 'hazard';
     this._hazardFailed = false;
     this._patternsSinceHazard = 0;
+
+    // Silence the beat scheduler — no call beats during hazard
+    this._map._currentPattern = new Array(16).fill(false);
 
     this._callCells.forEach(c => { c.className = 'wv2-cell wv2-cell--hazard'; });
     this._responseCells.forEach(c => { c.className = 'wv2-cell wv2-cell--hazard'; });

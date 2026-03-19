@@ -2020,10 +2020,24 @@ export class RhythmEngine {
    * applyVariation(map, cycleIndex) → boolean[]
    *
    * Returns a mutated copy of the base pattern for a given cycle.
-   * 1–2 non-anchor steps are toggled using the variationSeed RNG.
-   * See Music Theory Reference §10.
+   *
+   * COMPOSITION MODE (wrench v2):
+   *   If map._currentPattern is set (by WrenchMechanic._startCallPhase),
+   *   return it directly. This ensures the audio scheduler plays EXACTLY
+   *   the pattern the UI is showing — eliminating audio/visual desync
+   *   caused by independent RNG calls. See WRENCH_RHYTHM_REDESIGN.md §1.2.
+   *
+   * LEGACY MODE (all other mechanics):
+   *   1–2 non-anchor steps are toggled using the variationSeed RNG.
+   *   See Music Theory Reference §10.
    */
   static applyVariation(map, cycleIndex) {
+    // ── Composition mode: single source of truth ──────────────
+    if (map._currentPattern) {
+      return [...map._currentPattern];
+    }
+
+    // ── Legacy mode: seeded random variation ──────────────────
     const rng     = seededRNG(map.variationSeed + cycleIndex);
     const pattern = [...(map.callPattern || map.pattern)];
     const anchors = new Set([0, 4, 8, 12]);
