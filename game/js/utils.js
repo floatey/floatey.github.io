@@ -156,3 +156,10 @@ export function deepClone(obj) {
 export function lerp(a, b, t) {
   return a + (b - a) * t;
 }
+
+// ── seededRNG re-export ────────────────────────────────────────
+// Defined once in audio.js (used by RhythmEngine for deterministic
+// pattern generation) and re-exported here so other modules can
+// import it from utils without creating a circular dependency on audio.
+// GDD §12: "define once in audio.js, re-export from utils.js."
+export { seededRNG } from './audio.js';

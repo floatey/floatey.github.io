@@ -1,16 +1,26 @@
 // ════════════════════════════════════════════════════════════
-//  mechanics/precision.js — Precision Work (Timing Target)
+//  mechanics/precision.js — Precision Work (Pendulum + Sequences + Torque Lock)
+//
+//  GDD v2.0 §5 MECHANIC 4 — PRECISION WORK
+//  Inspiration: Rhythm Heaven (pendulum)
+//  Feel: Tense, methodical, deeply satisfying when locked in
+//
+//  The pendulum swings. You tap when it crosses centre.
+//  Complete N consecutive centre taps to finish one sequence.
+//  Complete 3 sequences in a row to enter Torque Lock.
+//  In Torque Lock, resonance notes accumulate into a full C major chord.
 //
 //  Usage:
 //    startPrecisionWork(partData, instanceState, container,
 //                       onComplete, playerTools, skillLevel)
 //
-//  onComplete fires with: { newCondition, xpEarned, logEntries[] }
+//  onComplete fires with: { newCondition, xpEarned, logEntries }
 //
 //  FILE LOCATION: game/js/mechanics/precision.js
 // ════════════════════════════════════════════════════════════
 
-import { randomInt, randomRange, pickRandom, clamp } from '../utils.js';
+import { RhythmEngine } from '../audio.js';
+import { clamp, pickRandom } from '../utils.js';
 
 // ── One-time CSS injection ────────────────────────────────────
 let _cssInjected = false;
@@ -20,154 +30,362 @@ function _injectCSS() {
   _cssInjected = true;
 
   const style = document.createElement('style');
-  style.id = 'precision-mechanic-styles';
+  style.id = 'precision-v2-styles';
   style.textContent = `
 
-    /* ── Sweep indicator ── */
-    @keyframes pw-sweep-ltr {
-      0%   { left: 0%; }
-      100% { left: calc(100% - 4px); }
-    }
-    @keyframes pw-sweep-rtl {
-      0%   { left: calc(100% - 4px); }
-      100% { left: 0%; }
-    }
-    .pw-indicator-ltr {
-      animation: pw-sweep-ltr linear forwards;
-    }
-    .pw-indicator-rtl {
-      animation: pw-sweep-rtl linear forwards;
-    }
-
-    /* ── Hit feedback ── */
-    @keyframes pw-flash-green {
-      0%   { box-shadow: 0 0 0   rgba(34,197,94,0); }
-      25%  { box-shadow: 0 0 32px rgba(34,197,94,0.75); }
-      100% { box-shadow: 0 0 0   rgba(34,197,94,0); }
-    }
-    @keyframes pw-flash-yellow {
-      0%   { box-shadow: 0 0 0   rgba(234,179,8,0); }
-      25%  { box-shadow: 0 0 24px rgba(234,179,8,0.60); }
-      100% { box-shadow: 0 0 0   rgba(234,179,8,0); }
-    }
-    @keyframes pw-flash-red {
-      0%   { background-color: inherit; }
-      20%  { background-color: rgba(239,68,68,0.25); }
-      100% { background-color: inherit; }
-    }
-    .pw-hit-green   { animation: pw-flash-green  420ms ease; }
-    .pw-hit-yellow  { animation: pw-flash-yellow 380ms ease; }
-    .pw-hit-red     { animation: pw-flash-red    500ms ease; }
-
-    /* ── Perfect Torque gold flash ── */
-    @keyframes pw-perfect-torque {
-      0%   { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1);   }
-      15%  { box-shadow: 0 0 42px rgba(245,158,11,0.9); filter: brightness(1.6); }
-      60%  { box-shadow: 0 0 24px rgba(245,158,11,0.50); filter: brightness(1.2); }
-      100% { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1);   }
-    }
-    .pw-perfect-torque-flash {
-      animation: pw-perfect-torque 700ms ease !important;
+    /* ── Container ── */
+    .prec-container {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 540px;
+      margin: 0 auto;
+      font-family: var(--font-ui, sans-serif);
+      user-select: none;
+      -webkit-user-select: none;
+      border-radius: 8px;
+      transition: background 600ms ease, box-shadow 600ms ease;
     }
 
-    /* ── Sequence break shake ── */
-    @keyframes pw-seq-shake {
-      0%          { transform: translateX(0); }
-      15%, 45%, 75% { transform: translateX(-6px); }
-      30%, 60%, 90% { transform: translateX(6px); }
-      100%        { transform: translateX(0); }
-    }
-    .pw-seq-shake { animation: pw-seq-shake 320ms ease !important; }
-
-    /* ── Result step icons pulse in ── */
-    @keyframes pw-step-pop {
-      0%   { transform: scale(0.5); opacity: 0; }
-      60%  { transform: scale(1.2); opacity: 1; }
-      100% { transform: scale(1);   opacity: 1; }
-    }
-    .pw-step-pop { animation: pw-step-pop 220ms ease !important; }
-
-    /* ── Flavor text fade ── */
-    @keyframes pw-flavor-in {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .pw-flavor-in { animation: pw-flavor-in 200ms ease !important; }
-
-    /* ── Completion sweep ── */
-    @keyframes pw-complete-sweep {
-      0%   { background: var(--condition-good); }
-      40%  { background: #10b981; filter: brightness(1.6); }
-      100% { background: var(--condition-excellent);
-             box-shadow: 0 0 22px rgba(16,185,129,0.45); }
-    }
-    .pw-complete-bar {
-      animation: pw-complete-sweep 700ms ease forwards !important;
+    /* Torque Lock amber glow on container */
+    .mechanic-container--torque-lock {
+      background: rgba(245, 158, 11, 0.04) !important;
     }
 
-    /* ── Zone label badges ── */
-    .pw-zone-label {
+    @keyframes prec-torque-lock-pulse {
+      0%, 100% { box-shadow: 0 0 0px rgba(245,158,11,0); }
+      50%       { box-shadow: 0 0 24px rgba(245,158,11,0.18); }
+    }
+    .mechanic-container--torque-lock {
+      animation: prec-torque-lock-pulse 2s ease infinite;
+    }
+
+    /* Resonance levels on container */
+    .resonance-note--active-1 { --prec-resonance-opacity: 0.06; }
+    .resonance-note--active-2 { --prec-resonance-opacity: 0.10; }
+    .resonance-note--active-3 { --prec-resonance-opacity: 0.14; }
+    .resonance-note--active-4 { --prec-resonance-opacity: 0.18; }
+    .resonance-note--active-5 { --prec-resonance-opacity: 0.24; }
+
+    /* ── Header ── */
+    .prec-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .prec-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary, #fff);
+    }
+    .prec-meta {
       font-family: var(--font-data, monospace);
-      font-size: 10px;
-      letter-spacing: 0.12em;
-      text-align: center;
-      padding-top: 4px;
+      font-size: 11px;
+      color: var(--text-muted, #666);
     }
 
-    /* ── Sequence position marker ── */
-    .pw-seq-marker {
+    /* ── Tool badges ── */
+    .prec-badge {
+      font-family: var(--font-data, monospace);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .prec-badge--tool {
+      background: rgba(78,127,255,0.12);
+      color: #4e7fff;
+      border: 1px solid rgba(78,127,255,0.3);
+    }
+
+    /* ── Pendulum area ── */
+    .prec-pendulum-area {
+      position: relative;
+      height: 230px;
+      width: 100%;
+      border: 1px solid var(--border, #333);
+      border-radius: 8px;
+      background: var(--bg-elevated, #111);
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      overflow: hidden;
+    }
+
+    /* Centre guideline — thin vertical line at the tap zone */
+    .prec-pendulum-area::before {
+      content: '';
       position: absolute;
-      top: -18px;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 1px;
+      background: rgba(255,255,255,0.06);
+      pointer-events: none;
+    }
+
+    /* ── Pivot point ── */
+    .prec-pivot {
+      position: absolute;
+      top: 26px;
+      left: 50%;
+      width: 0;
+      height: 0;
+      /* The arm rotates from this exact point */
+    }
+
+    /* Visible pivot dot */
+    .prec-pivot::before {
+      content: '';
+      position: absolute;
+      top: -6px;
+      left: -6px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--text-secondary, #aaa);
+      border: 1px solid var(--border, #444);
+      transition: border-color 150ms, box-shadow 150ms;
+      z-index: 3;
+    }
+    .prec-pivot--in-window::before {
+      border-color: var(--accent, #60a5fa);
+      box-shadow: 0 0 8px var(--accent, #60a5fa);
+    }
+
+    /* ── Pendulum arm ── */
+    .prec-arm {
+      position: absolute;
+      top: 0;
+      left: -2px;
+      width: 4px;
+      height: 158px;
+      background: linear-gradient(to bottom,
+        var(--text-secondary, #666) 0%,
+        var(--border, #444) 80%,
+        transparent 100%);
+      border-radius: 2px;
+      transform-origin: top center;
+      transform: rotate(0deg);
+      z-index: 2;
+    }
+
+    /* ── Pendulum bob ── */
+    .prec-bob {
+      position: absolute;
+      bottom: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--bg-card, #1c1c1c);
+      border: 2px solid var(--text-secondary, #555);
+      transition: border-color 100ms ease, box-shadow 100ms ease, background 100ms ease;
+      z-index: 3;
+    }
+    .prec-bob--in-window {
+      border-color: var(--accent, #60a5fa);
+      box-shadow: 0 0 10px var(--accent, #60a5fa);
+      background: rgba(96, 165, 250, 0.12);
+    }
+
+    /* ── Window label ── */
+    .prec-window-indicator {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
       transform: translateX(-50%);
       font-family: var(--font-data, monospace);
       font-size: 11px;
       font-weight: 700;
-      color: var(--text-primary, #fff);
+      letter-spacing: 0.12em;
+      color: var(--text-muted, #444);
       pointer-events: none;
-      transition: opacity 150ms;
-    }
-
-    /* ── Tap anywhere overlay (mobile) ── */
-    .pw-mobile-tap-area {
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-
-    /* ── Result dots wrap ── */
-    .pw-results-wrap {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-      align-items: center;
-    }
-    .pw-result-icon {
-      display: inline-block;
-      font-size: 15px;
-      line-height: 1;
-      transition: opacity 150ms;
-    }
-
-    /* ── Hit label pop ── */
-    @keyframes pw-hit-label-pop {
-      0%   { opacity: 1; transform: translateY(0) scale(1); }
-      60%  { opacity: 1; transform: translateY(-20px) scale(1.15); }
-      100% { opacity: 0; transform: translateY(-36px) scale(0.9); }
-    }
-    .pw-hit-label-anim {
-      position: absolute;
-      pointer-events: none;
-      font-family: var(--font-data, monospace);
-      font-size: 13px;
-      font-weight: 700;
-      animation: pw-hit-label-pop 600ms ease forwards;
+      transition: color 100ms ease;
       white-space: nowrap;
-      z-index: 10;
     }
+    .prec-window--active {
+      color: var(--accent, #60a5fa);
+    }
+
+    /* ── Sequence step row ── */
+    .prec-seq-row {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .prec-seq-step {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--border, #444);
+      background: var(--bg-elevated, #111);
+      transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+      position: relative;
+    }
+    /* Already completed in this sequence */
+    .prec-seq-step--filled {
+      background: var(--accent, #60a5fa);
+      border-color: var(--accent, #60a5fa);
+      box-shadow: 0 0 6px rgba(96,165,250,0.4);
+    }
+    /* Current target step */
+    .prec-seq-step--active {
+      border-color: var(--accent, #60a5fa);
+      animation: prec-step-pulse 900ms ease infinite;
+    }
+    @keyframes prec-step-pulse {
+      0%, 100% { box-shadow: 0 0 0px rgba(96,165,250,0); }
+      50%       { box-shadow: 0 0 10px rgba(96,165,250,0.5); }
+    }
+    /* Final (critical) step */
+    .prec-seq-step--critical {
+      border-color: #f59e0b !important;
+      animation: prec-critical-pulse 500ms ease infinite !important;
+    }
+    @keyframes prec-critical-pulse {
+      0%, 100% { box-shadow: 0 0 0px rgba(245,158,11,0); }
+      50%       { box-shadow: 0 0 12px rgba(245,158,11,0.7); }
+    }
+
+    /* ── Torque Lock pips ── */
+    .prec-lock-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      justify-content: center;
+    }
+    .prec-lock-pip {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border, #333);
+      background: var(--bg-elevated, #111);
+      transition: background 300ms ease, border-color 300ms ease, box-shadow 300ms ease;
+    }
+    .prec-lock-pip--amber {
+      background: rgba(245, 158, 11, 0.25);
+      border-color: #f59e0b;
+    }
+    .prec-lock-pip--gold {
+      background: #f59e0b;
+      border-color: #fbbf24;
+      box-shadow: 0 0 6px rgba(245,158,11,0.5);
+    }
+    .prec-lock-label {
+      font-family: var(--font-data, monospace);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--text-muted, #555);
+      text-transform: uppercase;
+      transition: color 300ms ease;
+      margin-left: 4px;
+    }
+    .prec-lock-label--active {
+      color: #f59e0b;
+    }
+
+    /* ── Progress bar ── */
+    .prec-progress-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .prec-progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-data, monospace);
+      font-size: 11px;
+      color: var(--text-secondary, #aaa);
+    }
+    .prec-progress-track {
+      height: 10px;
+      border-radius: 5px;
+      background: var(--bg-elevated, #1a1a1a);
+      border: 1px solid var(--border, #333);
+      overflow: hidden;
+    }
+    .prec-progress-fill {
+      height: 100%;
+      border-radius: 5px;
+      background: var(--condition-good, #22c55e);
+      transition: width 300ms ease;
+    }
+    @keyframes prec-complete-sweep {
+      0%   { background: var(--condition-good, #22c55e); }
+      50%  { background: #10b981; filter: brightness(1.5); }
+      100% { background: var(--condition-excellent, #10b981);
+             box-shadow: 0 0 16px rgba(16,185,129,0.4); }
+    }
+    .prec-progress-fill--complete {
+      animation: prec-complete-sweep 700ms ease forwards !important;
+    }
+
+    /* ── Flavor text ── */
+    .prec-flavor {
+      font-size: 12px;
+      font-style: italic;
+      color: var(--text-secondary, #aaa);
+      text-align: center;
+      min-height: 18px;
+      transition: opacity 150ms ease;
+    }
+
+    /* ── Sequence break shake ── */
+    @keyframes prec-shake {
+      0%          { transform: translateX(0); }
+      15%, 45%, 75% { transform: translateX(-7px); }
+      30%, 60%, 90% { transform: translateX(7px); }
+      100%        { transform: translateX(0); }
+    }
+    .prec-shake {
+      animation: prec-shake 350ms ease !important;
+    }
+
+    /* ── Completion flash ── */
+    @keyframes prec-done-flash {
+      from { background: rgba(34,197,94,0.15); }
+      to   { background: transparent; }
+    }
+    .prec-done { animation: prec-done-flash 800ms ease forwards; }
   `;
   document.head.appendChild(style);
 }
+
+
+// ── Flavor text pools ─────────────────────────────────────────
+const GENERIC_FLAVOR = [
+  'Smooth and steady.',
+  'Right on the money.',
+  'Spec is spec.',
+  'Feel the centre.',
+  'Wait for the window.',
+  'Patience. Then commit.',
+  'The pendulum doesn\'t lie.',
+  'Each click builds the chord.',
+];
+
+const COMPLETE_FLAVOR = [
+  'Sequence complete. Keep going.',
+  'Clean work. One more.',
+  'That\'s torqued to spec.',
+  'Locked in.',
+];
+
+const BREAK_FLAVOR = [
+  'Sequence broken. Start again.',
+  'Too early. Wait for centre.',
+  'Off beat. Reset.',
+  'The window was closed.',
+  'Don\'t rush the pendulum.',
+];
 
 
 // ════════════════════════════════════════════════════════════
@@ -177,12 +395,12 @@ function _injectCSS() {
 /**
  * Render the Precision Work mechanic into `container` and begin the interaction.
  *
- * @param {object}   partData       – Part definition (name, difficulty, flavorText, …)
- * @param {object}   instanceState  – Part instance state (condition, repairProgress, …)
+ * @param {object}   partData       – Part definition (name, difficulty, flavorText, id, …)
+ * @param {object}   instanceState  – Part instance state (condition, …)
  * @param {Element}  container      – DOM element to render into
- * @param {Function} onComplete     – Called with { newCondition, xpEarned, logEntries[] }
- * @param {object}   playerTools    – Map of owned tool IDs (check torque_wrench, angle_gauge)
- * @param {number}   skillLevel     – Player's precision skill level (1–n)
+ * @param {Function} onComplete     – Called with { newCondition, xpEarned, logEntries }
+ * @param {object}   playerTools    – Map of owned tool IDs (torque_wrench, angle_gauge)
+ * @param {number}   skillLevel     – Player's precision skill level (1–20)
  */
 export function startPrecisionWork(
   partData,
@@ -194,498 +412,271 @@ export function startPrecisionWork(
 ) {
   _injectCSS();
 
-  // ── Derived constants ────────────────────────────────────────
-  const difficulty     = clamp(partData.difficulty ?? 0.5, 0, 1);
+  // ── Constants ────────────────────────────────────────────────
+  const difficulty      = clamp(partData.difficulty ?? 0.5, 0, 1);
   const hasTorqueWrench = !!playerTools.torque_wrench;
   const hasAngleGauge   = !!playerTools.angle_gauge;
 
-  // Steps: 4 at diff 0.1, 11 at diff 0.9
-  const totalSteps = 4 + Math.floor(difficulty * 8);
+  // Use RhythmEngine to derive BPM — same part always gets the same BPM
+  const map = RhythmEngine.generateMap(partData.id ?? 'unknown', difficulty, 'precision');
+  const bpm = map.bpm;
 
-  // Sweep duration (lower = faster = harder)
-  let sweepDuration = 2.5 - difficulty * 1.5;            // 2.35 s → 1.15 s
-  if (hasTorqueWrench) sweepDuration *= 1.15;            // 15% slower
-  sweepDuration *= (1 + skillLevel * 0.01);              // 1% per skill level
+  // Pendulum physics
+  const MAX_ANGLE = 55;                    // degrees, peak swing
+  const period    = (60 / bpm) * 2;       // seconds per full pendulum cycle
 
-  // Green zone width (percentage of bar)
-  let greenPct = 12 - difficulty * 7.78;                 // ~12% → ~5%
-  greenPct = clamp(greenPct, 5, 12);
-  if (hasAngleGauge) greenPct += 10;                     // +10% additive
-  greenPct += skillLevel * 1;                            // +1% per skill level
+  // Timing window: 12° (easy diff 0) → 4° (hard diff 1)
+  let timingWindowDeg = 12 - (difficulty * 8);
+  if (hasAngleGauge) timingWindowDeg += 3;
+  // Skill 6–10: +1°, 11–15: +2°, 16–20: +3°
+  if (skillLevel >= 16) timingWindowDeg += 3;
+  else if (skillLevel >= 11) timingWindowDeg += 2;
+  else if (skillLevel >= 6)  timingWindowDeg += 1;
+  timingWindowDeg = clamp(timingWindowDeg, 3, 15);
 
-  // Yellow flanks (fixed)
-  const yellowPct = 8; // each side
+  // Torque wrench: pendulum period is 12% slower (easier to time)
+  const effectivePeriod = hasTorqueWrench ? period * 1.12 : period;
 
-  // Torque spec label (cosmetic)
-  const torqueSpec = (8 + difficulty * 60).toFixed(1);
+  // Sequence length: 3–8 beats
+  const seqLength = 3 + Math.round(difficulty * 5);
 
-  // Condition math
-  const startCondition   = clamp(instanceState.condition ?? 0.2, 0, 1);
-  const targetImprovement = (0.90 - startCondition) * 0.8;
-  const stepValue         = targetImprovement / totalSteps;
+  // Progress: how many sequences needed
+  const startCondition    = clamp(instanceState.condition ?? 0.2, 0, 1);
+  const sequencesRequired = Math.max(3, Math.round((1 - startCondition) * 8));
 
-  // XP
+  // XP per sequence
   const baseXP = 15 + difficulty * 50;
 
-  // Sequence enforcement (high difficulty)
-  const useSequence = difficulty > 0.6;
-
-  // Perfect Torque tracking
-  let nextPerfectAt = randomInt(3, 7); // variable 3-7 green hits
-
-  // ── Flavor ──────────────────────────────────────────────────
-  const GENERIC_FLAVOR = [
-    'Smooth and steady. Don\'t rush.',
-    'Right on the money.',
-    'Spec is spec. No shortcuts.',
-    'Feel the click.',
-    'That\'s torqued to spec.',
-    'Careful... the gasket surface is soft.',
-  ];
-  const partFlavors = Array.isArray(partData.flavorText) && partData.flavorText.length
-    ? partData.flavorText : [];
-  const ALL_FLAVOR = [...partFlavors, ...GENERIC_FLAVOR];
-
   // ── Mutable state ────────────────────────────────────────────
-  let currentStep      = 0;        // 0-indexed
-  let stepResults      = [];       // 'pending'|'green'|'yellow'|'red' per step
-  let conditionDelta   = 0;        // accumulated condition change
-  let greenHits        = 0;
-  let yellowHits       = 0;
-  let redHits          = 0;
-  let consecutiveGreens = 0;       // for Perfect Torque
-  let perfectBonusCount = 0;
-  let xpBonusMultiplier = 1;
-  let isComplete       = false;
+  let elapsed         = 0;
+  let lastTs          = null;
+  let rafId           = null;
+  let isComplete      = false;
+  let inputBlocked    = false;
 
-  // Sequence state (for difficulty > 0.6)
-  // We assign each step a "target position" within the bar
-  // The player must hit them in order.
-  // For simplicity, positions are evenly spaced with small jitter.
-  const seqPositions  = [];  // array of percentages [0-100] where center of target is
-  let   seqCurrentIdx = 0;   // which seq position is expected next (resets on break)
-  if (useSequence) {
-    for (let i = 0; i < totalSteps; i++) {
-      const base  = 10 + (i / (totalSteps - 1 || 1)) * 80;
-      const jitter = randomRange(-5, 5);
-      seqPositions.push(clamp(base + jitter, 8, 92));
-    }
+  // Pendulum
+  let pendulumAngle   = 0;
+  let prevAngle       = 0;
+  let wasInWindow     = false;
+  let wasAtExtreme    = false;
+
+  // Sequences
+  let currentStep     = 0;          // 0 … seqLength-1
+  let consecutiveSeqs = 0;          // consecutive complete sequences (for Torque Lock)
+  let seqsCompleted   = 0;          // total across the whole job
+  let seqsBroken      = 0;
+
+  // Torque Lock
+  let inTorqueLock    = false;
+  let lockSeqCount    = 0;          // sequences in current Torque Lock run
+  let resonanceHandles = [];
+
+  // XP
+  let totalXP         = 0;
+
+  // ── Audio helper ─────────────────────────────────────────────
+  function playA(method, ...args) {
+    try { window.audioManager?.[method]?.(...args); } catch (_) {}
   }
 
-  // Sweep state (managed via requestAnimationFrame)
-  let sweepPct        = 0;         // 0-100, current indicator position
-  let sweepDir        = 1;         // 1 = left-to-right, -1 = right-to-left
-  let lastTimestamp   = null;
-  let rafId           = null;
-  let inputBlocked    = false;     // brief cooldown after each tap
+  // ── DOM helpers ──────────────────────────────────────────────
+  function _el(tag, props = {}) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if      (k === 'style')       n.style.cssText = v;
+      else if (k === 'className')   n.className = v;
+      else if (k === 'textContent') n.textContent = v;
+      else if (k === 'innerHTML')   n.innerHTML = v;
+      else                          n.setAttribute(k, v);
+    }
+    return n;
+  }
 
-  // Pre-fill results as pending
-  for (let i = 0; i < totalSteps; i++) stepResults.push('pending');
-
-
-  // ════════════════════════════════════════════════════════════
-  //  BUILD UI
-  // ════════════════════════════════════════════════════════════
-
+  // ── Build UI ─────────────────────────────────────────────────
   container.innerHTML = '';
-  container.style.cssText = [
-    'padding: 16px',
-    'display: flex',
-    'flex-direction: column',
-    'gap: 16px',
-    'max-width: 560px',
-    'margin: 0 auto',
-    'font-family: var(--font-ui, sans-serif)',
-    'user-select: none',
-    '-webkit-user-select: none',
-  ].join(';');
+  container.className = 'prec-container';
 
-  // ── Header row ───────────────────────────────────────────────
-  const headerRow = _el('div', {
-    style: 'display:flex; justify-content:space-between; align-items:flex-start; gap:8px;',
-  });
-
-  const titleBlock = _el('div', {});
-  const titleEl = _el('div', {
-    style: 'font-size:15px; font-weight:700; color:var(--text-primary,#fff); margin-bottom:3px;',
-    textContent: `Torquing: ${partData.name ?? 'Component'}`,
-  });
-  const specEl = _el('div', {
-    style: 'font-family:var(--font-data,monospace); font-size:12px; color:var(--text-secondary,#aaa);',
-    textContent: `Spec: ${torqueSpec} ft-lbs`,
-  });
-  titleBlock.appendChild(titleEl);
-  titleBlock.appendChild(specEl);
-
-  const stepCounterEl = _el('div', {
-    style: [
-      'font-family: var(--font-data, monospace)',
-      'font-size: 13px',
-      'font-weight: 700',
-      'color: var(--text-primary, #fff)',
-      'background: var(--bg-elevated, #1a1a1a)',
-      'border: 1px solid var(--border, #333)',
-      'border-radius: 6px',
-      'padding: 4px 10px',
-      'white-space: nowrap',
-    ].join(';'),
-    textContent: `Step 1/${totalSteps}`,
-  });
-
-  headerRow.appendChild(titleBlock);
-  headerRow.appendChild(stepCounterEl);
-  container.appendChild(headerRow);
+  // Header
+  const headerEl = _el('div', { className: 'prec-header' });
+  headerEl.appendChild(_el('div', { className: 'prec-title',
+    textContent: `Precision: ${partData.name ?? 'Component'}` }));
+  const metaEl = _el('div', { className: 'prec-meta',
+    textContent: `BPM ${bpm}  ·  ${seqLength}-step sequence  ·  ${sequencesRequired} required` });
+  headerEl.appendChild(metaEl);
+  container.appendChild(headerEl);
 
   // Tool badges
   if (hasTorqueWrench || hasAngleGauge) {
-    const toolBadges = _el('div', {
-      style: 'display:flex; gap:6px; flex-wrap:wrap;',
-    });
-    if (hasTorqueWrench) {
-      toolBadges.appendChild(_el('span', {
-        style: 'font-family:var(--font-data,monospace); font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(78,127,255,0.15); color:#4e7fff; border:1px solid #4e7fff55;',
-        textContent: '🔩 Torque Wrench: +15% time',
-      }));
-    }
-    if (hasAngleGauge) {
-      toolBadges.appendChild(_el('span', {
-        style: 'font-family:var(--font-data,monospace); font-size:11px; padding:2px 8px; border-radius:4px; background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid #22c55e55;',
-        textContent: '📐 Angle Gauge: +10% zone',
-      }));
-    }
-    container.appendChild(toolBadges);
+    const badges = _el('div', { style: 'display:flex; gap:6px; flex-wrap:wrap;' });
+    if (hasTorqueWrench) badges.appendChild(_el('span', {
+      className: 'prec-badge prec-badge--tool',
+      textContent: '🔩 Torque Wrench: slower pendulum',
+    }));
+    if (hasAngleGauge) badges.appendChild(_el('span', {
+      className: 'prec-badge prec-badge--tool',
+      textContent: '📐 Angle Gauge: +3° window',
+    }));
+    container.appendChild(badges);
   }
 
-  // ── Sweep bar wrapper ────────────────────────────────────────
-  const barOuter = _el('div', {
-    style: [
-      'position: relative',
-      'width: 100%',
-      'border-radius: 8px',
-      'overflow: visible',
-      'padding-bottom: 6px',
-    ].join(';'),
-  });
+  // ── Pendulum area ────────────────────────────────────────────
+  const pendulumArea = _el('div', { className: 'prec-pendulum-area' });
 
-  // Zone label row (above bar)
-  const zoneLabelRow = _el('div', {
-    style: 'display:flex; width:100%; margin-bottom:4px; position:relative;',
-  });
+  //  Pivot → arm (rotates) → bob
+  const pivotEl = _el('div', { className: 'prec-pivot' });
+  const armEl   = _el('div', { className: 'prec-arm' });
+  const bobEl   = _el('div', { className: 'prec-bob' });
+  armEl.appendChild(bobEl);
+  pivotEl.appendChild(armEl);
+  pendulumArea.appendChild(pivotEl);
 
-  // Sequence markers container (sits above bar)
-  const seqMarkerContainer = _el('div', {
-    style: 'position:relative; height:20px; width:100%; margin-bottom:2px;',
+  // Window label at centre bottom
+  const windowLabelEl = _el('div', {
+    className: 'prec-window-indicator',
+    textContent: '[ TAP HERE ]',
   });
+  pendulumArea.appendChild(windowLabelEl);
 
-  if (useSequence) {
-    for (let i = 0; i < totalSteps; i++) {
-      const marker = _el('div', {
-        className: 'pw-seq-marker',
-        style: `left: ${seqPositions[i]}%;`,
-        textContent: String(i + 1),
-      });
-      marker.dataset.seqIdx = String(i);
-      seqMarkerContainer.appendChild(marker);
-    }
-    barOuter.appendChild(seqMarkerContainer);
+  container.appendChild(pendulumArea);
+
+  // ── Sequence indicators ──────────────────────────────────────
+  const seqRowEl   = _el('div', { className: 'prec-seq-row' });
+  const seqStepEls = [];
+  for (let i = 0; i < seqLength; i++) {
+    const stepEl = _el('div', { className: 'prec-seq-step' });
+    stepEl.title = i === seqLength - 1 ? 'CRITICAL — smaller window' : `Beat ${i + 1}`;
+    seqStepEls.push(stepEl);
+    seqRowEl.appendChild(stepEl);
   }
+  container.appendChild(seqRowEl);
 
-  // The actual bar
-  const barEl = _el('div', {
-    style: [
-      'position: relative',
-      'width: 100%',
-      'height: 52px',
-      'border-radius: 8px',
-      'overflow: hidden',
-      'border: 1px solid var(--border, #333)',
-      'cursor: pointer',
-      'background: var(--bg-elevated, #111)',
-    ].join(';'),
-  });
-
-  // ── Zone segments (red | yellow | green | yellow | red) ──────
-  // Positions: red from 0 → leftYellowStart, yellow, green center, yellow, red
-  const greenStart  = 50 - greenPct / 2;  // % from left
-  const greenEnd    = 50 + greenPct / 2;
-  const leftYStart  = greenStart - yellowPct;
-  const rightYEnd   = greenEnd   + yellowPct;
-
-  // We draw via absolutely-positioned divs
-  // RED left
-  _appendZone(barEl, 0,          leftYStart,  '#ef444426', '#ef4444');
-  // YELLOW left
-  _appendZone(barEl, leftYStart, greenStart,  '#eab30826', '#eab308');
-  // GREEN center
-  _appendZone(barEl, greenStart, greenEnd,    '#22c55e30', '#22c55e');
-  // YELLOW right
-  _appendZone(barEl, greenEnd,   rightYEnd,   '#eab30826', '#eab308');
-  // RED right
-  _appendZone(barEl, rightYEnd,  100,         '#ef444426', '#ef4444');
-
-  // ── Zone labels below bar ────────────────────────────────────
-  const zoneLabels = _el('div', {
-    style: 'display:flex; width:100%; justify-content:space-between; margin-top:4px;',
-  });
-  zoneLabels.appendChild(_el('span', { className: 'pw-zone-label', style: 'color:#ef4444; flex:1;', textContent: 'RED' }));
-  zoneLabels.appendChild(_el('span', { className: 'pw-zone-label', style: 'color:#eab308; flex:0 0 auto; padding:0 8px;', textContent: 'YLW' }));
-  zoneLabels.appendChild(_el('span', { className: 'pw-zone-label', style: 'color:#22c55e; flex:0 0 auto; padding:0 8px;', textContent: 'GRN' }));
-  zoneLabels.appendChild(_el('span', { className: 'pw-zone-label', style: 'color:#eab308; flex:0 0 auto; padding:0 8px;', textContent: 'YLW' }));
-  zoneLabels.appendChild(_el('span', { className: 'pw-zone-label', style: 'color:#ef4444; flex:1; text-align:right;', textContent: 'RED' }));
-
-  // ── Sweep indicator ──────────────────────────────────────────
-  const indicatorEl = _el('div', {
-    style: [
-      'position: absolute',
-      'top: 0',
-      'left: 0',
-      'width: 4px',
-      'height: 100%',
-      'background: #fff',
-      'border-radius: 2px',
-      'box-shadow: 0 0 8px rgba(255,255,255,0.85)',
-      'pointer-events: none',
-      'z-index: 5',
-    ].join(';'),
-  });
-  barEl.appendChild(indicatorEl);
-
-  // ── TAP NOW label inside bar ─────────────────────────────────
-  const tapLabelEl = _el('div', {
-    style: [
-      'position: absolute',
-      'bottom: 6px',
-      'left: 50%',
-      'transform: translateX(-50%)',
-      'font-family: var(--font-data, monospace)',
-      'font-size: 11px',
-      'font-weight: 700',
-      'color: var(--text-secondary, #888)',
-      'letter-spacing: 0.12em',
-      'pointer-events: none',
-      'z-index: 6',
-    ].join(';'),
-    textContent: '[ TAP NOW ]',
-  });
-  barEl.appendChild(tapLabelEl);
-
-  barOuter.appendChild(barEl);
-  barOuter.appendChild(zoneLabels);
-  container.appendChild(barOuter);
-
-  // ── Perfect Torque notice (hidden until triggered) ───────────
-  const perfectNoticeEl = _el('div', {
-    style: [
-      'font-family: var(--font-data, monospace)',
-      'font-size: 13px',
-      'font-weight: 700',
-      'color: #f59e0b',
-      'text-align: center',
-      'min-height: 20px',
-      'opacity: 0',
-      'transition: opacity 200ms',
-    ].join(';'),
-    textContent: '⚡ Perfect Torque!',
-  });
-  container.appendChild(perfectNoticeEl);
-
-  // ── Sequence notice ──────────────────────────────────────────
-  let seqNoticeEl = null;
-  if (useSequence) {
-    seqNoticeEl = _el('div', {
-      style: [
-        'font-family: var(--font-data, monospace)',
-        'font-size: 12px',
-        'color: var(--text-secondary, #aaa)',
-        'text-align: center',
-        'background: var(--bg-elevated, #111)',
-        'border: 1px solid var(--border, #333)',
-        'border-radius: 6px',
-        'padding: 4px 10px',
-      ].join(';'),
-      textContent: `Sequence: hit positions 1 → ${totalSteps} in order`,
-    });
-    container.appendChild(seqNoticeEl);
+  // ── Torque Lock pips ─────────────────────────────────────────
+  const lockRowEl  = _el('div', { className: 'prec-lock-row' });
+  const lockPipEls = [];
+  for (let i = 0; i < 3; i++) {
+    const pip = _el('div', { className: 'prec-lock-pip' });
+    lockPipEls.push(pip);
+    lockRowEl.appendChild(pip);
   }
+  const lockLabelEl = _el('span', { className: 'prec-lock-label', textContent: 'TORQUE LOCK' });
+  lockRowEl.appendChild(lockLabelEl);
+  container.appendChild(lockRowEl);
 
-  // ── Result icons row ─────────────────────────────────────────
-  const resultsWrap = _el('div', { className: 'pw-results-wrap' });
-  const resultLabel = _el('span', {
-    style: 'font-family:var(--font-data,monospace); font-size:12px; color:var(--text-secondary,#aaa); margin-right:4px;',
-    textContent: 'Result:',
-  });
-  resultsWrap.appendChild(resultLabel);
+  // ── Progress bar ─────────────────────────────────────────────
+  const progressWrap = _el('div', { className: 'prec-progress-wrap' });
+  const progressLabels = _el('div', { className: 'prec-progress-labels' });
+  progressLabels.appendChild(_el('span', { textContent: 'Progress' }));
+  const progressPctEl = _el('span', { textContent: '0%' });
+  progressLabels.appendChild(progressPctEl);
+  const progressTrack = _el('div', { className: 'prec-progress-track' });
+  const progressFill  = _el('div', { className: 'prec-progress-fill', style: 'width:0%' });
+  progressTrack.appendChild(progressFill);
+  progressWrap.appendChild(progressLabels);
+  progressWrap.appendChild(progressTrack);
+  container.appendChild(progressWrap);
 
-  const resultIconEls = [];
-  for (let i = 0; i < totalSteps; i++) {
-    const ico = _el('span', {
-      className: 'pw-result-icon',
-      textContent: '—',
-      style: 'color:var(--text-muted,#555);',
-    });
-    resultIconEls.push(ico);
-    resultsWrap.appendChild(ico);
-  }
-  container.appendChild(resultsWrap);
-
-  // ── Flavor text ───────────────────────────────────────────────
+  // ── Flavor text ──────────────────────────────────────────────
   const flavorEl = _el('div', {
-    style: [
-      'font-size: 13px',
-      'font-style: italic',
-      'color: var(--text-secondary, #aaa)',
-      'min-height: 20px',
-      'text-align: center',
-      'padding: 4px 0',
-    ].join(';'),
-    textContent: `"${pickRandom(ALL_FLAVOR)}"`,
+    className: 'prec-flavor',
+    textContent: `"${pickRandom([...GENERIC_FLAVOR, ...(Array.isArray(partData.flavorText) ? partData.flavorText : [])])}"`,
   });
   container.appendChild(flavorEl);
 
 
   // ════════════════════════════════════════════════════════════
-  //  HELPERS
+  //  UI UPDATE HELPERS
   // ════════════════════════════════════════════════════════════
 
-  function _appendZone(parent, pctStart, pctEnd, bg, borderColor) {
-    const zone = _el('div', {
-      style: [
-        'position: absolute',
-        'top: 0',
-        'height: 100%',
-        `left: ${pctStart}%`,
-        `width: ${pctEnd - pctStart}%`,
-        `background: ${bg}`,
-        `border-left: 1px solid ${borderColor}55`,
-        `border-right: 1px solid ${borderColor}55`,
-        'pointer-events: none',
-        'z-index: 1',
-      ].join(';'),
-    });
-    parent.appendChild(zone);
-  }
+  function updateSeqIndicators() {
+    for (let i = 0; i < seqLength; i++) {
+      const el = seqStepEls[i];
+      el.className = 'prec-seq-step';
 
-  function _triggerAnimation(el, cls, duration) {
-    el.classList.remove(cls);
-    void el.offsetWidth;
-    el.classList.add(cls);
-    if (duration) {
-      setTimeout(() => el.classList.remove(cls), duration);
-    } else {
-      el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
-    }
-  }
-
-  function playAudio(name, opts = {}) {
-    try {
-      const am = window.audioManager;
-      if (!am) return;
-      am.play(name, opts);
-    } catch (_) { /* audio not yet loaded */ }
-  }
-
-  function setFlavor(text, animate = true) {
-    flavorEl.textContent = `"${text}"`;
-    if (animate) {
-      flavorEl.classList.remove('pw-flavor-in');
-      void flavorEl.offsetWidth;
-      flavorEl.classList.add('pw-flavor-in');
-      flavorEl.addEventListener('animationend', () => flavorEl.classList.remove('pw-flavor-in'), { once: true });
-    }
-  }
-
-  function updateStepCounter() {
-    stepCounterEl.textContent = `Step ${Math.min(currentStep + 1, totalSteps)}/${totalSteps}`;
-  }
-
-  function spawnHitLabel(text, color) {
-    const lbl = _el('div', {
-      className: 'pw-hit-label-anim',
-      style: `color:${color}; top:4px; left:50%; transform:translateX(-50%);`,
-      textContent: text,
-    });
-    barOuter.style.position = 'relative';
-    barOuter.appendChild(lbl);
-    lbl.addEventListener('animationend', () => lbl.remove(), { once: true });
-  }
-
-  function updateSeqMarkers() {
-    if (!useSequence) return;
-    const markers = seqMarkerContainer.querySelectorAll('.pw-seq-marker');
-    markers.forEach(m => {
-      const idx = parseInt(m.dataset.seqIdx, 10);
-      if (idx < seqCurrentIdx) {
-        m.style.opacity = '0.25'; // already hit this session-step
-      } else if (idx === seqCurrentIdx) {
-        m.style.color   = '#22c55e';
-        m.style.opacity = '1';
-        m.style.textShadow = '0 0 8px #22c55e';
-      } else {
-        m.style.color   = 'var(--text-primary, #fff)';
-        m.style.opacity = '1';
-        m.style.textShadow = '';
+      if (i < currentStep) {
+        el.classList.add('prec-seq-step--filled');
+      } else if (i === currentStep) {
+        el.classList.add('prec-seq-step--active');
+        if (i === seqLength - 1) el.classList.add('prec-seq-step--critical');
+      } else if (i === seqLength - 1 && currentStep >= seqLength - 2) {
+        // Upcoming critical beat — warn one step early
+        el.classList.add('prec-seq-step--critical');
       }
-    });
-  }
-
-  function updateResultIcon(stepIdx, result) {
-    const ico = resultIconEls[stepIdx];
-    if (!ico) return;
-
-    let sym, color;
-    switch (result) {
-      case 'green':  sym = '✓'; color = '#22c55e'; break;
-      case 'yellow': sym = '○'; color = '#eab308'; break;
-      case 'red':    sym = '✗'; color = '#ef4444'; break;
-      default:       sym = '—'; color = 'var(--text-muted,#555)'; break;
     }
-    ico.textContent = sym;
-    ico.style.color = color;
-    _triggerAnimation(ico, 'pw-step-pop');
   }
 
-  function flashPerfectTorque() {
-    perfectNoticeEl.style.opacity = '1';
-    _triggerAnimation(barEl, 'pw-perfect-torque-flash', 700);
-    playAudio('torque_click', { pitch: 1.3 });
-    setTimeout(() => {
-      perfectNoticeEl.style.opacity = '0';
-    }, 1600);
+  function updateLockPips() {
+    for (let i = 0; i < 3; i++) {
+      lockPipEls[i].className = 'prec-lock-pip';
+      if (inTorqueLock) {
+        // Show how deep we are in the current lock
+        lockPipEls[i].classList.add(i < lockSeqCount ? 'prec-lock-pip--gold' : 'prec-lock-pip--amber');
+      } else {
+        if (i < consecutiveSeqs) lockPipEls[i].classList.add('prec-lock-pip--amber');
+      }
+    }
+    lockLabelEl.className = 'prec-lock-label' + (inTorqueLock ? ' prec-lock-label--active' : '');
+  }
+
+  function updateProgress() {
+    const pct = Math.min(100, Math.round((seqsCompleted / sequencesRequired) * 100));
+    progressFill.style.width  = `${pct}%`;
+    progressPctEl.textContent = `${pct}%`;
+  }
+
+  function setFlavor(text) {
+    flavorEl.textContent = `"${text}"`;
   }
 
 
   // ════════════════════════════════════════════════════════════
-  //  SWEEP ANIMATION LOOP (rAF-based, no CSS animation for movement)
+  //  RAF LOOP — pendulum physics
   // ════════════════════════════════════════════════════════════
 
-  function startSweep() {
-    lastTimestamp = null;
-    rafId = requestAnimationFrame(sweepTick);
-  }
-
-  function sweepTick(ts) {
+  function tick(ts) {
     if (isComplete) return;
 
-    if (lastTimestamp === null) lastTimestamp = ts;
-    const elapsed = ts - lastTimestamp;
-    lastTimestamp = ts;
+    if (lastTs === null) lastTs = ts;
+    // Cap delta to 50ms to avoid jumps after tab blur/resume
+    const delta = Math.min((ts - lastTs) / 1000, 0.05);
+    elapsed += delta;
+    lastTs   = ts;
 
-    // sweepDuration is seconds for one full sweep; convert to pct/ms
-    const pctPerMs = 100 / (sweepDuration * 1000);
-    sweepPct += sweepDir * pctPerMs * elapsed;
+    prevAngle    = pendulumAngle;
+    pendulumAngle = MAX_ANGLE * Math.sin((elapsed / effectivePeriod) * Math.PI * 2);
 
-    if (sweepPct >= 100) {
-      sweepPct = 100;
-      sweepDir = -1;
-    } else if (sweepPct <= 0) {
-      sweepPct = 0;
-      sweepDir = 1;
+    // ── Visual update ──────────────────────────────────────────
+    armEl.style.transform = `rotate(${pendulumAngle}deg)`;
+
+    // ── Centre crossing (sign change) → on-beat tick ──────────
+    const crossedCenter = (prevAngle > 0 && pendulumAngle <= 0) ||
+                          (prevAngle < 0 && pendulumAngle >= 0);
+    if (crossedCenter && elapsed > 0.1) { // skip very start
+      playA('playPrecisionTick', true);
     }
 
-    // Position indicator (account for 4px width)
-    indicatorEl.style.left = `calc(${sweepPct}% - ${sweepPct / 100 * 4}px)`;
+    // ── Turning point (near ±MAX, direction reversal) → quieter tick ──
+    const nearExtreme = Math.abs(pendulumAngle) > MAX_ANGLE * 0.88;
+    if (nearExtreme && !wasAtExtreme) {
+      playA('playPrecisionTick', false);
+    }
+    wasAtExtreme = nearExtreme;
 
-    rafId = requestAnimationFrame(sweepTick);
+    // ── Window detection ───────────────────────────────────────
+    const isCritical   = currentStep === seqLength - 1;
+    const activeWindow = isCritical ? timingWindowDeg * 0.5 : timingWindowDeg;
+    const inWindow     = Math.abs(pendulumAngle) < activeWindow;
+
+    if (inWindow && !wasInWindow) {
+      playA('playPrecisionWindowChime');
+    }
+    wasInWindow = inWindow;
+
+    // Update visual feedback on bob and pivot
+    bobEl.classList.toggle('prec-bob--in-window', inWindow);
+    pivotEl.classList.toggle('prec-pivot--in-window', inWindow);
+    windowLabelEl.classList.toggle('prec-window--active', inWindow);
+
+    rafId = requestAnimationFrame(tick);
   }
 
 
@@ -696,123 +687,129 @@ export function startPrecisionWork(
   function resolveHit() {
     if (isComplete || inputBlocked) return;
 
-    const pos = sweepPct; // 0-100
+    const isCritical   = currentStep === seqLength - 1;
+    const activeWindow = isCritical ? timingWindowDeg * 0.5 : timingWindowDeg;
+    const inWindow     = Math.abs(pendulumAngle) < activeWindow;
 
-    // ── Sequence check ───────────────────────────────────────
-    if (useSequence) {
-      const targetPos = seqPositions[seqCurrentIdx];
-      // The "hit window" for sequence is the green zone AROUND the target position
-      // not the bar's global green — the player must land near the target marker too.
-      const seqHalfWindow = greenPct / 2 + yellowPct; // generous: green+yellow from target
-      const seqGreenHalf  = greenPct / 2;
-      const dist = Math.abs(pos - targetPos);
-
-      if (dist > seqHalfWindow) {
-        // Sequence break — not even close to current target
-        seqCurrentIdx = 0;
-        _triggerAnimation(barEl, 'pw-seq-shake', 320);
-        spawnHitLabel('SEQUENCE BREAK', '#ef4444');
-        setFlavor('Wrong bolt! Start the pattern over.');
-        playAudio('miss');
-        updateSeqMarkers();
-        return; // do NOT advance step
-      }
-
-      // They hit near the right marker — now check green/yellow/red quality
-      if (dist <= seqGreenHalf) {
-        // Good and in sequence — proceed to normal green resolution
-        seqCurrentIdx++;
-        if (seqCurrentIdx < totalSteps) updateSeqMarkers();
-        // fall through to zone classification below using seqGreenHalf
-      } else {
-        // Yellow-zone hit near the marker — acceptable but not perfect
-        seqCurrentIdx++;
-        if (seqCurrentIdx < totalSteps) updateSeqMarkers();
-        registerHit('yellow', pos);
-        return;
-      }
+    if (!inWindow) {
+      handleBreak();
+      return;
     }
 
-    // ── Zone classification (global bar zones) ────────────────
-    let zone;
-    if (pos >= greenStart && pos <= greenEnd) {
-      zone = 'green';
-    } else if ((pos >= leftYStart && pos < greenStart) ||
-               (pos > greenEnd   && pos <= rightYEnd)) {
-      zone = 'yellow';
-    } else {
-      zone = 'red';
-    }
-
-    registerHit(zone, pos);
-  }
-
-  function registerHit(zone, pos) {
-    // Brief cooldown so rapid double-taps don't double-register
+    // Brief cooldown so double-taps don't double-register
     inputBlocked = true;
-    setTimeout(() => { inputBlocked = false; }, 120);
+    setTimeout(() => { inputBlocked = false; }, 90);
 
-    stepResults[currentStep] = zone;
-    updateResultIcon(currentStep, zone);
-
-    switch (zone) {
-      case 'green': {
-        conditionDelta += stepValue;
-        greenHits++;
-        consecutiveGreens++;
-
-        // Perfect Torque?
-        if (consecutiveGreens >= nextPerfectAt) {
-          perfectBonusCount++;
-          xpBonusMultiplier += 1; // each perfect torque adds to XP multiplier
-          flashPerfectTorque();
-          consecutiveGreens = 0;
-          nextPerfectAt = randomInt(3, 7);
-        }
-
-        _triggerAnimation(barEl, 'pw-hit-green', 420);
-        spawnHitLabel('PERFECT', '#22c55e');
-        setFlavor(pickRandom(ALL_FLAVOR));
-        playAudio('torque_click');
-        break;
-      }
-
-      case 'yellow': {
-        conditionDelta += stepValue * 0.85;
-        yellowHits++;
-        consecutiveGreens = 0;
-
-        _triggerAnimation(barEl, 'pw-hit-yellow', 380);
-        spawnHitLabel('GOOD', '#eab308');
-        setFlavor(pickRandom(ALL_FLAVOR));
-        playAudio('ui_click');
-        break;
-      }
-
-      case 'red': {
-        const damage = randomRange(0.01, 0.03);
-        conditionDelta -= damage;
-        redHits++;
-        consecutiveGreens = 0;
-
-        _triggerAnimation(barEl, 'pw-hit-red', 500);
-        spawnHitLabel('MISS', '#ef4444');
-        setFlavor('Off spec. Try again.');
-        playAudio('miss');
-        break;
-      }
+    // Correct hit audio
+    if (isCritical) {
+      playA('playPrecisionCriticalSnap');
+    } else {
+      playA('playPrecisionBeatSnap', currentStep, seqLength);
     }
 
     currentStep++;
+    updateSeqIndicators();
 
-    if (currentStep >= totalSteps) {
-      completeWork();
+    if (currentStep >= seqLength) {
+      handleSequenceComplete();
     } else {
-      updateStepCounter();
-      // Reset sequence index for next step (each step is its own sequence)
-      seqCurrentIdx = 0;
-      if (useSequence) updateSeqMarkers();
+      const upcoming = seqLength - currentStep;
+      if (upcoming === 1) {
+        setFlavor('⚡ CRITICAL — tighter window!');
+      } else {
+        setFlavor(pickRandom(GENERIC_FLAVOR));
+      }
     }
+  }
+
+  function handleBreak() {
+    playA('playPrecisionSequenceBreak', inTorqueLock);
+
+    if (inTorqueLock) exitTorqueLock();
+
+    consecutiveSeqs = 0;
+    currentStep     = 0;
+    seqsBroken++;
+
+    updateSeqIndicators();
+    updateLockPips();
+    setFlavor(pickRandom(BREAK_FLAVOR));
+
+    // Shake the seq row
+    seqRowEl.classList.remove('prec-shake');
+    void seqRowEl.offsetWidth; // force reflow
+    seqRowEl.classList.add('prec-shake');
+    setTimeout(() => seqRowEl.classList.remove('prec-shake'), 400);
+  }
+
+  function handleSequenceComplete() {
+    currentStep = 0;
+    consecutiveSeqs++;
+    seqsCompleted++;
+
+    const seqXP = Math.round((baseXP / sequencesRequired) * (inTorqueLock ? 2.0 : 1.0));
+    totalXP += seqXP;
+
+    if (inTorqueLock) {
+      lockSeqCount++;
+
+      playA('playPrecisionSequenceComplete', true);
+
+      // Add one resonance note (sustaining chord tone)
+      const handle = window.audioManager?.playPrecisionResonance?.(lockSeqCount);
+      if (handle) resonanceHandles.push(handle);
+
+      // Update resonance visual on container
+      // Remove previous resonance classes and apply current level
+      for (let r = 1; r <= 5; r++) container.classList.remove(`resonance-note--active-${r}`);
+      container.classList.add(`resonance-note--active-${Math.min(5, lockSeqCount)}`);
+
+      if (lockSeqCount >= 5) setFlavor('⚡ FULL TORQUE LOCK — Maximum resonance!');
+      else setFlavor(`Torque Lock ×${lockSeqCount} — keep going!`);
+    } else {
+      playA('playPrecisionSequenceComplete', false);
+      setFlavor(pickRandom(COMPLETE_FLAVOR));
+
+      // Enter Torque Lock if 3 consecutive sequences completed
+      if (consecutiveSeqs >= 3) {
+        enterTorqueLock();
+      }
+    }
+
+    updateSeqIndicators();
+    updateLockPips();
+    updateProgress();
+
+    if (seqsCompleted >= sequencesRequired) {
+      setTimeout(completeWork, 700);
+    }
+  }
+
+
+  // ════════════════════════════════════════════════════════════
+  //  TORQUE LOCK
+  // ════════════════════════════════════════════════════════════
+
+  function enterTorqueLock() {
+    inTorqueLock = true;
+    lockSeqCount = 0;
+    container.classList.add('mechanic-container--torque-lock');
+    updateLockPips();
+    setFlavor('TORQUE LOCK — You\'re locked in!');
+  }
+
+  function exitTorqueLock() {
+    inTorqueLock = false;
+    lockSeqCount = 0;
+
+    // Stop all resonance notes
+    resonanceHandles.forEach(h => h?.stop?.());
+    resonanceHandles = [];
+
+    // Remove resonance visual classes
+    for (let r = 1; r <= 5; r++) container.classList.remove(`resonance-note--active-${r}`);
+    container.classList.remove('mechanic-container--torque-lock');
+    updateLockPips();
   }
 
 
@@ -821,134 +818,108 @@ export function startPrecisionWork(
   // ════════════════════════════════════════════════════════════
 
   function completeWork() {
+    if (isComplete) return;
     isComplete = true;
+
     cancelAnimationFrame(rafId);
-    rafId = null;
+    detachInput();
+    exitTorqueLock();
 
-    // Remove all input listeners
-    container.removeEventListener('click',      handleClick);
-    container.removeEventListener('touchstart', handleTouch);
-    document.removeEventListener('keydown',     handleKeydown);
+    // Condition improvement — scales with hit rate across all sequences
+    const totalAttempts = seqsCompleted + seqsBroken;
+    const hitRate       = seqsCompleted / Math.max(1, totalAttempts);
+    const condDelta     = clamp((1 - startCondition) * 0.65 * hitRate, 0.05, 0.30);
+    let   newCondition  = parseFloat(clamp(startCondition + condDelta, 0.01, 0.95).toFixed(2));
 
-    // Clamp final condition
-    let newCondition = parseFloat(
-      clamp(startCondition + conditionDelta, 0.01, 0.95).toFixed(2)
-    );
-
-    // XP: baseXP * (greenHits / totalSteps) * perfectBonusMultiplier
-    const greenRatio = greenHits / totalSteps;
-    let   xpEarned   = Math.max(1, Math.round(baseXP * greenRatio * xpBonusMultiplier));
-
-    // ── Perfect Repair proc (skill level 16+, 5% chance) ──────
+    // Perfect Repair proc: skill 16+, 5% chance
     let perfectRepair = false;
     if (skillLevel >= 16 && Math.random() < 0.05) {
-      perfectRepair = true;
-      newCondition  = 1.00;
-      xpEarned      = xpEarned * 2;
+      perfectRepair  = true;
+      newCondition   = 1.00;
+      totalXP        = Math.round(totalXP * 2);
     }
 
-    // Summary flavor
+    // Final flavor
     if (perfectRepair) {
       setFlavor('⚡ PERFECT REPAIR — Restored to factory spec!');
+    } else if (hitRate >= 0.9) {
+      setFlavor('Precision work. Torqued to spec.');
+    } else if (hitRate >= 0.6) {
+      setFlavor('Good enough. It\'ll hold.');
     } else {
-      setFlavor(
-        greenHits === totalSteps
-          ? "Perfect torque on every bolt. Beautiful work."
-          : greenHits > totalSteps * 0.7
-            ? "That's torqued to spec."
-            : "Could be tighter, but it'll hold."
-      );
+      setFlavor('Rough. Should have waited for the window.');
     }
 
     // Visual completion
-    stepCounterEl.textContent = perfectRepair ? '⚡ PERFECT' : 'Done!';
-    stepCounterEl.style.color = perfectRepair
-      ? '#f59e0b'
-      : 'var(--condition-excellent, #10b981)';
-    _triggerAnimation(barEl, 'pw-complete-bar', 900);
-    indicatorEl.style.opacity = '0';
-    tapLabelEl.textContent = perfectRepair ? '⚡ PERFECT REPAIR' : '✅ COMPLETE';
-    tapLabelEl.style.color = perfectRepair ? '#f59e0b' : '#22c55e';
-
-    // Summary line
-    const summaryEl = _el('div', {
-      style: [
-        'font-family: var(--font-data, monospace)',
-        'font-size: 12px',
-        'color: var(--text-secondary, #aaa)',
-        'text-align: center',
-        'margin-top: 4px',
-      ].join(';'),
-      textContent: `${greenHits}/${totalSteps} perfect  ·  ${yellowHits} acceptable  ·  ${redHits} missed`,
-    });
-    container.appendChild(summaryEl);
+    progressFill.style.width = '100%';
+    progressPctEl.textContent = '100%';
+    progressFill.classList.add('prec-progress-fill--complete');
+    container.classList.add('prec-done');
 
     const logEntries = [
-      `Torqued ${partData.name} — ${totalSteps} steps (${greenHits} perfect / ${yellowHits} good / ${redHits} missed)`,
+      `Precision torque: ${partData.name} — ${seqsCompleted}/${sequencesRequired} sequences (${seqsBroken} broken)`,
       `Condition: ${Math.round(startCondition * 100)}% → ${Math.round(newCondition * 100)}%`,
-      `Precision XP earned: +${xpEarned}${perfectBonusCount > 0 ? ` (${perfectBonusCount}× Perfect Torque!)` : ''}`,
+      `Precision XP: +${totalXP}`,
     ];
-
-    if (perfectRepair) {
-      logEntries.push('⚡ PERFECT REPAIR proc! Part restored to factory spec! (2× XP)');
-    }
+    if (perfectRepair) logEntries.push('⚡ PERFECT REPAIR proc! Part restored to factory spec (2× XP)');
 
     setTimeout(() => {
-      onComplete({ newCondition, xpEarned, logEntries, perfectRepair });
+      onComplete({ newCondition, xpEarned: totalXP, logEntries });
     }, 1200);
   }
 
 
   // ════════════════════════════════════════════════════════════
-  //  INPUT HANDLERS
+  //  INPUT
   // ════════════════════════════════════════════════════════════
 
-  function handleClick(e) {
-    e.preventDefault();
-    resolveHit();
-  }
-
-  function handleTouch(e) {
-    e.preventDefault();
-    resolveHit();
-  }
-
-  function handleKeydown(e) {
+  function onKeydown(e) {
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
       resolveHit();
     }
   }
 
-  // Full-container tap (mobile-friendly)
-  container.classList.add('pw-mobile-tap-area');
-  container.addEventListener('click',      handleClick);
-  container.addEventListener('touchstart', handleTouch, { passive: false });
-  document.addEventListener('keydown',     handleKeydown);
+  function onClick(e) {
+    e.preventDefault();
+    resolveHit();
+  }
+
+  function onTouch(e) {
+    e.preventDefault();
+    resolveHit();
+  }
+
+  function detachInput() {
+    document.removeEventListener('keydown', onKeydown);
+    container.removeEventListener('click', onClick);
+    container.removeEventListener('touchstart', onTouch);
+  }
+
+  container.addEventListener('click', onClick);
+  container.addEventListener('touchstart', onTouch, { passive: false });
+  document.addEventListener('keydown', onKeydown);
+
+  // Register cleanup hook so _teardownMechanic() in workbench.js
+  // can cancel the rAF loop and stop audio when navigating away.
+  container._bwCleanup = () => {
+    isComplete = true;
+    cancelAnimationFrame(rafId);
+    detachInput();
+    resonanceHandles.forEach(h => h?.stop?.());
+    resonanceHandles = [];
+    container.classList.remove('mechanic-container--torque-lock');
+    for (let r = 1; r <= 5; r++) container.classList.remove(`resonance-note--active-${r}`);
+    container._bwCleanup = null;
+  };
 
 
   // ════════════════════════════════════════════════════════════
   //  INIT
   // ════════════════════════════════════════════════════════════
 
-  if (useSequence) updateSeqMarkers();
-  updateStepCounter();
-  startSweep();
-}
-
-
-// ════════════════════════════════════════════════════════════
-//  LOCAL HELPERS
-// ════════════════════════════════════════════════════════════
-
-function _el(tag, props = {}) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
-    if      (k === 'style')       node.style.cssText = v;
-    else if (k === 'className')   node.className = v;
-    else if (k === 'textContent') node.textContent = v;
-    else if (k === 'innerHTML')   node.innerHTML = v;
-    else                          node.setAttribute(k, v);
-  }
-  return node;
+  updateSeqIndicators();
+  updateLockPips();
+  updateProgress();
+  rafId = requestAnimationFrame(tick);
 }

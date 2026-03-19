@@ -30,6 +30,12 @@ function defaultState(profileId) {
       pity5: 0,
       totalPulls: 0
     },
+    rhythmStats: {
+      wrench:    { bestCombo: 0,       totalPatterns: 0  },
+      precision: { bestLockStreak: 0,  totalSnaps: 0     },
+      diagnosis: { correctFlags: 0,    falseFlags: 0     },
+      bodywork:  { perfectZones: 0,    bestFlow: 0       }
+    },
     stats: {
       carsCompleted: 0,
       totalRepairs: 0,

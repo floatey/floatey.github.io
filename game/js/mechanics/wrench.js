@@ -1,23 +1,25 @@
 // ════════════════════════════════════════════════════════════
-//  mechanics/wrench.js — Wrench Work (Rhythm Tapper)
+//  mechanics/wrench.js — Wrench Work (Call / Response Grid)
+//
+//  GDD v2.0 §5 MECHANIC 1 — WRENCH WORK
+//  Inspiration: Rhythm Heaven
+//  Feel: Rhythmic, pattern-seeking, surprises you
 //
 //  Usage:
-//    startWrenchWork(partData, instanceState, container, onComplete,
-//                   playerTools, skillLevel)
+//    const mechanic = new WrenchMechanic({
+//      part, skillLevel, tools, audioManager,
+//      rhythmEngine, container, onComplete, onBeat
+//    });
+//    mechanic.start();
+//    mechanic.destroy();
 //
-//  onComplete fires with: { newCondition, xpEarned, logEntries[], perfectRepair? }
-//
-//  playerTools shape:
-//    impactWrench:           boolean
-//    penetratingOil:         boolean  (true if charges > 0)
-//    penetratingOilCharges:  number
-//    consumeTool:            (toolId) => void
-//
-//  FILE LOCATION: game/js/mechanics/wrench.js
+//  onComplete fires with:
+//    { conditionImprovement, xpEarned, qualityMultiplier,
+//      completedPerfect, rhythmStats: { bestCombo, totalPatterns } }
 // ════════════════════════════════════════════════════════════
 
-// FIX: correct relative path — this file lives one level below js/
-import { randomInt, randomRange, pickRandom, clamp } from '../utils.js';
+import { RhythmEngine } from '../audio.js';
+import { pickRandom, clamp } from '../utils.js';
 
 // ── One-time CSS injection ────────────────────────────────────
 let _cssInjected = false;
@@ -25,900 +27,997 @@ let _cssInjected = false;
 function _injectCSS() {
   if (_cssInjected) return;
   _cssInjected = true;
-
-  const style = document.createElement('style');
-  style.id = 'wrench-mechanic-styles';
-  style.textContent = `
-    @keyframes ww-tap-press {
-      0%   { transform: scale(1); }
-      35%  { transform: scale(0.95); }
-      100% { transform: scale(1); }
-    }
-    .ww-pressing {
-      animation: ww-tap-press 120ms ease !important;
-    }
-
-    @keyframes ww-icon-bob {
-      0%   { transform: translateY(0) rotate(0deg); }
-      40%  { transform: translateY(-6px) rotate(-12deg); }
-      100% { transform: translateY(0) rotate(0deg); }
-    }
-    .ww-icon-bob {
-      animation: ww-icon-bob 140ms ease !important;
-    }
-
-    @keyframes ww-hazard-flash {
-      0%, 100% {
-        border-color: #ef4444;
-        box-shadow: 0 0 14px rgba(239,68,68,0.35);
-      }
-      50% {
-        border-color: #fca5a5;
-        box-shadow: 0 0 32px rgba(239,68,68,0.65);
-      }
-    }
-    .ww-hazard-active {
-      animation: ww-hazard-flash 380ms ease infinite !important;
-    }
-
-    @keyframes ww-critical-pop {
-      0%   { transform: scaleY(1)   scaleX(1);   filter: brightness(1); }
-      25%  { transform: scaleY(1.5) scaleX(1.01); filter: brightness(1.8); }
-      65%  { transform: scaleY(1.2) scaleX(1);   filter: brightness(1.3); }
-      100% { transform: scaleY(1)   scaleX(1);   filter: brightness(1); }
-    }
-    .ww-critical-pop {
-      animation: ww-critical-pop 380ms ease !important;
-      transform-origin: left center;
-    }
-
-    @keyframes ww-shake {
-      0%         { transform: translateX(0); }
-      15%, 45%, 75% { transform: translateX(-5px); }
-      30%, 60%, 90% { transform: translateX(5px); }
-      100%       { transform: translateX(0); }
-    }
-    @keyframes ww-loss-flash {
-      0%   { background-color: var(--condition-good); }
-      30%  { background-color: #ef4444; }
-      100% { background-color: var(--condition-good); }
-    }
-    .ww-shake   { animation: ww-shake      300ms ease !important; }
-    .ww-loss    { animation: ww-loss-flash 550ms ease !important; }
-
-    @keyframes ww-success-flash {
-      0%   { box-shadow: 0 0 0 rgba(34,197,94,0); }
-      30%  { box-shadow: 0 0 24px rgba(34,197,94,0.55); }
-      100% { box-shadow: 0 0 0 rgba(34,197,94,0); }
-    }
-    .ww-success-flash {
-      animation: ww-success-flash 600ms ease !important;
-    }
-
-    @keyframes ww-momentum-pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.55; }
-    }
-    .ww-momentum-pulsing {
-      animation: ww-momentum-pulse 700ms ease infinite;
-    }
-
-    @keyframes ww-complete-sweep {
-      0%   { background: var(--condition-good); }
-      40%  { background: #10b981; filter: brightness(1.6); }
-      100% { background: var(--condition-excellent); filter: brightness(1); box-shadow: 0 0 18px rgba(16,185,129,0.4); }
-    }
-    .ww-complete-bar {
-      animation: ww-complete-sweep 700ms ease forwards !important;
-    }
-
-    @keyframes ww-flavor-in {
-      from { opacity: 0; transform: translateY(5px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .ww-flavor-in {
-      animation: ww-flavor-in 200ms ease !important;
-    }
-
-    @keyframes ww-gold-shimmer {
-      0%, 100% { box-shadow: 0 0 10px rgba(245,158,11,0.25); }
-      50%       { box-shadow: 0 0 28px rgba(245,158,11,0.55); }
-    }
-    .ww-gold-shimmer {
-      animation: ww-gold-shimmer 900ms ease infinite;
-    }
-
-    /* ── Impact Wrench burst flash (on progress bar, not tap button) ── */
-    @keyframes ww-impact-burst {
-      0%   { background: var(--condition-good); filter: brightness(1); }
-      15%  { background: #f59e0b; filter: brightness(2.2); transform: scaleY(1.6) scaleX(1.01); }
-      55%  { background: #fbbf24; filter: brightness(1.5); transform: scaleY(1.2) scaleX(1); }
-      100% { background: var(--condition-good); filter: brightness(1); transform: scaleY(1) scaleX(1); }
-    }
-    .ww-impact-burst {
-      animation: ww-impact-burst 480ms ease !important;
-      transform-origin: left center;
-    }
-
-    /* ── Penetrating Oil applied flash ── */
-    @keyframes ww-oil-applied {
-      0%   { border-color: var(--border); }
-      30%  { border-color: #a3e635; box-shadow: 0 0 18px rgba(163,230,53,0.55); }
-      100% { border-color: var(--border); }
-    }
-    .ww-oil-applied {
-      animation: ww-oil-applied 700ms ease !important;
-    }
-
-    /* ── Perfect Repair gold flash ── */
-    @keyframes ww-perfect-repair {
-      0%   { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
-      20%  { box-shadow: 0 0 50px rgba(245,158,11,1.0); filter: brightness(2.5); }
-      70%  { box-shadow: 0 0 28px rgba(245,158,11,0.6); filter: brightness(1.5); }
-      100% { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
-    }
-    .ww-perfect-repair-flash {
-      animation: ww-perfect-repair 900ms ease !important;
-    }
-
-    .ww-tap-target {
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
+  const s = document.createElement('style');
+  s.id = 'wrench-v2-styles';
+  s.textContent = `
+    .wv2-container {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 580px;
+      margin: 0 auto;
+      font-family: var(--font-ui, monospace);
       user-select: none;
       -webkit-user-select: none;
-      outline: none;
     }
-    .ww-tap-target:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
+
+    .wv2-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
     }
+
+    .wv2-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-primary, #fff);
+    }
+
+    .wv2-bpm {
+      font-family: var(--font-data, monospace);
+      font-size: 11px;
+      color: var(--text-muted, #888);
+    }
+
+    /* ── Call / Response grid ── */
+    .wv2-grid-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .wv2-row-label {
+      font-family: var(--font-data, monospace);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      color: var(--text-muted, #666);
+      text-transform: uppercase;
+    }
+
+    .wv2-beat-row {
+      display: flex;
+      gap: 4px;
+    }
+
+    .wv2-cell {
+      flex: 1;
+      height: 44px;
+      border-radius: 5px;
+      border: 1.5px solid var(--border, #333);
+      background: var(--bg-elevated, #111);
+      transition: background 60ms ease, border-color 120ms ease, transform 60ms ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: transparent;
+      position: relative;
+    }
+
+    /* Call row: active beat (engine plays) */
+    .wv2-cell--call-active {
+      background: rgba(78, 127, 255, 0.22);
+      border-color: #4e7fff;
+    }
+
+    /* Response row: cursor (current step) */
+    .wv2-cell--cursor {
+      border-color: var(--text-muted, #555);
+      border-top-width: 3px;
+    }
+
+    /* Response row: correct tap */
+    .wv2-cell--hit {
+      background: rgba(34, 197, 94, 0.30);
+      border-color: #22c55e;
+      transform: scale(1.04);
+    }
+
+    /* Response row: missed active beat */
+    .wv2-cell--miss {
+      background: rgba(249, 115, 22, 0.18);
+      border-color: #f97316;
+    }
+
+    /* Response row: tapped on a rest (STRIPPED) */
+    .wv2-cell--stripped {
+      background: rgba(239, 68, 68, 0.22);
+      border-color: #ef4444;
+    }
+
+    /* Hazard: whole grid flashes */
+    @keyframes wv2-hazard-flash {
+      0%, 100% { border-color: #ef4444; background: rgba(239,68,68,0.12); }
+      50%       { border-color: #fca5a5; background: rgba(239,68,68,0.28); }
+    }
+    .wv2-cell--hazard {
+      animation: wv2-hazard-flash 380ms ease infinite;
+    }
+
+    /* ── Combo & bolt ── */
+    .wv2-combo-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .wv2-combo-label {
+      font-family: var(--font-data, monospace);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-muted, #888);
+      transition: color 200ms ease;
+      min-width: 80px;
+    }
+
+    .wv2-bolt {
+      width: 32px;
+      height: 32px;
+      position: relative;
+      transition: transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .wv2-bolt-inner {
+      width: 32px;
+      height: 32px;
+      background: var(--border, #333);
+      clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+      transition: background 200ms ease;
+    }
+
+    /* ── Progress bar ── */
+    .wv2-progress-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .wv2-progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-data, monospace);
+      font-size: 11px;
+      color: var(--text-secondary, #aaa);
+    }
+    .wv2-progress-track {
+      height: 12px;
+      border-radius: 6px;
+      background: var(--bg-elevated, #1a1a1a);
+      border: 1px solid var(--border, #333);
+      overflow: hidden;
+    }
+    .wv2-progress-fill {
+      height: 100%;
+      border-radius: 6px;
+      background: var(--condition-good, #22c55e);
+      transition: width 120ms linear;
+    }
+
+    /* ── Status / flavor text ── */
+    .wv2-status {
+      font-family: var(--font-data, monospace);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-align: center;
+      color: var(--text-secondary, #aaa);
+      min-height: 18px;
+      transition: color 200ms ease;
+    }
+    .wv2-flavor {
+      font-style: italic;
+      font-size: 12px;
+      color: var(--text-muted, #777);
+      text-align: center;
+      min-height: 1.4em;
+    }
+
+    /* ── Play area (tap target) ── */
+    .wv2-play-area {
+      background: var(--bg-card, #141414);
+      border: 1px solid var(--border, #333);
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: border-color 150ms ease;
+    }
+    .wv2-play-area:active { border-color: var(--accent, #60a5fa); }
+
+    /* ── Hazard overlay text ── */
+    .wv2-hazard-text {
+      font-family: var(--font-data, monospace);
+      font-size: 14px;
+      font-weight: 700;
+      color: #ef4444;
+      text-align: center;
+      letter-spacing: 0.1em;
+      animation: wv2-hazard-pulse 600ms ease-in-out infinite;
+    }
+    @keyframes wv2-hazard-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.5; }
+    }
+
+    @keyframes wv2-complete-flash {
+      from { background: rgba(34,197,94,0.15); }
+      to   { background: transparent; }
+    }
+    .wv2-complete { animation: wv2-complete-flash 600ms ease forwards; }
   `;
-  document.head.appendChild(style);
+  document.head.appendChild(s);
+}
+
+
+// ── Flavor text pools ─────────────────────────────────────────
+const GENERIC_FLAVOR = [
+  'Three uggas in — it\'s moving.',
+  'Keep the rhythm. Don\'t rush it.',
+  'Steady hands.',
+  'Good torque.',
+  'Feel the tool. Don\'t fight it.',
+  'That one was moving.',
+  'Lock it in.',
+  'Almost there. Stay with it.',
+];
+
+const STRIPPED_FLAVOR = [
+  'Backed off the ratchet — don\'t rush.',
+  'Easy. Let the pattern do the work.',
+  'You broke the rhythm.',
+  'Too eager. Settle back in.',
+];
+
+const HAZARD_SUCCESS_FLAVOR = [
+  'Broke it loose. Good patience.',
+  'Waited it out. Smart.',
+  'That\'s how you handle a seized bolt.',
+];
+
+const HAZARD_FAIL_FLAVOR = [
+  'You tapped through it. Start again.',
+  'Too eager on the seized bolt.',
+  'Can\'t force a seized bolt. Back off.',
+];
+
+
+// ════════════════════════════════════════════════════════════
+//  WrenchMechanic
+// ════════════════════════════════════════════════════════════
+
+export class WrenchMechanic {
+  /**
+   * @param {object} opts
+   * @param {object}   opts.part          – { id, name, difficulty, condition, flavorText }
+   * @param {number}   opts.skillLevel    – 1–20
+   * @param {object}   opts.tools         – { impact_wrench, penetrating_oil, ... }
+   * @param {object}   opts.audioManager  – AudioManager instance
+   * @param {object}   opts.rhythmEngine  – RhythmEngine instance
+   * @param {Element}  opts.container     – DOM element to render into
+   * @param {Function} opts.onComplete    – called with result when repair finishes
+   * @param {Function} [opts.onBeat]      – optional: (step, time, isActive) => void
+   */
+  constructor(opts) {
+    this.part        = opts.part        ?? {};
+    this.skillLevel  = opts.skillLevel  ?? 1;
+    this.tools       = opts.tools       ?? {};
+    this.audio       = opts.audioManager;
+    this.engine      = opts.rhythmEngine;
+    this.container   = opts.container;
+    this.onComplete  = opts.onComplete  ?? (() => {});
+    this._extBeat    = opts.onBeat      ?? (() => {});
+
+    // Derived constants (set in start())
+    this._map           = null;
+    this._timingWindow  = 0;  // seconds
+    this._totalCycles   = 4;
+    this._baseStepVal   = 0;
+
+    // Tool flags
+    this._hasImpact     = !!(this.tools.impact_wrench);
+    this._oilCharges    = typeof this.tools.penetrating_oil === 'number'
+      ? this.tools.penetrating_oil : (this.tools.penetrating_oil ? 10 : 0);
+
+    // Runtime state
+    this._phase         = 'idle';  // 'call'|'response'|'hazard'|'done'
+    this._cycleIndex    = 0;
+    this._progress      = 0;
+    this._combo         = 0;
+    this._bestCombo     = 0;
+    this._totalPatterns = 0;
+
+    // Per-cycle response tracking
+    this._callPattern   = [];  // 8 bools
+    this._responsePattern = [];
+    this._responseTaps  = [];  // 'correct'|'stripped'|'miss'|'ok' per step
+    this._responseStep  = -1;
+    this._responseStepTime = 0;
+    this._responseStepActive = false;
+    this._responseStepEval = false;
+
+    // Hazard
+    this._hazardInterval = 4;
+    this._patternsSinceHazard = 0;
+    this._hazardActive  = false;
+    this._hazardFailed  = false;
+    this._oilBPMReduced = false;
+
+    // Intro double-call
+    this._introCallsDone = 0;
+
+    // DOM refs
+    this._callCells      = [];
+    this._responseCells  = [];
+    this._comboEl        = null;
+    this._progressFill   = null;
+    this._progressPctEl  = null;
+    this._statusEl       = null;
+    this._flavorEl       = null;
+    this._boltEl         = null;
+    this._hazardEl       = null;
+
+    this._destroyed      = false;
+
+    this._handleKeyDown  = this._onPlayerInput.bind(this);
+    this._handleTouch    = (e) => { e.preventDefault(); this._onPlayerInput(); };
+    this._handleClick    = (e) => { e.preventDefault(); this._onPlayerInput(); };
+  }
+
+  // ── Public API ──────────────────────────────────────────────
+
+  start() {
+    _injectCSS();
+
+    const difficulty = clamp(this.part.difficulty ?? 0.5, 0, 1);
+    const condition  = clamp(this.part.condition  ?? 0.3, 0, 1);
+
+    // Apply penetrating oil: reduce effective BPM (done via map BPM property)
+    // We'll generate the map first, then optionally modify
+    this._map = RhythmEngine.generateMap(
+      this.part.id ?? 'unknown',
+      difficulty,
+      'wrench'
+    );
+
+    // Apply penetrating oil: reduce BPM by 8 for one job
+    if (this._oilCharges > 0 && !this._oilBPMReduced) {
+      this._map = { ...this._map, bpm: Math.max(60, this._map.bpm - 8) };
+      this._oilBPMReduced = true;
+      // Caller responsible for decrementing charges via state
+    }
+
+    // Cache derived values
+    this._timingWindow = RhythmEngine.getTimingWindow('wrench', this.skillLevel, this._map.bpm);
+    this._totalCycles  = Math.max(4, Math.round((1 - condition) * 10));
+    this._baseStepVal  = 1.0 / (this._totalCycles * 8);
+    this._hazardInterval = this._map.hazardInterval ?? 4;
+
+    // Intro: low skill or first cycle = double call
+    this._introCallsDone = 0;
+
+    this._buildUI();
+    this._attachInput();
+
+    // Start engine — it handles call-phase audio and fires beat callbacks
+    this.engine.start(this._map, (step, time, isActive) => {
+      if (!this._destroyed) this._onBeat(step, time, isActive);
+      this._extBeat(step, time, isActive);
+    });
+  }
+
+  destroy() {
+    this._destroyed = true;
+    this.engine.stop();
+    document.removeEventListener('keydown', this._handleKeyDown);
+    if (this.container) {
+      this.container.removeEventListener('touchstart', this._handleTouch);
+      this.container.removeEventListener('click', this._handleClick);
+    }
+  }
+
+  // ── UI Build ────────────────────────────────────────────────
+
+  _buildUI() {
+    const c = this.container;
+    c.innerHTML = '';
+    c.className = 'wv2-container';
+
+    // Header
+    const hdr = _el('div', { className: 'wv2-header' });
+    hdr.appendChild(_el('div', { className: 'wv2-title',
+      textContent: `Removing: ${this.part.name ?? 'Component'}` }));
+    hdr.appendChild(_el('div', { className: 'wv2-bpm',
+      textContent: `BPM: ${this._map.bpm}` }));
+    c.appendChild(hdr);
+
+    // Play area wrapper (tap target)
+    const playArea = _el('div', { className: 'wv2-play-area' });
+    c.appendChild(playArea);
+
+    // Hazard overlay text (hidden by default)
+    this._hazardEl = _el('div', { className: 'wv2-hazard-text' });
+    this._hazardEl.style.display = 'none';
+    playArea.appendChild(this._hazardEl);
+
+    // Grid section
+    const gridSection = _el('div', { className: 'wv2-grid-section' });
+
+    // CALL row
+    const callLabel = _el('div', { className: 'wv2-row-label', textContent: 'CALL  (listen)' });
+    gridSection.appendChild(callLabel);
+    const callRow = _el('div', { className: 'wv2-beat-row' });
+    this._callCells = [];
+    for (let i = 0; i < 8; i++) {
+      const cell = _el('div', { className: 'wv2-cell' });
+      callRow.appendChild(cell);
+      this._callCells.push(cell);
+    }
+    gridSection.appendChild(callRow);
+
+    // RESPONSE row
+    const respLabel = _el('div', { className: 'wv2-row-label',
+      textContent: 'RESPONSE  (tap to match)' });
+    gridSection.appendChild(respLabel);
+    const respRow = _el('div', { className: 'wv2-beat-row' });
+    this._responseCells = [];
+    for (let i = 0; i < 8; i++) {
+      const cell = _el('div', { className: 'wv2-cell' });
+      respRow.appendChild(cell);
+      this._responseCells.push(cell);
+    }
+    gridSection.appendChild(respRow);
+    playArea.appendChild(gridSection);
+
+    // Combo row
+    const comboRow = _el('div', { className: 'wv2-combo-row' });
+    this._comboEl  = _el('div', { className: 'wv2-combo-label', textContent: 'COMBO ×1.0' });
+    this._boltEl   = _el('div', { className: 'wv2-bolt' });
+    this._boltEl.appendChild(_el('div', { className: 'wv2-bolt-inner' }));
+    comboRow.appendChild(this._comboEl);
+    comboRow.appendChild(this._boltEl);
+    c.appendChild(comboRow);
+
+    // Progress bar
+    const progWrap = _el('div', { className: 'wv2-progress-wrap' });
+    const progLabels = _el('div', { className: 'wv2-progress-labels' });
+    progLabels.appendChild(_el('span', { textContent: 'Progress' }));
+    this._progressPctEl = _el('span', { textContent: '0%' });
+    progLabels.appendChild(this._progressPctEl);
+    progWrap.appendChild(progLabels);
+    const track = _el('div', { className: 'wv2-progress-track' });
+    this._progressFill = _el('div', { className: 'wv2-progress-fill' });
+    this._progressFill.style.width = '0%';
+    track.appendChild(this._progressFill);
+    progWrap.appendChild(track);
+    c.appendChild(progWrap);
+
+    // Status & flavor
+    this._statusEl = _el('div', { className: 'wv2-status' });
+    c.appendChild(this._statusEl);
+    this._flavorEl = _el('div', { className: 'wv2-flavor' });
+    this._setFlavor(pickRandom([...GENERIC_FLAVOR, ...(this.part.flavorText ?? [])]));
+    c.appendChild(this._flavorEl);
+
+    // Tool badges
+    if (this._hasImpact || this._oilCharges > 0) {
+      const badges = _el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;' });
+      if (this._hasImpact) {
+        badges.appendChild(_el('span', {
+          style: 'font-family:var(--font-data);font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid #f59e0b44;',
+          textContent: '⚡ Impact Wrench',
+        }));
+      }
+      if (this._oilCharges > 0) {
+        badges.appendChild(_el('span', {
+          style: 'font-family:var(--font-data);font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(163,230,53,0.1);color:#a3e635;border:1px solid #a3e63544;',
+          textContent: `🫗 Penetrating Oil (BPM −8)`,
+        }));
+      }
+      c.appendChild(badges);
+    }
+  }
+
+  _attachInput() {
+    document.addEventListener('keydown', this._handleKeyDown);
+    if (this.container) {
+      this.container.addEventListener('touchstart', this._handleTouch, { passive: false });
+      this.container.addEventListener('click', this._handleClick);
+    }
+  }
+
+  // ── Beat callback (from RhythmEngine) ───────────────────────
+
+  _onBeat(step, time, isActive) {
+    if (this._phase === 'done') return;
+
+    // ── Cycle start (step 0) ──────────────────────────────
+    if (step === 0) {
+      // Evaluate previous response cycle (unless we're at the very start)
+      if (this._phase === 'response') {
+        this._evaluateMissedLastStep();
+        this._endResponsePhase();
+      } else if (this._phase === 'hazard') {
+        this._endHazardPhase();
+      }
+
+      // Decide next phase
+      if (this._shouldFireHazard()) {
+        this._startHazardPhase();
+      } else {
+        this._startCallPhase();
+      }
+    }
+
+    // ── Call phase (steps 0–7) ───────────────────────────
+    if (this._phase === 'call' && step < 8) {
+      // Highlight the call cell that is currently active
+      this._clearCallCell(step > 0 ? step - 1 : -1);
+      if (isActive) {
+        this._callCells[step]?.classList.add('wv2-cell--call-active');
+      }
+      // Audio handled automatically by engine's _playBeatSound for wrench call phase
+    }
+
+    // ── Transition to response (step 8) ─────────────────
+    if (step === 8) {
+      this._clearCallCell(7);
+      this._startResponsePhase(time);
+    }
+
+    // ── Response phase (steps 8–15) ──────────────────────
+    if (this._phase === 'response' && step >= 8) {
+      const rStep = step - 8;
+
+      // Evaluate the previous response step if it hasn't been
+      if (rStep > 0) {
+        this._evaluatePreviousResponseStep(rStep - 1, time);
+      }
+
+      // Set up current response step
+      this._responseStep        = rStep;
+      this._responseStepTime    = time;
+      this._responseStepActive  = this._responsePattern[rStep] ?? false;
+      this._responseStepEval    = false;
+
+      // Advance cursor
+      this._responseCells.forEach((c, i) => {
+        c.classList.remove('wv2-cell--cursor');
+        if (i === rStep) c.classList.add('wv2-cell--cursor');
+      });
+    }
+
+    // ── Hazard phase ──────────────────────────────────────
+    if (this._phase === 'hazard') {
+      // Engine keeps running; no cell updates
+      return;
+    }
+  }
+
+  // ── Phase management ─────────────────────────────────────────
+
+  _startCallPhase() {
+    this._phase = 'call';
+
+    // Determine patterns for this cycle (with variation after first)
+    const variedCall = RhythmEngine.applyVariation(this._map, this._cycleIndex);
+    this._callPattern = variedCall.slice(0, 8);
+    // Response may differ slightly (turnaround from map)
+    this._responsePattern = (this._map.responsePattern ?? [...this._callPattern]).map((v, i) =>
+      i < variedCall.length ? variedCall[i] : v
+    );
+
+    // Clear all cells
+    this._callCells.forEach(c => {
+      c.className = 'wv2-cell';
+    });
+    this._responseCells.forEach(c => {
+      c.className = 'wv2-cell';
+    });
+
+    // Show the pattern in call row immediately if intro double-call
+    if (this.skillLevel <= 5 && this._introCallsDone < 1 && this._cycleIndex === 0) {
+      this._callPattern.forEach((active, i) => {
+        if (active) this._callCells[i].classList.add('wv2-cell--call-active');
+      });
+    }
+
+    this._setStatus('CALL — listen');
+  }
+
+  _startResponsePhase(stepTime) {
+    // On first call of skill 1-5, play call again instead of going to response
+    if (this.skillLevel <= 5 && this._cycleIndex === 0 && this._introCallsDone < 1) {
+      this._introCallsDone++;
+      this._phase = 'call';
+      this._setStatus('CALL — listen again');
+      return;
+    }
+
+    this._phase             = 'response';
+    this._responseStep      = 0;
+    this._responseStepTime  = stepTime;
+    this._responseStepActive = this._responsePattern[0] ?? false;
+    this._responseStepEval  = false;
+    this._responseTaps      = new Array(8).fill(null);
+
+    this._clearAllCells();
+    this._setStatus('RESPONSE — echo the call');
+  }
+
+  _startHazardPhase() {
+    this._phase       = 'hazard';
+    this._hazardFailed = false;
+    this._patternsSinceHazard = 0;
+
+    this._callCells.forEach(c => {
+      c.className = 'wv2-cell wv2-cell--hazard';
+    });
+    this._responseCells.forEach(c => {
+      c.className = 'wv2-cell wv2-cell--hazard';
+    });
+
+    this._hazardEl.textContent = '⚠ SEIZED — HOLD';
+    this._hazardEl.style.display = 'block';
+
+    this.audio?.play('stuck');
+    this._setStatus('');
+    this._setFlavor('Seized. Don\'t tap — let it breathe.');
+  }
+
+  _endHazardPhase() {
+    this._hazardEl.style.display = 'none';
+    this._clearAllCells();
+
+    if (!this._hazardFailed) {
+      this._setFlavor(pickRandom(HAZARD_SUCCESS_FLAVOR));
+      this._setStatus('Broke it loose ✓');
+    } else {
+      this._progress = Math.max(0, this._progress - 0.08);
+      this._combo    = 0;
+      this._updateComboDisplay();
+      this._updateProgress();
+      this._setFlavor(pickRandom(HAZARD_FAIL_FLAVOR));
+      this._setStatus('STRIPPED — hazard failed');
+    }
+
+    // Reset hazard counter with new random interval
+    this._hazardInterval = 3 + Math.floor(Math.random() * 3);
+  }
+
+  _endResponsePhase() {
+    this._evaluateCycle();
+    this._cycleIndex++;
+    this._totalPatterns++;
+    this._patternsSinceHazard++;
+  }
+
+  // ── Response evaluation ───────────────────────────────────────
+
+  _evaluatePreviousResponseStep(prevStep, currentTime) {
+    if (this._responseStep !== prevStep) return;
+    if (this._responseStepEval) return;
+
+    // No tap was received for this step — it's a miss if active, ok if rest
+    if (this._responseStepActive) {
+      this._responseTaps[prevStep] = 'miss';
+      const cell = this._responseCells[prevStep];
+      if (cell) {
+        cell.classList.remove('wv2-cell--cursor');
+        cell.classList.add('wv2-cell--miss');
+      }
+    } else {
+      this._responseTaps[prevStep] = 'ok';
+    }
+    this._responseStepEval = true;
+  }
+
+  _evaluateMissedLastStep() {
+    // Called at cycle end — evaluate step 7 if still open
+    if (this._responseStep === 7 && !this._responseStepEval) {
+      if (this._responseStepActive) {
+        this._responseTaps[7] = 'miss';
+        const cell = this._responseCells[7];
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor');
+          cell.classList.add('wv2-cell--miss');
+        }
+      } else {
+        this._responseTaps[7] = 'ok';
+      }
+      this._responseStepEval = true;
+    }
+  }
+
+  _evaluateCycle() {
+    const taps = this._responseTaps;
+    const pattern = this._responsePattern;
+
+    let correct = 0;
+    let stripped = 0;
+    let missed = 0;
+
+    for (let i = 0; i < 8; i++) {
+      const t = taps[i];
+      const active = pattern[i];
+
+      if (t === 'correct') correct++;
+      else if (t === 'stripped') stripped++;
+      else if (t === 'miss' && active) missed++;
+    }
+
+    const isPerfect = stripped === 0 && missed === 0 && correct > 0;
+
+    if (isPerfect) {
+      this._combo++;
+      this._bestCombo = Math.max(this._bestCombo, this._combo);
+      // Impact wrench: every 4th completed pattern = auto-hit one rest step
+      // (handled implicitly — progress bonus)
+      if (this._hasImpact && this._combo % 4 === 0) {
+        correct = Math.min(8, correct + 1);
+      }
+    } else {
+      this._combo = 0;
+    }
+
+    // Progress contribution
+    const mult   = _comboMultiplier(this._combo);
+    const contribution = (correct / 8) * mult * (1.0 / this._totalCycles);
+    this._progress = Math.min(1.0, this._progress + contribution);
+
+    this._updateComboDisplay();
+    this._updateProgress();
+
+    // Check completion
+    if (this._progress >= 1.0) {
+      this._complete();
+      return;
+    }
+
+    // Flavor
+    if (isPerfect && this._combo >= 3) {
+      this._setFlavor(`Locked in. ×${mult.toFixed(1)} momentum.`);
+    } else if (stripped > 0) {
+      this._setFlavor(pickRandom(STRIPPED_FLAVOR));
+    } else if (missed > 0) {
+      this._setFlavor('Missed one. Stay with the pattern.');
+    } else if (correct > 0) {
+      this._setFlavor(pickRandom([...GENERIC_FLAVOR, ...(this.part.flavorText ?? [])]));
+    }
+  }
+
+  // ── Player input handler ──────────────────────────────────────
+
+  _onPlayerInput(e) {
+    if (this._destroyed) return;
+    if (e?.key && e.key !== ' ') return;  // keyboard: only space bar
+    if (e?.type === 'keydown') e.preventDefault();
+
+    // Hazard: any tap = failure
+    if (this._phase === 'hazard') {
+      this._hazardFailed = true;
+      this._callCells.forEach(c => c.style.borderColor = '#ff0000');
+      this.audio?.playWrenchSequenceBreak?.();
+      return;
+    }
+
+    if (this._phase !== 'response') return;
+    if (this._responseStepEval) return;  // step already evaluated this cycle
+
+    const ctx = this.audio?._ctx;
+    const tapTime = ctx ? ctx.currentTime : performance.now() / 1000;
+    const delta   = Math.abs(tapTime - this._responseStepTime);
+    const inTime  = delta <= this._timingWindow;
+    const rStep   = this._responseStep;
+    const isActive = this._responseStepActive;
+    const cell     = this._responseCells[rStep];
+
+    if (!isActive) {
+      // Tap on a rest beat = STRIPPED
+      this._responseTaps[rStep] = 'stripped';
+      if (cell) {
+        cell.classList.remove('wv2-cell--cursor');
+        cell.classList.add('wv2-cell--stripped');
+      }
+      this.audio?.playWrenchSequenceBreak?.();
+      this._setStatus('STRIPPED');
+    } else if (inTime) {
+      // Correct tap on active beat
+      this._responseTaps[rStep] = 'correct';
+      if (cell) {
+        cell.classList.remove('wv2-cell--cursor');
+        cell.classList.add('wv2-cell--hit');
+      }
+      this.audio?.playRatchet?.();
+    } else {
+      // Out-of-window tap on active beat = miss
+      this._responseTaps[rStep] = 'miss';
+      if (cell) {
+        cell.classList.remove('wv2-cell--cursor');
+        cell.classList.add('wv2-cell--miss');
+      }
+    }
+
+    this._responseStepEval = true;
+  }
+
+  // ── Hazard scheduling ─────────────────────────────────────────
+
+  _shouldFireHazard() {
+    return this._patternsSinceHazard >= this._hazardInterval;
+  }
+
+  // ── Completion ────────────────────────────────────────────────
+
+  _complete() {
+    this._phase    = 'done';
+    this._progress = 1.0;
+    this.engine.stop();
+    this._detachInput();
+
+    this._updateProgress();
+    this._setStatus('✓ Done');
+    this._setFlavor(`${this.part.name} is off.`);
+
+    // Container flash
+    if (this.container) {
+      this.container.classList.add('wv2-complete');
+    }
+
+    // Compute result
+    const avgComboContrib = this._bestCombo >= 3 ? 1.3 : this._bestCombo >= 2 ? 1.15 : 1.0;
+    const qualityMult     = clamp(avgComboContrib, 0.5, 1.5);
+    const condImprovement = clamp((1.0 - (this.part.condition ?? 0.3)) * 0.65, 0.05, 0.30);
+    const xpBase          = 10 + (this.part.difficulty ?? 0.5) * 40;
+    const xpEarned        = Math.round(xpBase * qualityMult);
+    const completedPerfect = this._bestCombo >= 4;
+
+    setTimeout(() => {
+      this.onComplete({
+        conditionImprovement: parseFloat(condImprovement.toFixed(2)),
+        xpEarned,
+        qualityMultiplier:    parseFloat(qualityMult.toFixed(2)),
+        completedPerfect,
+        rhythmStats: {
+          bestCombo:     this._bestCombo,
+          totalPatterns: this._totalPatterns,
+        },
+      });
+    }, 800);
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────
+
+  _clearCallCell(index) {
+    if (index >= 0 && index < 8) {
+      this._callCells[index]?.classList.remove('wv2-cell--call-active');
+    }
+  }
+
+  _clearAllCells() {
+    this._callCells.forEach(c => { c.className = 'wv2-cell'; });
+    this._responseCells.forEach(c => { c.className = 'wv2-cell'; });
+  }
+
+  _updateComboDisplay() {
+    if (!this._comboEl) return;
+    const mult = _comboMultiplier(this._combo);
+    this._comboEl.textContent = `COMBO ×${mult.toFixed(1)}`;
+    const col = mult >= 2.5 ? '#f59e0b' : mult >= 2.0 ? '#22c55e' : mult >= 1.5 ? '#84cc16' : 'var(--text-muted,#888)';
+    this._comboEl.style.color = col;
+
+    // Bolt rotation
+    if (this._boltEl) {
+      const deg = this._combo * 45;
+      this._boltEl.style.transform = `rotate(${deg}deg)`;
+      const boltColor = mult >= 2.0 ? '#22c55e' : mult >= 1.5 ? '#84cc16' : 'var(--border,#333)';
+      const inner = this._boltEl.querySelector('.wv2-bolt-inner');
+      if (inner) inner.style.background = boltColor;
+    }
+
+    // Combo milestone sounds
+    if (this._combo > 0) {
+      const level = this._combo <= 1 ? 1 : this._combo <= 2 ? 2 : this._combo <= 3 ? 3 : 4;
+      this.audio?.playWrenchComboBump?.(level);
+    }
+  }
+
+  _updateProgress() {
+    const pct = Math.min(100, Math.round(this._progress * 100));
+    if (this._progressFill) this._progressFill.style.width = `${pct}%`;
+    if (this._progressPctEl) this._progressPctEl.textContent = `${pct}%`;
+  }
+
+  _setStatus(text) {
+    if (this._statusEl) this._statusEl.textContent = text;
+  }
+
+  _setFlavor(text) {
+    if (this._flavorEl) this._flavorEl.textContent = `"${text}"`;
+  }
+
+  _detachInput() {
+    document.removeEventListener('keydown', this._handleKeyDown);
+    if (this.container) {
+      this.container.removeEventListener('touchstart', this._handleTouch);
+      this.container.removeEventListener('click', this._handleClick);
+    }
+  }
+}
+
+
+// ── Combo multiplier lookup ───────────────────────────────────
+
+function _comboMultiplier(combo) {
+  if (combo <= 1) return 1.0;
+  if (combo === 2) return 1.5;
+  if (combo === 3) return 2.0;
+  if (combo === 4) return 2.5;
+  return 3.0;
 }
 
 
 // ════════════════════════════════════════════════════════════
-//  MAIN EXPORT
+//  FUNCTION WRAPPER — called by workbench.js
+//  Bridges the class-based API to the function-call API that
+//  workbench.js expects.  Adapts the GDD-shape onComplete result
+//  { conditionImprovement, xpEarned, ... } into the workbench
+//  shape { newCondition, xpEarned, logEntries }.
 // ════════════════════════════════════════════════════════════
 
 /**
- * Render the Wrench Work mechanic into `container` and begin the interaction.
- *
- * @param {object}   partData       - Part definition (name, difficulty, flavorText, …)
- * @param {object}   instanceState  - Part instance state (condition, repairProgress, …)
- * @param {Element}  container      - DOM element to render into
- * @param {Function} onComplete     - Called with { newCondition, xpEarned, logEntries[], perfectRepair? }
- * @param {object}   playerTools    - { impactWrench, penetratingOil, penetratingOilCharges, consumeTool }
- * @param {number}   skillLevel     - Player's wrench skill level (1–20)
+ * @param {object}   partDef       – Part definition from the part tree
+ * @param {object}   partInstance  – Live instance state { condition, … }
+ * @param {Element}  container     – DOM element to render into
+ * @param {Function} onComplete    – Called with { newCondition, xpEarned, logEntries }
+ * @param {object}   tools         – Player's tool map
+ * @param {number}   skillLevel    – Wrench skill level (1–20)
+ * @returns {WrenchMechanic}
  */
-export function startWrenchWork(
-  partData,
-  instanceState,
-  container,
-  onComplete,
-  playerTools = {},
-  skillLevel  = 1,
-) {
-  _injectCSS();
+export function startWrenchWork(partDef, partInstance, container, onComplete, tools = {}, skillLevel = 1) {
+  const audio  = window.audioManager;
+  const engine = new RhythmEngine(audio);
 
-  // ── Tool flags ───────────────────────────────────────────────
-  const hasImpactWrench   = !!(playerTools.impactWrench   ?? playerTools.impact_wrench);
-  const oilCharges        = playerTools.penetratingOilCharges ?? 0;
-  const hasPenetratingOil = oilCharges > 0;
-  const consumeTool       = typeof playerTools.consumeTool === 'function'
-    ? playerTools.consumeTool
-    : () => {};
-
-  // ── Skill bonuses ────────────────────────────────────────────
-  // Tier: 1-5 → 0%, 6-10 → 10%, 11-15 → 20%, 16-20 → 30%
-  const skillBonusPct = skillLevel <= 5  ? 0
-                      : skillLevel <= 10 ? 10
-                      : skillLevel <= 15 ? 20
-                      :                   30;
-
-  // ── Derived constants ────────────────────────────────────────
-  const difficulty   = clamp(partData.difficulty ?? 0.5, 0, 1);
-  let totalClicks    = Math.round(30 + difficulty * 70);   // 37 – 100
-  const idealTempo   = 200 + (1.0 - difficulty) * 300;    // 230 – 470 ms
-  const tolerance    = 80 + skillLevel * 2;               // ±ms: wider with skill
-  const baseXP       = 10 + difficulty * 40;              // 14 – 46
-  // Base click value boosted by skill efficiency bonus
-  const baseClickVal = (1.0 / totalClicks) * (1 + skillBonusPct / 100);
-  // Hazard warning duration: 1.5s base + 50ms per skill level
-  const hazardDuration = 1500 + skillLevel * 50;
-
-  // Penetrating oil flag — tracks if oil has been used this session
-  let oilApplied = false;
-
-  const GENERIC_FLAVOR = [
-    'Keep the rhythm.',
-    'Steady hands.',
-    "Almost there... don't rush it.",
-    'Three uggas in... almost there.',
-    "This bolt's fighting back.",
-    'Good torque.',
-    "Nice and easy.",
-    "Feel that? It's giving.",
-  ];
-  const partFlavors = Array.isArray(partData.flavorText) && partData.flavorText.length
-    ? partData.flavorText
-    : [];
-  const ALL_FLAVOR = [...partFlavors, ...GENERIC_FLAVOR];
-
-  const CRITICAL_FLAVOR = [
-    'CRACK — it broke free!',
-    'There we go.',
-    'Like butter.',
-    'Finally.',
-    "That's the one.",
-  ];
-
-  const HAZARD_SUCCESS = [
-    'Backed it off, good call.',
-    'Smart. Let it breathe.',
-    'Easy does it. Momentum held.',
-  ];
-  const HAZARD_FAIL = [
-    'Stripped it. Back up and try again.',
-    'Too eager — momentum lost.',
-    "Easy! You just made it worse.",
-  ];
-
-  const IMPACT_WRENCH_FLAVOR = [
-    '⚡ Impact burst!',
-    '⚡ Braaap — 5× progress!',
-    '⚡ Impact doing its thing.',
-  ];
-
-  const OIL_FLAVOR = [
-    '🫗 Penetrating oil soaking in — resistance reduced.',
-    '🫗 Oil applied. This one\'s giving now.',
-  ];
-
-  // ── Mutable state ────────────────────────────────────────────
-  let progress        = 0;
-  let clickCount      = 0;
-  let lastClickTime   = 0;
-
-  let comboCount      = 0;
-  let totalComboSum   = 0;
-  let totalComboSamples = 0;
-
-  let criticalBonus   = 0;
-
-  let inHazard        = false;
-  let hazardClicked   = false;
-  let hazardTimer     = null;
-  let nextHazardAt    = randomInt(15, 30);
-  let clicksSinceHazard = 0;
-
-  let nextCriticalAt  = randomInt(8, 35);
-  let clicksSinceCritical = 0;
-
-  let nextFlavorAt    = randomInt(5, 10);
-  let clicksSinceFlavor = 0;
-
-  // Impact wrench: fires every 15th click
-  let impactClickTracker = 0;
-  let justBursted        = false;  // suppresses animateTap on burst click
-
-  let isComplete      = false;
-
-
-  // ── Resistance label ─────────────────────────────────────────
-  function getResistance() {
-    if (difficulty < 0.30)  return { label: 'LOW',      color: 'var(--condition-good)' };
-    if (difficulty < 0.60)  return { label: 'MODERATE', color: 'var(--condition-poor)' };
-    if (difficulty < 0.85)  return { label: 'HIGH',     color: 'var(--condition-critical)' };
-    return                         { label: 'SEIZED',   color: 'var(--condition-destroyed)' };
-  }
-
-  // ── Combo tier lookup ────────────────────────────────────────
-  function getComboTier(count) {
-    if (count >= 15) return { multiplier: 3.0, label: 'x3.0', color: '#f59e0b' };
-    if (count >= 10) return { multiplier: 2.5, label: 'x2.5', color: '#f59e0b' };
-    if (count >= 6)  return { multiplier: 2.0, label: 'x2.0', color: '#22c55e' };
-    if (count >= 3)  return { multiplier: 1.5, label: 'x1.5', color: '#60a5fa' };
-    return                  { multiplier: 1.0, label: 'x1.0', color: 'var(--text-muted)' };
-  }
-
-
-  // ════════════════════════════════════════════════════════════
-  //  BUILD UI
-  // ════════════════════════════════════════════════════════════
-
-  container.innerHTML = '';
-  container.style.cssText = [
-    'padding: 16px',
-    'display: flex',
-    'flex-direction: column',
-    'gap: 14px',
-    'max-width: 560px',
-    'margin: 0 auto',
-    'font-family: var(--font-ui)',
-  ].join(';');
-
-  container.style.userSelect = 'none';
-  container.style.webkitUserSelect = 'none';
-
-  const resistance = getResistance();
-
-  // ── Header ───────────────────────────────────────────────────
-  const headerRow = _el('div', {
-    style: 'display:flex; justify-content:space-between; align-items:flex-start; gap:8px;',
+  const m = new WrenchMechanic({
+    part:         { ...partDef, condition: partInstance.condition ?? 0.3 },
+    skillLevel,
+    tools,
+    audioManager: audio,
+    rhythmEngine: engine,
+    container,
+    onComplete(result) {
+      const base          = partInstance.condition ?? 0.3;
+      const improvement   = result.conditionImprovement ?? 0;
+      const newCondition  = parseFloat(clamp(base + improvement, 0.01, 0.95).toFixed(2));
+      const comboLabel    = result.qualityMultiplier >= 2.0 ? ` (×${result.qualityMultiplier?.toFixed(1)} combo)` : '';
+      const logEntries    = [`Removed ${partDef.name}${comboLabel}`];
+      onComplete({ newCondition, xpEarned: result.xpEarned, logEntries });
+    },
   });
 
-  const titleBlock = _el('div', {});
-  titleBlock.appendChild(_el('div', {
-    style: 'font-size:15px; font-weight:700; color:var(--text-primary,#fff); margin-bottom:2px;',
-    textContent: `Wrenching: ${partData.name ?? 'Component'}`,
-  }));
-  titleBlock.appendChild(_el('div', {
-    style: `font-family:var(--font-data,monospace); font-size:11px; color:${resistance.color}; letter-spacing:0.06em;`,
-    textContent: `Resistance: ${resistance.label}`,
-  }));
-  headerRow.appendChild(titleBlock);
-
-  // Skill / tool badges
-  const badgeCol = _el('div', { style: 'display:flex; flex-direction:column; gap:4px; align-items:flex-end;' });
-  if (skillLevel > 1) {
-    const skillBadge = _el('span', {
-      style: 'font-family:var(--font-data,monospace); font-size:10px; padding:2px 7px; border-radius:3px; background:rgba(78,127,255,0.12); color:#4e7fff; border:1px solid #4e7fff44;',
-      textContent: `Lv.${skillLevel} ${skillBonusPct > 0 ? `+${skillBonusPct}%` : ''}`,
-    });
-    badgeCol.appendChild(skillBadge);
-  }
-  if (hasImpactWrench) {
-    badgeCol.appendChild(_el('span', {
-      style: 'font-family:var(--font-data,monospace); font-size:10px; padding:2px 7px; border-radius:3px; background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid #f59e0b44;',
-      textContent: '⚡ Impact Wrench',
-    }));
-  }
-  headerRow.appendChild(badgeCol);
-  container.appendChild(headerRow);
-
-  // ── Progress bar ─────────────────────────────────────────────
-  const progressWrap = _el('div', {
-    style: 'display:flex; flex-direction:column; gap:4px;',
-  });
-
-  const progressLabelRow = _el('div', {
-    style: 'display:flex; justify-content:space-between; font-family:var(--font-data,monospace); font-size:11px; color:var(--text-secondary,#aaa);',
-  });
-  const progressPctEl = _el('span', { textContent: '0%' });
-  const progressClicksEl = _el('span', { textContent: `0 clicks · ~${totalClicks} left` });
-  progressLabelRow.appendChild(progressPctEl);
-  progressLabelRow.appendChild(progressClicksEl);
-
-  const progressTrack = _el('div', {
-    style: [
-      'width: 100%',
-      'height: 14px',
-      'border-radius: 7px',
-      'background: var(--bg-elevated,#1a1a1a)',
-      'border: 1px solid var(--border,#333)',
-      'overflow: hidden',
-    ].join(';'),
-  });
-
-  const progressBar = _el('div', {
-    style: [
-      'height: 100%',
-      'width: 0%',
-      'border-radius: 7px',
-      'background: var(--condition-good,#22c55e)',
-      'transition: width 80ms linear',
-    ].join(';'),
-  });
-
-  progressTrack.appendChild(progressBar);
-  progressWrap.appendChild(progressLabelRow);
-  progressWrap.appendChild(progressTrack);
-  container.appendChild(progressWrap);
-
-  // ── Combo display ────────────────────────────────────────────
-  const comboRow = _el('div', {
-    style: 'display:flex; justify-content:space-between; align-items:center;',
-  });
-
-  const comboEl = _el('div', {
-    style: 'font-family:var(--font-data,monospace); font-size:13px; color:var(--text-muted,#888);',
-    textContent: 'COMBO x1.0',
-  });
-
-  // Visual momentum bar — shows rhythm quality
-  const momentumWrap = _el('div', {
-    style: 'display:flex; align-items:center; gap:6px; flex:1; max-width:180px;',
-  });
-  const momentumLabel = _el('span', {
-    style: 'font-family:var(--font-data,monospace); font-size:10px; color:var(--text-muted,#666); white-space:nowrap;',
-    textContent: '⚡ Momentum',
-  });
-  const momentumTrack = _el('div', {
-    style: 'flex:1; height:8px; border-radius:4px; background:var(--bg-elevated,#1a1a1a); border:1px solid var(--border,#333); overflow:hidden;',
-  });
-  const momentumFill = _el('div', {
-    style: 'height:100%; width:0%; border-radius:4px; background:var(--text-muted,#555); transition:width 150ms ease, background 150ms ease;',
-  });
-  const momentumRhythm = _el('span', {
-    style: 'font-family:var(--font-data,monospace); font-size:10px; color:var(--text-muted,#666); min-width:38px; text-align:right;',
-    textContent: '',
-  });
-  momentumTrack.appendChild(momentumFill);
-  momentumWrap.appendChild(momentumLabel);
-  momentumWrap.appendChild(momentumTrack);
-  momentumWrap.appendChild(momentumRhythm);
-
-  comboRow.appendChild(comboEl);
-  comboRow.appendChild(momentumWrap);
-  container.appendChild(comboRow);
-
-  // ── Tap target ───────────────────────────────────────────────
-  const tapTarget = _el('div', {
-    className: 'ww-tap-target',
-    style: [
-      'display: flex',
-      'flex-direction: column',
-      'align-items: center',
-      'justify-content: center',
-      'gap: 8px',
-      'padding: 28px 16px',
-      'border-radius: 12px',
-      'border: 2px solid var(--border,#333)',
-      'background: var(--bg-card,#141414)',
-      'cursor: pointer',
-      'transition: border-color 200ms ease',
-      'min-height: 130px',
-    ].join(';'),
-    tabIndex: '0',
-  });
-
-  const tapIcon  = _el('div', { style: 'font-size:36px; line-height:1;', textContent: '🔧' });
-  const tapLabel = _el('div', {
-    style: 'font-family:var(--font-data,monospace); font-size:14px; font-weight:700; letter-spacing:0.08em; color:var(--text-primary,#fff);',
-    textContent: 'CLICK',
-  });
-
-  tapTarget.appendChild(tapIcon);
-  tapTarget.appendChild(tapLabel);
-  container.appendChild(tapTarget);
-
-  // ── Penetrating Oil button (only if player has charges) ──────
-  let oilBtn = null;
-  if (hasPenetratingOil) {
-    oilBtn = _el('button', {
-      style: [
-        'padding: 8px 14px',
-        'font-family: var(--font-data,monospace)',
-        'font-size: 12px',
-        'font-weight: 700',
-        'letter-spacing: 0.06em',
-        'background: rgba(163,230,53,0.12)',
-        'color: #a3e635',
-        'border: 1px solid rgba(163,230,53,0.4)',
-        'border-radius: 6px',
-        'cursor: pointer',
-        'transition: opacity 150ms ease',
-        'align-self: flex-start',
-      ].join(';'),
-      textContent: `🫗 Use Penetrating Oil (${oilCharges} remaining)`,
-    });
-
-    oilBtn.addEventListener('click', applyPenetratingOil);
-    container.appendChild(oilBtn);
-  }
-
-  // ── Flavor text ──────────────────────────────────────────────
-  const flavorEl = _el('div', {
-    style: [
-      'font-style: italic',
-      'font-size: 12px',
-      'color: var(--text-muted,#777)',
-      'text-align: center',
-      'min-height: 1.4em',
-      'padding: 0 4px',
-    ].join(';'),
-  });
-  container.appendChild(flavorEl);
-
-
-  // ════════════════════════════════════════════════════════════
-  //  UI UPDATE HELPERS
-  // ════════════════════════════════════════════════════════════
-
-  function updateProgressDisplay() {
-    const pct = Math.min(100, Math.round(progress * 100));
-    progressBar.style.width   = `${pct}%`;
-    progressPctEl.textContent = `${pct}%`;
-
-    // Show actual clicks done + estimated remaining (accounts for combo/tools)
-    const remaining = progress >= 1.0
-      ? 0
-      : Math.max(1, Math.ceil((1.0 - progress) / baseClickVal));
-    progressClicksEl.textContent = `${clickCount} clicks · ~${remaining} left`;
-  }
-
-  function updateComboDisplay() {
-    const tier = getComboTier(comboCount);
-    comboEl.textContent = `COMBO ${tier.label}`;
-    comboEl.style.color = tier.color;
-
-    // Update visual momentum bar — maps comboCount 0-15 to 0-100%
-    const pct = Math.min(100, Math.round((comboCount / 15) * 100));
-    momentumFill.style.width = `${pct}%`;
-
-    if (comboCount >= 10) {
-      momentumFill.style.background = '#f59e0b';
-      momentumRhythm.textContent = 'GREAT';
-      momentumRhythm.style.color = '#f59e0b';
-      momentumTrack.classList.add('ww-momentum-pulsing');
-    } else if (comboCount >= 6) {
-      momentumFill.style.background = '#22c55e';
-      momentumRhythm.textContent = 'GOOD';
-      momentumRhythm.style.color = '#22c55e';
-      momentumTrack.classList.remove('ww-momentum-pulsing');
-    } else if (comboCount >= 3) {
-      momentumFill.style.background = '#84cc16';
-      momentumRhythm.textContent = 'OK';
-      momentumRhythm.style.color = '#84cc16';
-      momentumTrack.classList.remove('ww-momentum-pulsing');
-    } else {
-      momentumFill.style.background = 'var(--text-muted,#555)';
-      momentumRhythm.textContent = '';
-      momentumTrack.classList.remove('ww-momentum-pulsing');
-    }
-  }
-
-  function setFlavor(text, animate = true) {
-    flavorEl.textContent = `"${text}"`;
-    if (animate) {
-      flavorEl.classList.remove('ww-flavor-in');
-      void flavorEl.offsetWidth;
-      flavorEl.classList.add('ww-flavor-in');
-      flavorEl.addEventListener('animationend', () => flavorEl.classList.remove('ww-flavor-in'), { once: true });
-    }
-  }
-
-  function _triggerAnimation(el, cls, duration) {
-    el.classList.remove(cls);
-    void el.offsetWidth;
-    el.classList.add(cls);
-    if (duration) {
-      setTimeout(() => el.classList.remove(cls), duration);
-    } else {
-      el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
-    }
-  }
-
-  // FIX: correct audio sound names to match the audio.js registry
-  function playAudio(name, opts = {}) {
-    try {
-      const am = window.audioManager;
-      if (!am) return;
-      if (name === 'ratchet') {
-        am.playRatchet();
-      } else {
-        am.play(name, opts);
-      }
-    } catch (_) { /* audio not yet loaded */ }
-  }
-
-
-  // ════════════════════════════════════════════════════════════
-  //  GAME SYSTEMS
-  // ════════════════════════════════════════════════════════════
-
-  function animateTap() {
-    _triggerAnimation(tapTarget, 'ww-pressing');
-    _triggerAnimation(tapIcon, 'ww-icon-bob');
-  }
-
-  function triggerCritical() {
-    const multiplier = randomRange(3, 5);
-    const jump = baseClickVal * multiplier;
-    progress = Math.min(1.0, progress + jump);
-
-    _triggerAnimation(progressBar, 'ww-critical-pop');
-    setFlavor(pickRandom(CRITICAL_FLAVOR));
-    criticalBonus = 3;
-
-    playAudio('impact');
-
-    nextCriticalAt      = randomInt(8, 35);
-    clicksSinceCritical = 0;
-
-    updateProgressDisplay();
-  }
-
-  /**
-   * Impact Wrench: fires on every 15th click as an automatic 5× progress burst.
-   * Animation runs on progressBar (not tapTarget) to avoid conflicting with
-   * the ww-pressing animation that fires on the same click.
-   */
-  function triggerImpactBurst() {
-    const jump = baseClickVal * 5;
-    progress = Math.min(1.0, progress + jump);
-
-    // Burst animation on the progress bar — avoids collision with ww-pressing
-    _triggerAnimation(progressBar, 'ww-impact-burst');
-    setFlavor(pickRandom(IMPACT_WRENCH_FLAVOR));
-
-    justBursted = true;   // tell processClick to skip animateTap this click
-    playAudio('impact');
-    updateProgressDisplay();
-  }
-
-  /**
-   * Penetrating Oil: reduces total clicks needed by 30%.
-   * Triggered once per repair by the [Use Oil] button.
-   * Deducts one charge from state via consumeTool callback.
-   */
-  function applyPenetratingOil() {
-    if (oilApplied || isComplete) return;
-    oilApplied = true;
-
-    // -30% resistance: the remaining progress gap shrinks by 30%
-    const remaining = 1.0 - progress;
-    progress = Math.min(1.0, progress + remaining * 0.30);
-
-    // Consume charge via workbench callback
-    consumeTool('penetrating_oil');
-
-    // Hide the oil button (used up)
-    if (oilBtn) {
-      oilBtn.style.opacity = '0.4';
-      oilBtn.disabled = true;
-      oilBtn.textContent = '🫗 Oil Applied';
-    }
-
-    _triggerAnimation(tapTarget, 'ww-oil-applied');
-    setFlavor(pickRandom(OIL_FLAVOR));
-    updateProgressDisplay();
-
-    if (progress >= 1.0) {
-      completeWork();
-    }
-  }
-
-  function startHazard() {
-    inHazard      = true;
-    hazardClicked = false;
-
-    tapLabel.textContent = '⚠️  STUCK — HOLD';
-    tapLabel.style.color = '#ef4444';
-    tapIcon.textContent  = '🛑';
-    tapTarget.classList.add('ww-hazard-active');
-
-    playAudio('stuck');
-
-    // hazardDuration is skill-scaled: longer warning for higher skill players
-    hazardTimer = setTimeout(() => endHazard(!hazardClicked), hazardDuration);
-  }
-
-  function endHazard(success) {
-    inHazard = false;
-    clearTimeout(hazardTimer);
-
-    tapTarget.classList.remove('ww-hazard-active');
-    tapLabel.style.color = '';
-    tapIcon.textContent  = '🔧';
-
-    if (success) {
-      tapLabel.textContent = 'CLICK';
-      _triggerAnimation(tapTarget, 'ww-success-flash', 650);
-      setFlavor(pickRandom(HAZARD_SUCCESS));
-      setTimeout(updateComboDisplay, 650);
-    } else {
-      comboCount = 0;
-      progress = Math.max(0, progress - 0.05);
-
-      _triggerAnimation(progressBar, 'ww-shake');
-      _triggerAnimation(progressBar, 'ww-loss');
-
-      tapLabel.textContent = 'CLICK';
-      setFlavor(pickRandom(HAZARD_FAIL));
-
-      updateComboDisplay();
-      updateProgressDisplay();
-    }
-
-    nextHazardAt      = randomInt(15, 30);
-    // clicksSinceHazard was already reset before startHazard was called
-  }
-
-  function completeWork() {
-    isComplete = true;
-
-    tapTarget.removeEventListener('click', handleClick);
-    tapTarget.removeEventListener('touchstart', handleTouch);
-
-    progress = 1.0;
-    updateProgressDisplay();
-    _triggerAnimation(progressBar, 'ww-complete-bar', 1000);
-
-    tapTarget.style.cursor  = 'default';
-    tapTarget.style.opacity = '0.55';
-    tapTarget.style.borderColor = 'var(--condition-excellent)';
-    tapTarget.classList.remove('ww-gold-shimmer');
-    tapIcon.textContent  = '✅';
-    tapLabel.textContent = 'DONE';
-    tapLabel.style.color = 'var(--condition-excellent)';
-
-    const actionWords = ['sorted', 'off', 'done', 'free'];
-    setFlavor(`Done. ${partData.name} is ${pickRandom(actionWords)}.`);
-
-    playAudio('system_complete');
-
-    // ── Result calculation ──
-    const startCondition = instanceState.condition ?? 0.2;
-    let   newCondition   = parseFloat(
-      (startCondition + (1.0 - startCondition) * 0.70).toFixed(2)
-    );
-
-    const avgCombo = totalComboSamples > 0 ? totalComboSum / totalComboSamples : 1.0;
-    let   xpEarned = Math.round(baseXP * avgCombo);
-
-    // ── Perfect Repair proc (level 16+, 5% chance) ──────────────
-    let perfectRepair = false;
-    if (skillLevel >= 16 && Math.random() < 0.05) {
-      perfectRepair = true;
-      newCondition  = 1.00;
-      xpEarned      = xpEarned * 2;   // double XP
-
-      // Gold flash on the container
-      setTimeout(() => {
-        _triggerAnimation(tapTarget, 'ww-perfect-repair-flash', 900);
-        setFlavor('⚡ PERFECT REPAIR — Restored to factory spec!');
-        tapLabel.textContent = '⚡ PERFECT';
-        tapLabel.style.color = '#f59e0b';
-      }, 200);
-    }
-
-    const logEntries = [
-      `Removed ${partData.name} — ${clickCount} clicks (avg combo x${avgCombo.toFixed(1)})`,
-      `Condition: ${Math.round(startCondition * 100)}% → ${Math.round(newCondition * 100)}%`,
-      `Wrench XP earned: +${xpEarned}`,
-    ];
-
-    if (oilApplied) {
-      logEntries.push('Penetrating oil used — resistance reduced by 30%.');
-    }
-    if (perfectRepair) {
-      logEntries.push('⚡ PERFECT REPAIR proc! Restored to factory spec! (2× XP)');
-    }
-
-    // 1-second delay so the player sees the completion flash
-    setTimeout(() => {
-      onComplete({ newCondition, xpEarned, logEntries, perfectRepair });
-    }, perfectRepair ? 1400 : 1000);
-  }
-
-
-  // ════════════════════════════════════════════════════════════
-  //  MAIN CLICK HANDLER
-  // ════════════════════════════════════════════════════════════
-
-  function processClick() {
-    if (isComplete) return;
-
-    const now = performance.now();
-
-    if (inHazard) {
-      hazardClicked = true;
-      return;
-    }
-
-    clickCount++;
-    clicksSinceHazard++;
-    clicksSinceCritical++;
-    clicksSinceFlavor++;
-
-    // ── Impact Wrench: auto burst every 15th click ─────────────
-    if (hasImpactWrench) {
-      impactClickTracker++;
-      if (impactClickTracker >= 15) {
-        impactClickTracker = 0;
-        triggerImpactBurst();
-        if (progress >= 1.0) {
-          completeWork();
-          return;
-        }
-      }
-    }
-
-    // ── Hazard check BEFORE progress — prevents the trigger click
-    //    from giving a small progress bump right before a failure.
-    //    If a hazard fires here, skip all progress for this click.
-    if (clicksSinceHazard >= nextHazardAt) {
-      clicksSinceHazard = 0;
-      startHazard();
-      // Animate the tap so the click still feels responsive, but
-      // do NOT add progress — the hazard swallows this click.
-      animateTap();
-      playAudio('ratchet');
-      return;
-    }
-
-    // ── Normal click: rhythm detection + progress ──────────────
-    let inRhythm = false;
-    if (lastClickTime > 0) {
-      const delta = now - lastClickTime;
-      inRhythm = Math.abs(delta - idealTempo) <= tolerance;
-    }
-    lastClickTime = now;
-
-    if (inRhythm) {
-      comboCount++;
-    } else if (clickCount > 1) {
-      comboCount = 0;
-    }
-
-    const tier = getComboTier(comboCount);
-    let effectiveMult = tier.multiplier;
-    if (criticalBonus > 0) {
-      effectiveMult += 0.5;
-      criticalBonus--;
-    }
-
-    totalComboSum += effectiveMult;
-    totalComboSamples++;
-
-    progress = Math.min(1.0, progress + baseClickVal * effectiveMult);
-
-    if (!justBursted) animateTap();
-    justBursted = false;
-    updateComboDisplay();
-    updateProgressDisplay();
-
-    playAudio('ratchet');
-
-    if (clicksSinceCritical >= nextCriticalAt) {
-      triggerCritical();
-    }
-
-    if (clicksSinceFlavor >= nextFlavorAt) {
-      setFlavor(pickRandom(ALL_FLAVOR));
-      nextFlavorAt      = randomInt(5, 10);
-      clicksSinceFlavor = 0;
-    }
-
-    if (progress >= 1.0) {
-      completeWork();
-    }
-  }
-
-  function handleClick(e) {
-    e.preventDefault();
-    processClick();
-  }
-
-  function handleTouch(e) {
-    e.preventDefault();
-    processClick();
-  }
-
-  tapTarget.addEventListener('click', handleClick);
-  tapTarget.addEventListener('touchstart', handleTouch, { passive: false });
-
-  // ── Initial render ───────────────────────────────────────────
-  updateComboDisplay();
-  updateProgressDisplay();
-  setFlavor(pickRandom(ALL_FLAVOR), false);
+  // Register cleanup hook for workbench.js _teardownMechanic()
+  container._bwCleanup = () => {
+    m.destroy();
+    container._bwCleanup = null;
+  };
+
+  m.start();
+  return m;
 }
 
 
-// ════════════════════════════════════════════════════════════
-//  LOCAL HELPERS
-// ════════════════════════════════════════════════════════════
+// ── DOM helper ────────────────────────────────────────────────
 
 function _el(tag, props = {}) {
-  const node = document.createElement(tag);
+  const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
-    if      (k === 'style')       node.style.cssText = v;
-    else if (k === 'className')   node.className = v;
-    else if (k === 'textContent') node.textContent = v;
-    else if (k === 'innerHTML')   node.innerHTML = v;
-    else                          node.setAttribute(k, v);
+    if      (k === 'style')       n.style.cssText = v;
+    else if (k === 'className')   n.className = v;
+    else if (k === 'textContent') n.textContent = v;
+    else if (k === 'innerHTML')   n.innerHTML = v;
+    else                          n.setAttribute(k, v);
   }
-  return node;
+  return n;
 }
