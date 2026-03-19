@@ -259,7 +259,7 @@ function buildProfileCard(profile) {
   });
   btnGroup.appendChild(playBtn);
 
-  // Visit button (only if profile has saved data)
+  // Visit + Reset buttons (only if profile has saved data)
   if (summary.exists) {
     const visitBtn = document.createElement('button');
     visitBtn.className = 'btn btn--secondary w-full';
@@ -269,6 +269,32 @@ function buildProfileCard(profile) {
       navigate(`#/visit/${profile.id}`);
     });
     btnGroup.appendChild(visitBtn);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn w-full';
+    resetBtn.textContent = 'Reset Data';
+    resetBtn.style.cssText = [
+      'border: 1px solid var(--condition-critical)',
+      'color: var(--condition-critical)',
+      'background: transparent',
+      'margin-top: var(--space-xs)',
+      'font-size: var(--font-size-xs)',
+      'opacity: 0.7',
+      'transition: opacity var(--transition-fast), background var(--transition-fast)',
+    ].join(';');
+    resetBtn.addEventListener('mouseenter', () => {
+      resetBtn.style.opacity = '1';
+      resetBtn.style.background = 'rgba(239,68,68,0.08)';
+    });
+    resetBtn.addEventListener('mouseleave', () => {
+      resetBtn.style.opacity = '0.7';
+      resetBtn.style.background = 'transparent';
+    });
+    resetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleReset(profile.id, profile.name, card);
+    });
+    btnGroup.appendChild(resetBtn);
   }
 
   card.appendChild(btnGroup);
@@ -354,6 +380,81 @@ function showWelcomeToast() {
     toast.style.opacity = '0';
     setTimeout(() => toast.remove(), 500);
   }, 4500);
+}
+
+// ── Reset Handler ───────────────────────────────────────────
+
+function handleReset(profileId, profileName, card) {
+  // Build inline confirmation that replaces the card content
+  const originalHTML = card.innerHTML;
+
+  card.innerHTML = '';
+  card.style.borderTopColor = 'var(--condition-critical)';
+
+  const msg = document.createElement('div');
+  msg.style.cssText = [
+    'font-size: var(--font-size-xs)',
+    'color: var(--text-secondary)',
+    'text-align: center',
+    'padding: var(--space-sm) 0 var(--space-md)',
+    'line-height: 1.5',
+  ].join(';');
+  msg.innerHTML = `<strong style="color:var(--condition-critical);">Reset ${profileName}?</strong><br>All progress will be deleted.<br>This cannot be undone.`;
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:var(--space-xs);flex-direction:column;';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn w-full';
+  confirmBtn.textContent = 'Yes, Reset';
+  confirmBtn.style.cssText = [
+    'border: 1px solid var(--condition-critical)',
+    'color: var(--condition-critical)',
+    'background: transparent',
+  ].join(';');
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn--secondary w-full';
+  cancelBtn.textContent = 'Cancel';
+
+  cancelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Restore card to original state
+    card.innerHTML = originalHTML;
+    // Re-attach all event listeners by re-rendering the picker
+    renderProfilePicker();
+  });
+
+  confirmBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    confirmBtn.textContent = 'Resetting…';
+    confirmBtn.disabled = true;
+    cancelBtn.disabled  = true;
+
+    // 1. Wipe localStorage
+    localStorage.removeItem(LS_PREFIX + profileId);
+
+    // 2. Best-effort: remove from Firebase too
+    try {
+      if (window._firebase) {
+        const { ref, remove } = window._firebase;
+        // window._firebase exposes ref() and remove() via index.html
+        // ref is a factory fn: ref(path) → DatabaseReference
+        const profileRef = window._firebase.ref(`tmcc-game/profiles/${profileId}`);
+        await window._firebase.remove(profileRef);
+      }
+    } catch (err) {
+      console.warn('[Reset] Firebase removal failed (data cleared locally):', err);
+    }
+
+    // 3. Re-render the picker so the card reflects the fresh state
+    renderProfilePicker();
+  });
+
+  btnRow.appendChild(confirmBtn);
+  btnRow.appendChild(cancelBtn);
+  card.appendChild(msg);
+  card.appendChild(btnRow);
 }
 
 // ── Activity Feed ───────────────────────────────────────────
