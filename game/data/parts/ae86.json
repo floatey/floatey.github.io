@@ -1193,13 +1193,13 @@
       "id": "electrical",
       "name": "Electrical",
       "type": "bundle",
-      "repairType": "diagnosis",
+      "repairType": "bodywork",
       "difficulty": 0.4,
       "bundleCost": 500,
       "flavorText": [
-        "Alternator's weak, starter solenoid clicks sometimes, and somebody spliced into the harness for a stereo that's long gone.",
-        "Fusible links are crusty. Half the dash lights are out. The wiring harness has three colors of electrical tape in it.",
-        "Check the grounds first. On old Toyotas, it's always the grounds."
+        "Somebody spliced into the harness for a stereo that's long gone. Three colors of electrical tape in here.",
+        "Fusible links are crusty. Half the dash lights are out. Time to strip it all back and start clean.",
+        "Check the grounds first. On old Toyotas, it's always the grounds. Then chase the scotch locks."
       ]
     },
     {
@@ -1426,22 +1426,23 @@
       "multiLayer": null
     },
     {
-      "id": "ae86_diag_electrical",
-      "symptom": "Headlights dim at idle, the starter cranks slowly on cold mornings, and the voltmeter reads low",
+      "id": "ae86_diag_stall_mystery",
+      "symptom": "Engine randomly dies at idle \u2014 sometimes at a stoplight, sometimes just sitting in the driveway warming up. Restarts fine every time. No check engine light.",
       "clues": {
         "free": [
-          "Battery is less than a year old \u2014 tested good at the parts store",
-          "There's a rats nest of spliced wires behind the dash from a stereo install"
+          "It never stalls while driving, only at idle or just off idle",
+          "Unplugging the IACV connector and plugging it back in doesn't change anything \u2014 idle stays the same whether it's connected or not",
+          "There's a thick layer of carbon crust visible inside the throttle bore when you open the air cleaner"
         ],
-        "multimeter": "Alternator output is 11.8V at idle \u2014 should be 13.5-14.5V. Ground strap resistance is 4 ohms \u2014 way too high",
-        "compressionTester": null,
+        "multimeter": "IACV solenoid resistance is 28 ohms \u2014 within Toyota spec (25-35 ohms). It clicks when you apply 12V to it. The wiring checks out clean.",
+        "compressionTester": "All four cylinders 155-162 PSI, healthy and even. Not a bottom-end issue.",
         "boostLeakTester": null
       },
-      "correctDiagnosis": "electrical",
+      "correctDiagnosis": "ae86_engine_throttle_body",
       "wrongOptions": [
-        "ae86_engine_timing_belt",
+        "ae86_engine_iacv",
         "ae86_fuel_fuel_pump",
-        "ae86_engine_iacv"
+        "ae86_engine_vacuum_lines"
       ],
       "multiLayer": null
     }
