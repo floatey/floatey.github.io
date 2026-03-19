@@ -726,8 +726,8 @@ export class WrenchMechanic {
     this._totalCycles   = Math.max(4, Math.round((1 - condition) * 10));
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
     // One 16th-note step — matches the engine's _advance() formula (60/bpm/4).
-    // Previously 60/bpm (a quarter note = 4× too long), which made call-cell
-    // highlights overshoot into adjacent steps, so multiple cells appeared active
+    // Previously 60/bpm (a quarter note = 4x too long), making call-cell
+    // highlights overshoot into adjacent steps so multiple cells lit up
     // simultaneously and the rhythm felt smeared and arbitrary.
     this._stepDuration  = (60 / this._map.bpm / 4) * 1000;  // ms  per 16th-note step
     this._stepDurSec    = 60 / this._map.bpm / 4;            // sec per 16th-note step
@@ -968,28 +968,17 @@ export class WrenchMechanic {
   }
 
   // ── Beat callback (from RhythmEngine) ───────────────────────
-  //
-  // 32-step cycle layout (see audio.js _genWrench for rationale):
-  //
-  //   Steps  0– 7  (bar 1, beats 1–2): call phase — engine demonstrates
-  //   Steps  8–15  (bar 1, beats 3–4): transition — BPM-locked countdown
-  //   Steps 16–23  (bar 2, beats 1–2): response phase — player echoes
-  //   Steps 24–31  (bar 2, beats 3–4): buffer — evaluate, reset, breathe
-  //
-  // The response always starts on the downbeat of bar 2 (step 16 = beat 1),
-  // the strongest musical cue. Two metronome ticks at steps 8 and 12 give
-  // the player a "1 … 2 … GO" countdown locked to the BPM — no setTimeout.
 
   _onBeat(step, time, isActive) {
     if (this._phase === 'done') return;
 
-    // ── Count-in phase (first engine cycle, steps 0–15 used) ──────
-    // Quarter-note beats fall at steps 0, 4, 8, 12.  Steps 16–31 of the
-    // 32-step count-in cycle are silent; we just let them pass.
+    // ── Count-in phase (first engine cycle, steps 0–15) ──────
+    // Quarter-note beats fall at steps 0, 4, 8, 12 of the 16th-note grid.
+    // This gives 4 perfectly audio-clock-synced ticks before the game starts.
     if (!this._countInDone) {
-      if (step < 16 && step % 4 === 0) {
-        const pipIdx   = step / 4;      // 0 1 2 3
-        const isAccent = pipIdx === 3;  // accent on beat 4 ("1 is next")
+      if (step % 4 === 0) {
+        const pipIdx   = step / 4;          // 0 1 2 3
+        const isAccent = pipIdx === 3;       // accent on last beat ("1 is next")
         this.audio?.playMetronomeTick?.(isAccent);
         this._countdownPips.forEach((p, i) => {
           p.className = i < pipIdx   ? 'wv2-countdown-pip wv2-countdown-pip--done'
@@ -998,23 +987,25 @@ export class WrenchMechanic {
         });
       }
       if (step === 15) {
-        // Last counted beat — steps 16–31 are silent, game begins at step 0
-        // of the next engine cycle.
+        // Last count-in step — next beat (step 0) is the real "1"
         this._countInDone = true;
         this._countdownEl.style.display = 'none';
       }
       return;  // skip all call/response logic during count-in
     }
 
-    // ── Cycle start (step 0): begin call ─────────────────────────
-    // In the 32-step model the response phase ends at step 24 and the
-    // engine idles (phase = 'buffer') through steps 24–31.  No lingering
-    // response needs evaluating here.
+    // ── Cycle start (step 0) ──────────────────────────────
     if (step === 0) {
+      if (this._phase === 'response') {
+        this._evaluateMissedLastStep();
+        if (this._isHolding && !this._holdResultSet) this._resolveHold('late');
+        this._endResponsePhase();
+      }
+
       this._startCallPhase();
     }
 
-    // ── Call phase (steps 0–7) ────────────────────────────────────
+    // ── Call phase (steps 0–7) ───────────────────────────
     if (this._phase === 'call' && step < 8) {
       if (step > 0) this._callCells[step - 1]?.classList.remove('wv2-cell--call-active');
 
@@ -1028,49 +1019,36 @@ export class WrenchMechanic {
           }
         }, this._stepDuration * 0.55);
       }
+
+      // Steps 4-7: BPM-locked GET READY countdown.
+      // One pip lights up per step, giving the player a full beat (4 x 16th note)
+      // of metered preparation before the response cursor arrives at step 8.
+      // This uses the engine's own beat callbacks rather than a setTimeout, so
+      // it is immune to timer jitter and locked to the same grid as the call.
+      if (step === 4) {
+        this._setBannerState('ready', 'GET READY');
+        this._countdownEl.style.display = 'flex';
+        this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
+      }
+      if (step >= 4 && step <= 7) {
+        const pipIdx = step - 4;  // 0 1 2 3
+        this._countdownPips.forEach((p, i) => {
+          p.className = i < pipIdx  ? 'wv2-countdown-pip wv2-countdown-pip--done'
+                      : i === pipIdx ? 'wv2-countdown-pip wv2-countdown-pip--active'
+                      :               'wv2-countdown-pip';
+        });
+      }
     }
 
-    // ── Transition begins (step 8): GET READY + first countdown tick ──
-    //
-    // Step 8 = beat 3 of bar 1 — first beat of the 2-beat preparation window.
-    // The call row is frozen; both countdown beats are BPM-locked metronome
-    // ticks, not setTimeout approximations.
-    if (step === 8 && this._phase === 'call') {
+    // ── Transition to response (step 8) ──────────────────
+    if (step === 8) {
       this._callCells[7]?.classList.remove('wv2-cell--call-active');
-      this._phase = 'ready';
-
-      this._setBannerState('ready', 'GET READY');
-      this._countdownEl.style.display = 'flex';
-      // All four pips light at once — the "flash" that signals listen is over
-      this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip wv2-countdown-pip--active'; });
-
-      // Tick 1 of 2: beat 3 of bar 1 ("1 of 2")
-      this.audio?.playMetronomeTick?.(false);
-    }
-
-    // ── Second countdown tick (step 12): beat 4 — "downbeat incoming" ──
-    if (step === 12 && this._phase === 'ready') {
-      this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip wv2-countdown-pip--done'; });
-      // Tick 2 of 2: beat 4 of bar 1, accented ("2 of 2, then GO")
-      this.audio?.playMetronomeTick?.(true);
-    }
-
-    // ── Response phase start (step 16): beat 1 of bar 2 ──────────
-    //
-    // Step 16 is the strongest musical landing point in the 32-step cycle.
-    // The player's cursor appears exactly on this downbeat — a clear, felt
-    // "1" rather than a mid-bar surprise on beat 3.
-    if (step === 16 && this._phase === 'ready') {
       this._startResponsePhase(time);
     }
 
-    // ── Response phase (steps 16–23) ─────────────────────────────
-    //
-    // rStep maps engine steps 16–23 → response-grid positions 0–7.
-    // All logic is identical to the previous steps-8–15 code; only the
-    // offset (step - 16 instead of step - 8) changes.
-    if (this._phase === 'response' && step >= 16 && step < 24) {
-      const rStep = step - 16;   // 0–7
+    // ── Response phase (steps 8–15) ──────────────────────
+    if (this._phase === 'response' && step >= 8) {
+      const rStep = step - 8;  // 0–7
 
       if (rStep > 0) {
         this._evaluatePreviousResponseStep(rStep - 1, time);
@@ -1084,18 +1062,23 @@ export class WrenchMechanic {
       this._responseStepActive  = !!this._typedPattern[rStep];
       this._responseStepEval    = false;
 
-      // ── JITTER COMPENSATION ─────────────────────────────────────────────
+      // ── JITTER COMPENSATION ─────────────────────────────────────
       // Record when this callback actually fires (setTimeout is imprecise).
-      // During response phase the player reacts to the VISUAL cursor (the
-      // only cue — no audio plays during response).  If setTimeout fires
-      // 30ms late, the player sees the cursor 30ms late and taps 30ms late,
-      // but without this correction their tap would be judged against the
-      // originally scheduled `time` — penalising them for unavoidable jitter.
+      // During response phase, the player reacts to the VISUAL cursor
+      // (the only cue — no audio plays during response). If setTimeout
+      // fires 30ms late, the player sees the cursor 30ms late and taps
+      // 30ms late, but without this correction their tap would be judged
+      // against the originally scheduled `time` — penalising them for
+      // unavoidable browser jitter.
+      //
+      // _responseStepRealTime is used by _onPlayerPress instead of
+      // _responseStepTime when available.
       const ctx = this.audio?._ctx;
       this._responseStepRealTime = ctx ? ctx.currentTime : performance.now() / 1000;
 
       if (rStep === this._holdEndStep && this._isHolding && !this._holdEndTime) {
         this._holdEndTime = time;
+        // Also store actual callback fire time for jitter-compensated hold release
         this._holdEndRealTime = ctx ? ctx.currentTime : performance.now() / 1000;
       }
 
@@ -1106,20 +1089,6 @@ export class WrenchMechanic {
             ? 'wv2-cell--cursor-active' : 'wv2-cell--cursor');
         }
       });
-    }
-
-    // ── Response end (step 24): evaluate last step + enter buffer ─
-    //
-    // Moved from step 0 of the next cycle.  Evaluating here gives the
-    // 2-beat buffer window (steps 24–31) to display result feedback before
-    // the next call resets the grid — a natural musical phrase ending.
-    if (step === 24 && this._phase === 'response') {
-      this._evaluateMissedLastStep();
-      if (this._isHolding && !this._holdResultSet) this._resolveHold('late');
-      this._endResponsePhase();
-      this._phase = 'buffer';
-      // Drop cursor from the last response cell
-      this._responseCells[7]?.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active');
     }
   }
 
