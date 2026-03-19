@@ -3,8 +3,10 @@
 // ════════════════════════════════════════════════════════════
 
 import { navigate, getApp, refreshHeader } from './main.js';
-// FIX: Import the real wrench mechanic (lives at js/mechanics/wrench.js)
-import { startWrenchWork } from './mechanics/wrench.js';
+import { startWrenchWork    } from './mechanics/wrench.js';
+import { startPrecisionWork } from './mechanics/precision.js';
+import { startDiagnosis     } from './mechanics/diagnosis.js';
+import { startBodywork      } from './mechanics/bodywork.js';
 
 // ── Part tree cache (shared with garage.js pattern) ─────────
 const partTreeCache = {};
@@ -857,9 +859,188 @@ function renderPartDetail(container) {
 //  ACTION HANDLERS
 // ══════════════════════════════════════════════════════════════
 
+// ── Mechanic helpers ─────────────────────────────────────────
+
 /**
- * FIX: Wire up the real startWrenchWork() from mechanics/wrench.js.
- * The onComplete callback receives { newCondition, xpEarned, logEntries }.
+ * Read the player's owned tools from state.
+ * Returns an object with camelCase keys matching what each mechanic expects.
+ */
+function _getPlayerTools() {
+  const { state } = getApp();
+  const profile = state.getProfile();
+  const raw = profile.tools || {};
+  return {
+    // Wrench
+    impactWrench:      !!raw.impact_wrench,
+    penetratingOil:    !!raw.penetrating_oil,
+    // Precision
+    torqueWrench:      !!raw.torque_wrench,
+    angleGauge:        !!raw.angle_gauge,
+    // Diagnosis
+    multimeter:        !!raw.multimeter,
+    compressionTester: !!raw.compression_tester,
+    boostLeakTester:   !!raw.boost_leak_tester,
+    // Bodywork
+    daPolisher:        !!raw.da_polisher,
+    mediaBlaster:      !!raw.media_blaster,
+  };
+}
+
+/**
+ * Read the player's current skill level for a given repair type.
+ * Defaults to 1 if not present.
+ */
+function _getSkillLevel(repairType) {
+  const { state } = getApp();
+  const profile = state.getProfile();
+  return profile.skills?.[repairType]?.level ?? 1;
+}
+
+/**
+ * Safely tear down whatever mechanic is currently running in the mechanic area.
+ * Calls the bodywork cleanup hook if present, then clears innerHTML.
+ */
+function _teardownMechanic(mechanicArea) {
+  if (typeof mechanicArea._bwCleanup === 'function') {
+    try { mechanicArea._bwCleanup(); } catch (_) {}
+    delete mechanicArea._bwCleanup;
+  }
+  mechanicArea.innerHTML = '';
+  mechanicArea.style.minHeight = '0';
+}
+
+/**
+ * Find the diagnostic scenario in the part tree whose correctDiagnosis
+ * matches the given partId. Returns null if none found.
+ */
+function _findDiagnosticScenario(partId) {
+  const { partTree } = wb;
+  if (!partTree || !Array.isArray(partTree.diagnosticScenarios)) return null;
+  return partTree.diagnosticScenarios.find(s => s.correctDiagnosis === partId) ?? null;
+}
+
+/**
+ * Build an enriched vehicleParts map for startDiagnosis() by overlaying
+ * template data (name, replaceCost) onto the live part instance state.
+ * This lets diagnosis.js show human-readable names and accurate yen penalties.
+ */
+function _enrichedVehicleParts() {
+  const { instanceId, partTree } = wb;
+  const { state } = getApp();
+  const vehicle = state.getVehicle(instanceId);
+  if (!vehicle) return {};
+
+  const enriched = {};
+  for (const [partId, instance] of Object.entries(vehicle.parts)) {
+    const def = findPartDef(partTree, partId);
+    enriched[partId] = {
+      ...instance,
+      name:        def?.name        ?? partId,
+      replaceCost: def?.replaceCost ?? def?.bundleCost ?? 0,
+    };
+  }
+  return enriched;
+}
+
+// ── Diagnosis completion handler ─────────────────────────────
+
+/**
+ * Handle the onComplete callback from startDiagnosis().
+ * Shape: { correctPartId, wasCorrect, yenPenalty, xpEarned, logEntries, revealsScenario }
+ */
+function handleDiagnosisComplete(result, mechanicArea) {
+  const { instanceId, partTree } = wb;
+  const { state } = getApp();
+
+  _teardownMechanic(mechanicArea);
+
+  // Write log entries regardless of outcome
+  if (result.logEntries?.length) {
+    for (const entry of result.logEntries) {
+      addLogEntry(instanceId, result.wasCorrect ? '✓' : '✗', entry);
+    }
+  }
+
+  // Award XP to diagnosis skill
+  if (result.xpEarned > 0) {
+    const profile = state.getProfile();
+    if (profile.skills?.diagnosis) {
+      profile.skills.diagnosis.xp += result.xpEarned;
+      while (profile.skills.diagnosis.level < 20) {
+        const xpToNext = profile.skills.diagnosis.level * 100;
+        if (profile.skills.diagnosis.xp < xpToNext) break;
+        profile.skills.diagnosis.xp -= xpToNext;
+        profile.skills.diagnosis.level++;
+        showToast(`⬆ Diagnosis leveled up to Lv.${profile.skills.diagnosis.level}!`, 4000);
+      }
+      state.save();
+    }
+  }
+
+  if (result.wasCorrect) {
+    // Correct diagnosis: apply the repair to the identified part
+    completeRepair(result.correctPartId, {
+      // diagnosis itself doesn't compute newCondition; completeRepair fallback will apply +30–55%
+      xpEarned: 0,   // already credited above
+      logEntries: [],
+    });
+    showToast(`✓ Correct diagnosis! ${findPartName(partTree, result.correctPartId)} marked for repair.`, 4000);
+
+    // If there's a chained second scenario, launch it after a short pause
+    if (result.revealsScenario) {
+      const nextScenario = partTree.diagnosticScenarios?.find(s => s.id === result.revealsScenario);
+      if (nextScenario) {
+        showToast('More damage uncovered — continue diagnosing.', 3000);
+        setTimeout(() => _launchDiagnosis(nextScenario, mechanicArea), 1200);
+      }
+    }
+  } else {
+    // Wrong diagnosis: deduct yen penalty
+    if (result.yenPenalty > 0) {
+      state.updateCurrency('yen', -result.yenPenalty);
+      refreshHeader();
+      showToast(`✗ Wrong diagnosis. Wasted ${formatYen(result.yenPenalty)} on a part you didn't need.`, 4500);
+    } else {
+      showToast('✗ Wrong diagnosis. Keep looking.', 3000);
+    }
+    addLogEntry(instanceId, '✗', `Wrong diagnosis — ${formatYen(result.yenPenalty)} wasted.`);
+    state.save();
+  }
+
+  refreshSystemList();
+  refreshPartDetail();
+  refreshRepairLog();
+  refreshSkillBar();
+  refreshHeader();
+}
+
+/**
+ * Launch the diagnosis mechanic for a given scenario object.
+ * Extracted so it can be called both from handleBeginRepair and
+ * from the chained-scenario path in handleDiagnosisComplete.
+ */
+function _launchDiagnosis(scenario, mechanicArea) {
+  const playerTools = _getPlayerTools();
+  const skillLevel  = _getSkillLevel('diagnosis');
+  const vehicleParts = _enrichedVehicleParts();
+
+  startDiagnosis(
+    scenario,
+    vehicleParts,
+    mechanicArea,
+    (result) => handleDiagnosisComplete(result, mechanicArea),
+    playerTools,
+    skillLevel,
+  );
+}
+
+// ── Main repair dispatcher ───────────────────────────────────
+
+/**
+ * Launch the correct mechanic for the selected part's repairType.
+ * All four mechanics share the same onComplete shape:
+ *   { newCondition, xpEarned, logEntries }
+ * except Diagnosis which has its own handler.
  */
 function handleBeginRepair(partId) {
   const { instanceId, partTree } = wb;
@@ -871,22 +1052,64 @@ function handleBeginRepair(partId) {
   const partInstance = vehicle?.parts[partId];
   if (!partInstance) return;
 
-  const repairType = partDef.repairType || 'wrench';
+  const repairType  = partDef.repairType || 'wrench';
   const mechanicArea = document.getElementById('wb-mechanic-area');
   if (!mechanicArea) return;
 
-  if (repairType === 'wrench') {
-    // Launch the full Wrench Work mechanic
-    startWrenchWork(partDef, partInstance, mechanicArea, ({ newCondition, xpEarned, logEntries }) => {
-      // Clear the mechanic UI area
-      mechanicArea.innerHTML = '';
-      mechanicArea.style.minHeight = '0';
-      // Apply the repair result
-      completeRepair(partId, { newCondition, xpEarned, logEntries });
-    });
-  } else {
-    // Other mechanics are stubs for Phase 1
-    showToast(`${getRepairTypeInfo(repairType).label} mechanic coming soon!`);
+  // Tear down any currently-running mechanic first
+  _teardownMechanic(mechanicArea);
+
+  const playerTools = _getPlayerTools();
+  const skillLevel  = _getSkillLevel(repairType);
+
+  // Shared onComplete for wrench / precision / bodywork
+  function onRepairComplete({ newCondition, xpEarned, logEntries }) {
+    _teardownMechanic(mechanicArea);
+    completeRepair(partId, { newCondition, xpEarned, logEntries });
+  }
+
+  switch (repairType) {
+
+    case 'wrench':
+      startWrenchWork(partDef, partInstance, mechanicArea, onRepairComplete);
+      break;
+
+    case 'precision':
+      startPrecisionWork(
+        partDef,
+        partInstance,
+        mechanicArea,
+        onRepairComplete,
+        playerTools,
+        skillLevel,
+      );
+      break;
+
+    case 'diagnosis': {
+      const scenario = _findDiagnosticScenario(partId);
+      if (!scenario) {
+        showToast('No diagnostic scenario found for this part.', 3000);
+        addLogEntry(instanceId, '⚠', `No scenario for ${partDef.name} — check part tree data.`);
+        return;
+      }
+      _launchDiagnosis(scenario, mechanicArea);
+      break;
+    }
+
+    case 'bodywork':
+      startBodywork(
+        partDef,
+        partInstance,
+        mechanicArea,
+        onRepairComplete,
+        playerTools,
+        skillLevel,
+      );
+      break;
+
+    default:
+      showToast(`Unknown repair type: ${repairType}`);
+      break;
   }
 }
 
