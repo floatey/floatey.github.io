@@ -80,19 +80,30 @@ function getOrCreateHeader() {
   if (!header) {
     header = document.createElement('header');
     header.id = 'game-header';
+    header.className = 'game-header';
     const root = document.getElementById('game-root');
     root.parentNode.insertBefore(header, root);
   }
-  return header;
+  // Ensure the nav element exists as a sibling right after the header
+  let nav = document.getElementById('game-nav');
+  if (!nav) {
+    nav = document.createElement('nav');
+    nav.id = 'game-nav';
+    nav.className = 'game-nav';
+    header.parentNode.insertBefore(nav, header.nextSibling);
+  }
+  return { header, nav };
 }
 
 function clearHeader() {
   const header = document.getElementById('game-header');
   if (header) header.remove();
+  const nav = document.getElementById('game-nav');
+  if (nav) nav.remove();
 }
 
 function renderHeader() {
-  const header = getOrCreateHeader();
+  const { header, nav } = getOrCreateHeader();
   const profile = state.getProfile();
   const hash = window.location.hash || '';
 
@@ -119,36 +130,38 @@ function renderHeader() {
   const syncIcon = sync ? sync.getStatusIcon() : '🔴';
   const syncLabel = sync ? sync.getStatusLabel() : 'Offline';
 
+  // ── Top bar (the header element IS the top bar per CSS) ───
   header.innerHTML = '';
 
-  // ── Top bar ───────────────────────────────
-  const topBar = document.createElement('div');
-  topBar.className = 'header-top';
-
   const backBtn = document.createElement('button');
-  backBtn.className = 'header-back';
+  backBtn.className = 'btn btn--ghost';
   backBtn.textContent = backText;
   backBtn.addEventListener('click', () => navigate(backHash));
 
   const titleEl = document.createElement('span');
-  titleEl.className = 'header-title';
+  titleEl.className = 'game-header__title';
   titleEl.textContent = title;
 
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'game-header__actions';
+
   const currencyEl = document.createElement('span');
-  currencyEl.className = 'header-currency';
+  currencyEl.className = 'font-data';
+  currencyEl.style.cssText = 'font-size: var(--font-size-sm); display: flex; align-items: center; gap: var(--space-sm);';
   currencyEl.innerHTML =
-    `<span class="yen">${formatYen(profile.currency.yen)}</span>` +
-    `<span class="wt">${profile.currency.wrenchTokens} WT</span>`;
+    `<span style="color: var(--rarity-5);">${formatYen(profile.currency.yen)}</span>` +
+    `<span style="color: var(--text-secondary);">${profile.currency.wrenchTokens} WT</span>`;
 
   const syncEl = document.createElement('span');
-  syncEl.className = 'header-sync';
+  syncEl.className = 'font-data';
+  syncEl.style.cssText = 'font-size: var(--font-size-xs); color: var(--text-muted);';
   syncEl.textContent = `${syncIcon} ${syncLabel}`;
 
-  topBar.append(backBtn, titleEl, currencyEl, syncEl);
+  actionsEl.append(currencyEl, syncEl);
+  header.append(backBtn, titleEl, actionsEl);
 
   // ── Nav tabs ──────────────────────────────
-  const nav = document.createElement('nav');
-  nav.className = 'header-nav';
+  nav.innerHTML = '';
 
   const tabs = [
     { label: 'Garage',    hash: '#/garage',   id: 'garage'   },
@@ -159,7 +172,7 @@ function renderHeader() {
 
   for (const tab of tabs) {
     const btn = document.createElement('button');
-    btn.className = 'nav-tab';
+    btn.className = 'game-nav-tab';
     btn.dataset.tab = tab.id;
     btn.textContent = tab.label;
     if (tab.disabled) btn.disabled = true;
@@ -168,14 +181,12 @@ function renderHeader() {
     });
     nav.appendChild(btn);
   }
-
-  header.append(topBar, nav);
 }
 
 function setActiveTab(tabId) {
-  const tabs = document.querySelectorAll('.nav-tab');
+  const tabs = document.querySelectorAll('.game-nav-tab');
   for (const t of tabs) {
-    t.classList.toggle('active', t.dataset.tab === tabId);
+    t.classList.toggle('game-nav-tab--active', t.dataset.tab === tabId);
   }
 }
 

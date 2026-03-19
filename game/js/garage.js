@@ -40,8 +40,6 @@ function timeAgo(timestamp) {
 
 /**
  * Build a map of systemId → [partId, ...] from a part tree template.
- * For detailed systems: collects all part IDs across subsystems.
- * For bundle systems: uses the system id as the sole "part" id.
  */
 function buildSystemPartsMap(partTree) {
   const map = {};
@@ -51,9 +49,7 @@ function buildSystemPartsMap(partTree) {
       const ids = [];
       for (const sub of system.subsystems) {
         if (sub.parts) {
-          for (const p of sub.parts) {
-            ids.push(p.id);
-          }
+          for (const p of sub.parts) ids.push(p.id);
         }
       }
       map[system.id] = ids;
@@ -66,8 +62,6 @@ function buildSystemPartsMap(partTree) {
 
 /**
  * Calculate system completion for display.
- * For detailed systems: count revealed parts with condition >= 0.70 / total revealed.
- * For bundle systems: condition >= 0.70 means complete.
  */
 function calcSystemCompletion(vehicle, systemPartIds) {
   let total = 0;
@@ -82,20 +76,18 @@ function calcSystemCompletion(vehicle, systemPartIds) {
 }
 
 /**
- * Convert a 0-1 completion ratio to filled dots (0–5).
- * 0-19% = 0, 20-39% = 1, 40-59% = 2, 60-79% = 3, 80-99% = 4, 100% = 5
+ * 0-19%=0, 20-39%=1, 40-59%=2, 60-79%=3, 80-99%=4, 100%=5
  */
 function completionToDots(ratio) {
   const pct = Math.round(ratio * 100);
   if (pct >= 100) return 5;
-  if (pct >= 80) return 4;
-  if (pct >= 60) return 3;
-  if (pct >= 40) return 2;
-  if (pct >= 20) return 1;
+  if (pct >= 80)  return 4;
+  if (pct >= 60)  return 3;
+  if (pct >= 40)  return 2;
+  if (pct >= 20)  return 1;
   return 0;
 }
 
-/** Render 5 system dots as HTML */
 function renderSystemDots(filledCount) {
   let html = '<span class="system-dots">';
   for (let i = 0; i < 5; i++) {
@@ -107,432 +99,410 @@ function renderSystemDots(filledCount) {
   return html;
 }
 
-/** Short system display name */
-function shortSystemName(fullName) {
-  const map = {
-    engine: 'Engine',
-    fuel: 'Fuel',
-    cooling: 'Cooling',
-    exhaust: 'Exhaust',
-    drivetrain: 'Drive.',
-    brakes: 'Brakes',
-    suspension: 'Susp.',
-    interior: 'Inter.',
-    electrical: 'Elec.',
-    body: 'Body',
-    glass: 'Glass',
-    trim: 'Trim',
-    forced_induction: 'Turbo',
-  };
-  return map[fullName] || fullName;
+const SYSTEM_SHORT_NAMES = {
+  engine: 'Engine', fuel: 'Fuel', cooling: 'Cooling', exhaust: 'Exhaust',
+  drivetrain: 'Drive.', brakes: 'Brakes', suspension: 'Susp.',
+  interior: 'Inter.', electrical: 'Elec.', body: 'Body',
+  glass: 'Glass', trim: 'Trim', forced_induction: 'Turbo',
+};
+
+function shortSystemName(id) {
+  return SYSTEM_SHORT_NAMES[id] || id;
 }
 
-/** Rarity stars string */
 function rarityStars(rarity) {
   return '★'.repeat(rarity);
 }
 
-/** Get rarity tier from vehicleData or part tree */
+function getVehicleMeta(modelId) {
+  const { vehicleData } = getApp();
+  if (vehicleData && vehicleData.vehicles) {
+    return vehicleData.vehicles.find(v => v.modelId === modelId) || null;
+  }
+  return null;
+}
+
 function getVehicleRarity(modelId) {
-  const { vehicleData } = getApp();
-  if (vehicleData && vehicleData.vehicles) {
-    const v = vehicleData.vehicles.find(v => v.modelId === modelId);
-    if (v) return v.rarity;
-  }
-  return 3;
+  const meta = getVehicleMeta(modelId);
+  return meta ? meta.rarity : 3;
 }
 
-/** Get vehicle display name from vehicleData */
 function getVehicleDisplayName(modelId) {
-  const { vehicleData } = getApp();
-  if (vehicleData && vehicleData.vehicles) {
-    const v = vehicleData.vehicles.find(v => v.modelId === modelId);
-    if (v) return v.displayName;
-  }
-  return modelId;
+  const meta = getVehicleMeta(modelId);
+  return meta ? meta.displayName : modelId;
 }
 
-/** Get vehicle base price for selling */
-function getVehicleBasePrice(rarity) {
-  const prices = { 3: 5000, 4: 15000, 5: 50000 };
-  return prices[rarity] || 5000;
-}
+/** GDD Section 6 sell prices */
+const SELL_TABLE = {
+  3: { basePrice: 5000,  wtBonus: 15, maxMult: 1.5 },
+  4: { basePrice: 15000, wtBonus: 30, maxMult: 1.5 },
+  5: { basePrice: 50000, wtBonus: 60, maxMult: 2.0 },
+};
 
-/** Get WT bonus for selling */
-function getVehicleWTBonus(rarity) {
-  const bonuses = { 3: 15, 4: 30, 5: 60 };
-  return bonuses[rarity] || 15;
+function getSellInfo(rarity) {
+  return SELL_TABLE[rarity] || SELL_TABLE[3];
 }
 
 /**
- * Calculate quality multiplier based on average condition of all revealed parts.
- * Range: 1.0 (all at 70%) to max (all at 95%+).
- * 5★ can reach 2.0×, others cap at 1.5×.
+ * Quality multiplier: linear from 1.0× (avg condition 0.70) to maxMult (avg 0.95+).
  */
 function calcQualityMultiplier(vehicle, rarity) {
   const parts = Object.values(vehicle.parts);
   const revealed = parts.filter(p => p.revealed && p.condition !== null);
   if (revealed.length === 0) return 1.0;
 
-  const avgCondition = revealed.reduce((sum, p) => sum + p.condition, 0) / revealed.length;
-  const maxMult = rarity === 5 ? 2.0 : 1.5;
+  const avg = revealed.reduce((s, p) => s + p.condition, 0) / revealed.length;
+  const { maxMult } = getSellInfo(rarity);
 
-  if (avgCondition <= 0.70) return 1.0;
-  if (avgCondition >= 0.95) return maxMult;
-
-  // Linear interpolation from 0.70→1.0 to 0.95→maxMult
-  const t = (avgCondition - 0.70) / (0.95 - 0.70);
-  return 1.0 + t * (maxMult - 1.0);
+  if (avg <= 0.70) return 1.0;
+  if (avg >= 0.95) return maxMult;
+  return 1.0 + ((avg - 0.70) / 0.25) * (maxMult - 1.0);
 }
 
-/** Calculate total garage value */
 function calcGarageValue(profile) {
   let value = 0;
-  const vehicles = profile.garage.vehicles;
-  for (const instanceId of Object.keys(vehicles)) {
-    const v = vehicles[instanceId];
+  for (const v of Object.values(profile.garage.vehicles)) {
     const rarity = getVehicleRarity(v.modelId);
-    const basePrice = getVehicleBasePrice(rarity);
-    const multiplier = calcQualityMultiplier(v, rarity);
-    value += Math.round(basePrice * multiplier);
+    const { basePrice } = getSellInfo(rarity);
+    value += Math.round(basePrice * calcQualityMultiplier(v, rarity));
   }
   return value;
 }
 
-// ── Main Render ─────────────────────────────────────────────
+function conditionColor(pct) {
+  if (pct >= 90) return 'var(--condition-excellent)';
+  if (pct >= 70) return 'var(--condition-good)';
+  if (pct >= 50) return 'var(--condition-fair)';
+  if (pct >= 30) return 'var(--condition-poor)';
+  return 'var(--condition-critical)';
+}
+
+function formatStatus(status) {
+  const labels = { in_progress: 'IN PROGRESS', complete: 'COMPLETE', showcase: 'SHOWCASE' };
+  return labels[status] || status.toUpperCase();
+}
+
+// ── Starter Vehicle Seeding ─────────────────────────────────
+
+/**
+ * If the player's garage is completely empty, seed the starter AE86.
+ * Per GDD: "The AE86 is pre-loaded into every player's garage."
+ */
+async function ensureStarterVehicle(state) {
+  const profile = state.getProfile();
+  if (Object.keys(profile.garage.vehicles).length > 0) return;
+
+  const ae86Tree = await loadPartTree('ae86');
+  if (!ae86Tree) {
+    console.warn('Could not load AE86 part tree for starter vehicle');
+    return;
+  }
+
+  state.addVehicle(ae86Tree, 3, 'ae86');
+  refreshHeader();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  renderGarage — main player garage view
+// ══════════════════════════════════════════════════════════════
 
 export async function renderGarage() {
   const root = document.getElementById('game-root');
   const { state } = getApp();
   const profile = state.getProfile();
 
-  root.innerHTML = '<div class="game-content"><div class="game-container" id="garage-container"><div class="text-secondary" style="padding: var(--space-lg); text-align: center;">Loading garage...</div></div></div>';
+  // Show loading state
+  root.innerHTML = `
+    <div class="game-content">
+      <div class="game-container" id="garage-container">
+        <div style="padding: 48px 0; text-align: center; color: var(--text-muted);">
+          Loading garage…
+        </div>
+      </div>
+    </div>`;
 
-  // Load part trees for all vehicles
+  // Seed starter AE86 if this is a fresh profile
+  await ensureStarterVehicle(state);
+
+  // Gather vehicles & load their part trees in parallel
   const vehicles = profile.garage.vehicles;
-  const instanceIds = Object.keys(vehicles);
-  const partTrees = {};
+  const ids = Object.keys(vehicles);
+  const trees = {};
 
-  await Promise.all(
-    instanceIds.map(async (id) => {
-      const v = vehicles[id];
-      const tree = await loadPartTree(v.modelId);
-      if (tree) partTrees[id] = tree;
-    })
-  );
+  await Promise.all(ids.map(async id => {
+    const tree = await loadPartTree(vehicles[id].modelId);
+    if (tree) trees[id] = tree;
+  }));
 
+  // Re-grab container (still in DOM after await)
   const container = document.getElementById('garage-container');
   if (!container) return;
   container.innerHTML = '';
 
-  // ── Header row ──────────────────────────────
+  // ── Title row ───────────────────────────────
   const garageValue = calcGarageValue(profile);
-  const headerRow = document.createElement('div');
-  headerRow.className = 'flex items-center justify-between';
-  headerRow.style.cssText = 'padding: var(--space-lg) 0 var(--space-base) 0;';
-  headerRow.innerHTML = `
-    <h2 style="font-size: var(--font-size-xl); font-weight: 700;">YOUR GARAGE</h2>
-    <span class="font-data text-secondary" style="font-size: var(--font-size-sm);">Value: ${formatYen(garageValue)}</span>
-  `;
-  container.appendChild(headerRow);
 
-  // ── Group vehicles by status ────────────────
-  const inProgress = [];
-  const completed = [];
-  const showcase = [];
+  const titleRow = el('div', {
+    style: 'display:flex; align-items:baseline; justify-content:space-between; padding:24px 0 12px;',
+  });
+  titleRow.appendChild(el('h2', {
+    style: 'font-size:var(--font-size-xl); font-weight:700; margin:0;',
+    textContent: 'YOUR GARAGE',
+  }));
+  titleRow.appendChild(el('span', {
+    className: 'font-data text-secondary',
+    style: 'font-size:var(--font-size-sm);',
+    textContent: `Value: ${formatYen(garageValue)}`,
+  }));
+  container.appendChild(titleRow);
 
-  for (const id of instanceIds) {
-    const v = vehicles[id];
-    if (v.status === 'showcase') showcase.push(id);
-    else if (v.status === 'complete') completed.push(id);
-    else inProgress.push(id);
+  // ── Group by status ─────────────────────────
+  const groups = { in_progress: [], complete: [], showcase: [] };
+  for (const id of ids) {
+    const s = vehicles[id].status || 'in_progress';
+    (groups[s] || groups.in_progress).push(id);
   }
 
-  // ── In Progress section ─────────────────────
-  if (inProgress.length > 0) {
-    for (const instanceId of inProgress) {
-      const card = buildVehicleCard(instanceId, vehicles[instanceId], partTrees[instanceId], false);
-      container.appendChild(card);
+  // In-progress cards
+  if (groups.in_progress.length > 0) {
+    for (const id of groups.in_progress) {
+      container.appendChild(buildVehicleCard(id, vehicles[id], trees[id], false));
     }
-  } else {
-    const empty = document.createElement('div');
-    empty.className = 'panel';
-    empty.innerHTML = '<div class="panel-body text-muted" style="text-align: center; padding: var(--space-xl);">No vehicles in progress. Visit the Junkyard to find one!</div>';
-    container.appendChild(empty);
   }
 
-  // ── Completed section ───────────────────────
-  const completedHeader = document.createElement('div');
-  completedHeader.className = 'text-secondary';
-  completedHeader.style.cssText = 'padding: var(--space-lg) 0 var(--space-sm) 0; font-size: var(--font-size-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;';
-  completedHeader.textContent = '── COMPLETED CARS ──';
-  container.appendChild(completedHeader);
-
-  if (completed.length > 0) {
-    for (const instanceId of completed) {
-      const card = buildVehicleCard(instanceId, vehicles[instanceId], partTrees[instanceId], false);
-      container.appendChild(card);
+  // Completed section
+  container.appendChild(sectionDivider('COMPLETED CARS'));
+  if (groups.complete.length > 0) {
+    for (const id of groups.complete) {
+      container.appendChild(buildVehicleCard(id, vehicles[id], trees[id], false));
     }
   } else {
-    const emptyComplete = document.createElement('div');
-    emptyComplete.className = 'text-muted';
-    emptyComplete.style.cssText = 'padding: var(--space-sm) 0; font-size: var(--font-size-sm);';
-    emptyComplete.textContent = '(none yet)';
-    container.appendChild(emptyComplete);
+    container.appendChild(emptyHint('(none yet)'));
   }
 
-  // ── Showcase section ────────────────────────
-  const showcaseHeader = document.createElement('div');
-  showcaseHeader.className = 'text-secondary';
-  showcaseHeader.style.cssText = 'padding: var(--space-lg) 0 var(--space-sm) 0; font-size: var(--font-size-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;';
-  showcaseHeader.textContent = '── SHOWCASE ──';
-  container.appendChild(showcaseHeader);
-
-  if (showcase.length > 0) {
-    for (const instanceId of showcase) {
-      const card = buildVehicleCard(instanceId, vehicles[instanceId], partTrees[instanceId], false);
-      container.appendChild(card);
+  // Showcase section
+  container.appendChild(sectionDivider('SHOWCASE'));
+  if (groups.showcase.length > 0) {
+    for (const id of groups.showcase) {
+      container.appendChild(buildVehicleCard(id, vehicles[id], trees[id], false));
     }
   } else {
-    const emptyShowcase = document.createElement('div');
-    emptyShowcase.className = 'text-muted';
-    emptyShowcase.style.cssText = 'padding: var(--space-sm) 0; font-size: var(--font-size-sm);';
-    emptyShowcase.textContent = '(none yet — keep completed cars here for passive ¥50/day income)';
-    container.appendChild(emptyShowcase);
+    container.appendChild(emptyHint('(none yet — keep completed cars here for passive ¥50/day income)'));
   }
 }
 
-// ── Vehicle Card Builder ────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+//  Vehicle Card
+// ══════════════════════════════════════════════════════════════
 
 function buildVehicleCard(instanceId, vehicle, partTree, readOnly) {
   const { state } = getApp();
-  const rarity = partTree ? partTree.rarity : getVehicleRarity(vehicle.modelId);
-  const displayName = partTree ? partTree.displayName : getVehicleDisplayName(vehicle.modelId);
-  const systemsMap = partTree ? buildSystemPartsMap(partTree) : {};
-  const systemOrder = partTree ? partTree.systems.map(s => s.id) : Object.keys(systemsMap);
+  const rarity    = partTree ? partTree.rarity : getVehicleRarity(vehicle.modelId);
+  const name      = partTree ? partTree.displayName : getVehicleDisplayName(vehicle.modelId);
+  const sysMap    = partTree ? buildSystemPartsMap(partTree) : {};
+  const sysOrder  = partTree ? partTree.systems.map(s => s.id) : Object.keys(sysMap);
 
-  // Calculate per-system completions
-  const systemCompletions = {};
-  for (const sysId of systemOrder) {
-    const partIds = systemsMap[sysId] || [];
-    systemCompletions[sysId] = calcSystemCompletion(vehicle, partIds);
+  // Per-system completion
+  const sysComp = {};
+  for (const sysId of sysOrder) {
+    sysComp[sysId] = calcSystemCompletion(vehicle, sysMap[sysId] || []);
   }
 
-  // Overall completion: average of all system completions
-  const completionValues = Object.values(systemCompletions);
-  const overallCompletion = completionValues.length > 0
-    ? completionValues.reduce((a, b) => a + b, 0) / completionValues.length
-    : 0;
-  const overallPct = Math.round(overallCompletion * 100);
+  // Overall = average of systems
+  const vals = Object.values(sysComp);
+  const overall = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  const overallPct = Math.round(overall * 100);
 
-  // Check first start readiness
-  const isFirstStartReady = partTree
-    ? state.isFirstStartReady(instanceId, systemsMap)
+  // First start check
+  const firstStartReady = partTree
+    ? state.isFirstStartReady(instanceId, sysMap)
     : false;
 
-  // ── Card container ────────────────────────
-  const card = document.createElement('div');
-  card.className = 'panel anim-fade-up';
-  card.style.cssText = 'margin-bottom: var(--space-base);';
+  // ── Card shell ──────────────────────────────
+  const card = el('div', { className: 'panel anim-fade-up', style: 'margin-bottom:16px;' });
 
-  // ── Rarity stars + name + status header ───
-  const header = document.createElement('div');
-  header.className = 'panel-header';
-  header.innerHTML = `
-    <span>
-      <span class="vehicle-rarity" data-rarity="${rarity}">${rarityStars(rarity)}</span>
-      <span style="margin-left: var(--space-sm);">${displayName}</span>
-    </span>
-    <span class="text-sm font-data text-secondary">${formatStatus(vehicle.status)}</span>
-  `;
-  card.appendChild(header);
-
-  const body = document.createElement('div');
-  body.className = 'panel-body';
-
-  // ── First Start banner ────────────────────
-  if (isFirstStartReady && vehicle.status === 'in_progress') {
-    const banner = document.createElement('div');
-    banner.style.cssText = `
-      background: linear-gradient(90deg, rgba(245,158,11,0.1), rgba(245,158,11,0.05));
-      border: 1px solid var(--rarity-5);
-      border-radius: var(--radius-sm);
-      padding: var(--space-md);
-      margin-bottom: var(--space-base);
-      text-align: center;
-      font-weight: 700;
-      color: var(--rarity-5);
-      cursor: pointer;
-      animation: pulseGlow 2s ease infinite;
-    `;
-    banner.textContent = '🔑 READY FOR FIRST START';
-    banner.addEventListener('click', () => {
-      navigate(`#/workbench/${instanceId}`);
+  // Header: stars + name + status
+  const hdr = el('div', { className: 'panel-header' });
+  const hdrLeft = el('span');
+  hdrLeft.innerHTML = `<span class="vehicle-rarity" data-rarity="${rarity}" style="margin-right:8px;">${rarityStars(rarity)}</span>${escHtml(name)}`;
+  hdr.appendChild(hdrLeft);
+  if (vehicle.nickname) {
+    const nick = el('span', {
+      className: 'text-muted font-data',
+      style: 'font-size:var(--font-size-xs); margin-left:8px;',
+      textContent: `"${vehicle.nickname}"`,
     });
+    hdrLeft.appendChild(nick);
+  }
+  hdr.appendChild(el('span', {
+    className: 'font-data text-secondary',
+    style: 'font-size:var(--font-size-xs);',
+    textContent: formatStatus(vehicle.status),
+  }));
+  card.appendChild(hdr);
+
+  // Body
+  const body = el('div', { className: 'panel-body' });
+
+  // First-start banner
+  if (firstStartReady && vehicle.status === 'in_progress') {
+    const banner = el('div', {
+      className: 'anim-pulse-glow',
+      style: `
+        background: linear-gradient(90deg, rgba(245,158,11,.12), rgba(245,158,11,.04));
+        border: 1px solid var(--rarity-5);
+        border-radius: var(--radius-sm);
+        padding: 12px;
+        margin-bottom: 16px;
+        text-align: center;
+        font-weight: 700;
+        color: var(--rarity-5);
+        cursor: pointer;
+      `,
+      textContent: '🔑 READY FOR FIRST START',
+    });
+    banner.addEventListener('click', () => navigate(`#/workbench/${instanceId}`));
     body.appendChild(banner);
   }
 
-  // ── System dots grid ──────────────────────
-  const systemsGrid = document.createElement('div');
-  systemsGrid.style.cssText = `
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-xs) var(--space-lg);
-    margin-bottom: var(--space-base);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-data);
-  `;
+  // ── System dots grid (2-col) ────────────────
+  const grid = el('div', {
+    style: `
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 24px;
+      row-gap: 4px;
+      margin-bottom: 16px;
+      font-family: var(--font-data);
+      font-size: var(--font-size-xs);
+    `,
+  });
 
-  for (const sysId of systemOrder) {
-    const completion = systemCompletions[sysId] || 0;
-    const pct = Math.round(completion * 100);
-    const filledDots = completionToDots(completion);
-    const systemName = partTree
-      ? shortSystemName(sysId)
-      : shortSystemName(sysId);
+  for (const sysId of sysOrder) {
+    const comp = sysComp[sysId] || 0;
+    const pct  = Math.round(comp * 100);
+    const dots = completionToDots(comp);
 
-    const row = document.createElement('div');
-    row.className = 'flex items-center justify-between';
-    row.style.cssText = 'padding: 2px 0;';
+    const row = el('div', {
+      style: 'display:flex; align-items:center; justify-content:space-between; padding:2px 0; gap:6px;',
+    });
     row.innerHTML = `
-      <span class="text-secondary" style="min-width: 48px;">${systemName}</span>
-      ${renderSystemDots(filledDots)}
-      <span class="text-muted" style="min-width: 30px; text-align: right;">${pct}%</span>
+      <span style="color:var(--text-secondary); width:52px; flex-shrink:0;">${shortSystemName(sysId)}</span>
+      ${renderSystemDots(dots)}
+      <span style="color:var(--text-muted); width:32px; text-align:right;">${pct}%</span>
     `;
-    systemsGrid.appendChild(row);
+    grid.appendChild(row);
   }
+  body.appendChild(grid);
 
-  body.appendChild(systemsGrid);
+  // ── Overall progress bar ────────────────────
+  const barWrap = el('div', { style: 'margin-bottom:16px;' });
 
-  // ── Overall progress bar ──────────────────
-  const overallWrap = document.createElement('div');
-  overallWrap.style.cssText = 'margin-bottom: var(--space-base);';
-
-  const overallLabel = document.createElement('div');
-  overallLabel.className = 'flex items-center justify-between';
-  overallLabel.style.cssText = 'font-size: var(--font-size-xs); margin-bottom: var(--space-xs);';
-  overallLabel.innerHTML = `
-    <span class="text-secondary font-data">Overall</span>
-    <span class="font-data" style="font-weight: 600;">${overallPct}%</span>
+  const barLabel = el('div', {
+    style: 'display:flex; justify-content:space-between; font-family:var(--font-data); font-size:var(--font-size-xs); margin-bottom:4px;',
+  });
+  barLabel.innerHTML = `
+    <span style="color:var(--text-secondary);">Overall</span>
+    <span style="font-weight:600;">${overallPct}%</span>
   `;
-  overallWrap.appendChild(overallLabel);
+  barWrap.appendChild(barLabel);
 
-  const barTrack = document.createElement('div');
-  barTrack.className = 'condition-bar';
-  barTrack.style.cssText = 'height: 10px;';
+  const track = el('div', { className: 'condition-bar', style: 'height:10px;' });
+  const fill  = el('div', { className: 'condition-bar__fill' });
+  fill.style.setProperty('--fill-pct', overallPct + '%');
+  fill.style.setProperty('--fill-color', conditionColor(overallPct));
+  track.appendChild(fill);
+  barWrap.appendChild(track);
+  body.appendChild(barWrap);
 
-  const barFill = document.createElement('div');
-  barFill.className = 'condition-bar__fill';
-  barFill.style.cssText = `
-    --fill-pct: ${overallPct}%;
-    --fill-color: ${overallPct >= 90 ? 'var(--condition-excellent)' : overallPct >= 70 ? 'var(--condition-good)' : overallPct >= 50 ? 'var(--condition-fair)' : overallPct >= 30 ? 'var(--condition-poor)' : 'var(--condition-critical)'};
-  `;
-  barTrack.appendChild(barFill);
-  overallWrap.appendChild(barTrack);
-  body.appendChild(overallWrap);
-
-  // ── Action row ────────────────────────────
-  const actions = document.createElement('div');
-  actions.className = 'flex items-center justify-between gap-sm';
-  actions.style.cssText = 'flex-wrap: wrap;';
+  // ── Actions ─────────────────────────────────
+  const actions = el('div', { style: 'display:flex; align-items:center; gap:8px; flex-wrap:wrap;' });
 
   if (!readOnly) {
     if (vehicle.status === 'in_progress') {
-      // Open Workbench button
-      const workbenchBtn = document.createElement('button');
-      workbenchBtn.className = 'btn btn--primary';
-      workbenchBtn.textContent = 'Open Workbench';
-      workbenchBtn.addEventListener('click', () => {
-        navigate(`#/workbench/${instanceId}`);
-      });
-      actions.appendChild(workbenchBtn);
+      // Workbench button
+      const wb = el('button', { className: 'btn btn--primary', textContent: 'Open Workbench' });
+      wb.addEventListener('click', () => navigate(`#/workbench/${instanceId}`));
+      actions.appendChild(wb);
 
       // Nickname input
-      const nicknameWrap = document.createElement('div');
-      nicknameWrap.className = 'flex items-center gap-xs';
-      nicknameWrap.innerHTML = '<span class="text-muted text-xs">Nickname:</span>';
-
-      const nicknameInput = document.createElement('input');
-      nicknameInput.type = 'text';
-      nicknameInput.value = vehicle.nickname || '';
-      nicknameInput.placeholder = 'none';
-      nicknameInput.maxLength = 24;
-      nicknameInput.style.cssText = `
-        background: var(--bg-primary);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--text-primary);
-        font-family: var(--font-data);
-        font-size: var(--font-size-xs);
-        padding: var(--space-xs) var(--space-sm);
-        width: 120px;
-        outline: none;
-        transition: border-color var(--transition-fast);
-      `;
-      nicknameInput.addEventListener('focus', () => {
-        nicknameInput.style.borderColor = 'var(--accent)';
-      });
-      nicknameInput.addEventListener('blur', () => {
-        nicknameInput.style.borderColor = 'var(--border)';
-        const newName = nicknameInput.value.trim();
-        if (newName !== vehicle.nickname) {
-          vehicle.nickname = newName;
-          state.save();
-        }
-      });
-      nicknameInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') nicknameInput.blur();
-      });
-      nicknameWrap.appendChild(nicknameInput);
-      actions.appendChild(nicknameWrap);
+      actions.appendChild(buildNicknameInput(vehicle, state));
 
     } else if (vehicle.status === 'complete') {
-      // Sell button
-      const sellBtn = document.createElement('button');
-      sellBtn.className = 'btn btn--danger';
-      const basePrice = getVehicleBasePrice(rarity);
+      const { basePrice, wtBonus } = getSellInfo(rarity);
       const mult = calcQualityMultiplier(vehicle, rarity);
       const salePrice = Math.round(basePrice * mult);
-      const wtBonus = getVehicleWTBonus(rarity);
-      sellBtn.textContent = `Sell (${formatYen(salePrice)} + ${wtBonus} WT)`;
-      sellBtn.addEventListener('click', () => {
-        showSellConfirm(instanceId, vehicle, displayName, salePrice, wtBonus);
+
+      const sellBtn = el('button', {
+        className: 'btn btn--danger',
+        textContent: `Sell (${formatYen(salePrice)} + ${wtBonus} WT)`,
       });
+      sellBtn.addEventListener('click', () =>
+        showSellConfirm(instanceId, vehicle, name, salePrice, wtBonus));
       actions.appendChild(sellBtn);
 
-      // Showcase button
-      const showcaseBtn = document.createElement('button');
-      showcaseBtn.className = 'btn btn--secondary';
-      showcaseBtn.textContent = 'Move to Showcase';
-      showcaseBtn.addEventListener('click', () => {
+      const scBtn = el('button', { className: 'btn btn--secondary', textContent: 'Move to Showcase' });
+      scBtn.addEventListener('click', () => {
         vehicle.status = 'showcase';
         state.save();
         renderGarage();
       });
-      actions.appendChild(showcaseBtn);
+      actions.appendChild(scBtn);
 
     } else if (vehicle.status === 'showcase') {
-      // Passive income info
-      const incomeInfo = document.createElement('span');
-      incomeInfo.className = 'font-data text-sm';
-      incomeInfo.style.color = 'var(--condition-good)';
-      incomeInfo.textContent = '+¥50/day passive income';
-      actions.appendChild(incomeInfo);
-
-      // Nickname display (read-only in showcase)
-      if (vehicle.nickname) {
-        const nick = document.createElement('span');
-        nick.className = 'text-muted text-xs font-data';
-        nick.textContent = `"${vehicle.nickname}"`;
-        actions.appendChild(nick);
-      }
+      actions.appendChild(el('span', {
+        className: 'font-data',
+        style: 'font-size:var(--font-size-sm); color:var(--condition-good);',
+        textContent: '+¥50/day passive income',
+      }));
     }
   }
 
   body.appendChild(actions);
   card.appendChild(body);
-
   return card;
+}
+
+// ── Nickname Input ──────────────────────────────────────────
+
+function buildNicknameInput(vehicle, state) {
+  const wrap = el('div', { style: 'display:flex; align-items:center; gap:4px; margin-left:auto;' });
+  wrap.appendChild(el('span', {
+    className: 'text-muted',
+    style: 'font-size:var(--font-size-xs);',
+    textContent: 'Nickname:',
+  }));
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = vehicle.nickname || '';
+  input.placeholder = 'none';
+  input.maxLength = 24;
+  Object.assign(input.style, {
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-primary)',
+    fontFamily: 'var(--font-data)',
+    fontSize: 'var(--font-size-xs)',
+    padding: '4px 8px',
+    width: '120px',
+    outline: 'none',
+  });
+
+  input.addEventListener('focus', () => { input.style.borderColor = 'var(--accent)'; });
+  input.addEventListener('blur', () => {
+    input.style.borderColor = 'var(--border)';
+    const val = input.value.trim();
+    if (val !== vehicle.nickname) {
+      vehicle.nickname = val;
+      state.save();
+    }
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+
+  wrap.appendChild(input);
+  return wrap;
 }
 
 // ── Sell Confirmation Modal ─────────────────────────────────
@@ -540,85 +510,69 @@ function buildVehicleCard(instanceId, vehicle, partTree, readOnly) {
 function showSellConfirm(instanceId, vehicle, displayName, salePrice, wtBonus) {
   const { state } = getApp();
 
-  // Create overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-
-  const modal = document.createElement('div');
-  modal.className = 'modal';
+  const overlay = el('div', { className: 'modal-overlay' });
+  const modal   = el('div', { className: 'modal' });
 
   modal.innerHTML = `
     <div class="modal-header">
       <span class="modal-header__title">Sell Vehicle</span>
-      <button class="modal-header__close" id="sell-close">×</button>
+      <button class="modal-header__close" data-action="close">×</button>
     </div>
     <div class="modal-body">
-      <p style="margin-bottom: var(--space-base);">
-        Are you sure you want to sell <strong>${displayName}</strong>${vehicle.nickname ? ` ("${vehicle.nickname}")` : ''}?
+      <p style="margin-bottom:12px;">
+        Are you sure you want to sell <strong>${escHtml(displayName)}</strong>${vehicle.nickname ? ` ("${escHtml(vehicle.nickname)}")` : ''}?
       </p>
-      <p class="font-data text-sm" style="margin-bottom: var(--space-sm);">
-        You'll receive: <strong style="color: var(--condition-good);">${formatYen(salePrice)}</strong> + <strong style="color: var(--accent);">${wtBonus} WT</strong>
+      <p class="font-data" style="font-size:var(--font-size-sm); margin-bottom:8px;">
+        You'll receive: <strong style="color:var(--condition-good);">${formatYen(salePrice)}</strong>
+        + <strong style="color:var(--accent);">${wtBonus} WT</strong>
       </p>
-      <p class="text-xs text-muted">This action cannot be undone.</p>
+      <p style="font-size:var(--font-size-xs); color:var(--text-muted);">This cannot be undone.</p>
     </div>
     <div class="modal-actions">
-      <button class="btn btn--secondary" id="sell-cancel">Cancel</button>
-      <button class="btn btn--danger" id="sell-confirm">Sell</button>
+      <button class="btn btn--secondary" data-action="close">Cancel</button>
+      <button class="btn btn--danger" data-action="sell">Sell</button>
     </div>
   `;
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  // Close handlers
   const close = () => overlay.remove();
 
-  overlay.querySelector('#sell-close').addEventListener('click', close);
-  overlay.querySelector('#sell-cancel').addEventListener('click', close);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
-
-  overlay.querySelector('#sell-confirm').addEventListener('click', () => {
-    // Award currencies
-    state.updateCurrency('yen', salePrice);
-    state.updateCurrency('wrenchTokens', wtBonus);
-
-    // Update stats
-    const profile = state.getProfile();
-    profile.stats.carsCompleted = (profile.stats.carsCompleted || 0) + 1;
-    profile.stats.totalYenEarned = (profile.stats.totalYenEarned || 0) + salePrice;
-
-    // Remove vehicle
-    delete profile.garage.vehicles[instanceId];
-    state.save();
-
-    close();
-    refreshHeader();
-    renderGarage();
+  overlay.addEventListener('click', e => {
+    const action = e.target.dataset.action;
+    if (action === 'close' || e.target === overlay) {
+      close();
+    } else if (action === 'sell') {
+      state.updateCurrency('yen', salePrice);
+      state.updateCurrency('wrenchTokens', wtBonus);
+      const profile = state.getProfile();
+      profile.stats.carsCompleted  = (profile.stats.carsCompleted || 0) + 1;
+      profile.stats.totalYenEarned = (profile.stats.totalYenEarned || 0) + salePrice;
+      delete profile.garage.vehicles[instanceId];
+      state.save();
+      close();
+      refreshHeader();
+      renderGarage();
+    }
   });
 }
 
-// ── Status label formatter ──────────────────────────────────
-
-function formatStatus(status) {
-  switch (status) {
-    case 'in_progress': return 'IN PROGRESS';
-    case 'complete':    return 'COMPLETE';
-    case 'showcase':    return 'SHOWCASE';
-    default:            return status.toUpperCase();
-  }
-}
-
-// ── Visit View (read-only) ──────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+//  renderVisit — read-only view of another player's garage
+// ══════════════════════════════════════════════════════════════
 
 export async function renderVisit(profileId) {
   const root = document.getElementById('game-root');
   const { sync } = getApp();
 
-  root.innerHTML = '<div class="game-content"><div class="game-container" id="visit-container"><div class="text-secondary" style="padding: var(--space-lg); text-align: center;">Loading garage...</div></div></div>';
+  root.innerHTML = `
+    <div class="game-content">
+      <div class="game-container" id="visit-container">
+        <div style="padding:48px 0; text-align:center; color:var(--text-muted);">Loading garage…</div>
+      </div>
+    </div>`;
 
-  // Fetch the other player's profile
   let visitProfile = null;
   try {
     if (sync && typeof sync.readProfile === 'function') {
@@ -633,92 +587,127 @@ export async function renderVisit(profileId) {
   container.innerHTML = '';
 
   if (!visitProfile) {
-    container.innerHTML = `
-      <div style="padding: var(--space-xl); text-align: center;">
-        <p class="text-secondary" style="margin-bottom: var(--space-base);">Could not load this player's garage.</p>
-        <button class="btn btn--secondary" id="visit-back">← Back</button>
-      </div>
-    `;
-    container.querySelector('#visit-back').addEventListener('click', () => navigate('#/garage'));
+    const msg = el('div', { style: 'padding:48px 0; text-align:center;' });
+    msg.appendChild(el('p', {
+      className: 'text-secondary',
+      style: 'margin-bottom:16px;',
+      textContent: "Could not load this player\u2019s garage.",
+    }));
+    const back = el('button', { className: 'btn btn--secondary', textContent: '← Back' });
+    back.addEventListener('click', () => navigate('#/garage'));
+    msg.appendChild(back);
+    container.appendChild(msg);
     return;
   }
 
-  // ── Header ──────────────────────────────────
-  const headerRow = document.createElement('div');
-  headerRow.className = 'flex items-center justify-between';
-  headerRow.style.cssText = 'padding: var(--space-lg) 0 var(--space-sm) 0;';
+  // Header row
+  const titleRow = el('div', {
+    style: 'display:flex; align-items:center; justify-content:space-between; padding:24px 0 8px; gap:12px; flex-wrap:wrap;',
+  });
 
-  const backBtn = document.createElement('button');
-  backBtn.className = 'btn btn--ghost';
-  backBtn.textContent = '← Back';
-  backBtn.addEventListener('click', () => navigate('#/garage'));
+  const back = el('button', { className: 'btn btn--ghost', textContent: '← Back' });
+  back.addEventListener('click', () => navigate('#/garage'));
+  titleRow.appendChild(back);
 
-  const titleEl = document.createElement('h2');
-  titleEl.style.cssText = 'font-size: var(--font-size-xl); font-weight: 700;';
-  titleEl.textContent = `${profileId.charAt(0).toUpperCase() + profileId.slice(1)}'s Garage`;
+  const prettyName = profileId.charAt(0).toUpperCase() + profileId.slice(1);
+  titleRow.appendChild(el('h2', {
+    style: 'font-size:var(--font-size-xl); font-weight:700; margin:0; flex:1;',
+    textContent: `${prettyName}\u2019s Garage`,
+  }));
 
-  const garageValue = calcGarageValue(visitProfile);
-  const valueEl = document.createElement('span');
-  valueEl.className = 'font-data text-secondary text-sm';
-  valueEl.textContent = `Value: ${formatYen(garageValue)}`;
+  titleRow.appendChild(el('span', {
+    className: 'font-data text-secondary',
+    style: 'font-size:var(--font-size-sm);',
+    textContent: `Value: ${formatYen(calcGarageValue(visitProfile))}`,
+  }));
+  container.appendChild(titleRow);
 
-  headerRow.append(backBtn, titleEl, valueEl);
-  container.appendChild(headerRow);
-
-  // ── Stats row ───────────────────────────────
+  // Stats
   const stats = visitProfile.stats || {};
-  const statsRow = document.createElement('div');
-  statsRow.className = 'flex gap-lg';
-  statsRow.style.cssText = 'padding: 0 0 var(--space-base) 0; font-family: var(--font-data); font-size: var(--font-size-xs); color: var(--text-secondary);';
+  const statsRow = el('div', {
+    style: 'display:flex; gap:24px; padding:0 0 16px; font-family:var(--font-data); font-size:var(--font-size-xs); color:var(--text-secondary);',
+  });
   statsRow.innerHTML = `
-    <span>Cars Completed: <strong style="color: var(--text-primary);">${stats.carsCompleted || 0}</strong></span>
-    <span>Total Repairs: <strong style="color: var(--text-primary);">${stats.totalRepairs || 0}</strong></span>
+    <span>Cars Completed: <strong style="color:var(--text-primary);">${stats.carsCompleted || 0}</strong></span>
+    <span>Total Repairs: <strong style="color:var(--text-primary);">${stats.totalRepairs || 0}</strong></span>
   `;
   container.appendChild(statsRow);
 
-  // ── Vehicle cards (read-only) ───────────────
+  // Load vehicles
   const vehicles = visitProfile.garage ? visitProfile.garage.vehicles : {};
-  const instanceIds = Object.keys(vehicles);
+  const ids = Object.keys(vehicles);
 
-  // Load part trees
-  const partTrees = {};
-  await Promise.all(
-    instanceIds.map(async (id) => {
-      const v = vehicles[id];
-      const tree = await loadPartTree(v.modelId);
-      if (tree) partTrees[id] = tree;
-    })
-  );
-
-  if (instanceIds.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'panel';
-    empty.innerHTML = '<div class="panel-body text-muted" style="text-align: center; padding: var(--space-xl);">This garage is empty.</div>';
-    container.appendChild(empty);
+  if (ids.length === 0) {
+    container.appendChild(emptyHint('This garage is empty.'));
     return;
   }
 
-  // Group by status
+  const trees = {};
+  await Promise.all(ids.map(async id => {
+    const tree = await loadPartTree(vehicles[id].modelId);
+    if (tree) trees[id] = tree;
+  }));
+
+  // Group + render
   const groups = { in_progress: [], complete: [], showcase: [] };
-  for (const id of instanceIds) {
-    const status = vehicles[id].status || 'in_progress';
-    (groups[status] || groups.in_progress).push(id);
+  for (const id of ids) {
+    const s = vehicles[id].status || 'in_progress';
+    (groups[s] || groups.in_progress).push(id);
   }
 
-  for (const [status, ids] of Object.entries(groups)) {
-    if (ids.length === 0) continue;
-
+  for (const [status, group] of Object.entries(groups)) {
+    if (group.length === 0) continue;
     if (status !== 'in_progress') {
-      const sectionLabel = document.createElement('div');
-      sectionLabel.className = 'text-secondary';
-      sectionLabel.style.cssText = 'padding: var(--space-lg) 0 var(--space-sm) 0; font-size: var(--font-size-sm); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;';
-      sectionLabel.textContent = status === 'complete' ? '── COMPLETED ──' : '── SHOWCASE ──';
-      container.appendChild(sectionLabel);
+      container.appendChild(sectionDivider(status === 'complete' ? 'COMPLETED' : 'SHOWCASE'));
     }
-
-    for (const id of ids) {
-      const card = buildVehicleCard(id, vehicles[id], partTrees[id], true);
-      container.appendChild(card);
+    for (const id of group) {
+      container.appendChild(buildVehicleCard(id, vehicles[id], trees[id], true));
     }
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Tiny DOM helpers
+// ══════════════════════════════════════════════════════════════
+
+/** Create an element with optional props */
+function el(tag, props) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'style' && typeof v === 'string') node.style.cssText = v;
+      else if (k === 'className') node.className = v;
+      else if (k === 'textContent') node.textContent = v;
+      else if (k === 'innerHTML') node.innerHTML = v;
+      else node.setAttribute(k, v);
+    }
+  }
+  return node;
+}
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function sectionDivider(label) {
+  return el('div', {
+    style: `
+      padding: 24px 0 8px;
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+    `,
+    textContent: `── ${label} ──`,
+  });
+}
+
+function emptyHint(text) {
+  return el('div', {
+    style: 'padding:4px 0; font-size:var(--font-size-sm); color:var(--text-muted);',
+    textContent: text,
+  });
 }
