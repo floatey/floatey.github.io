@@ -4,8 +4,8 @@
 
 import { GameState }          from './state.js';
 import { SyncManager }        from './sync.js';
-import { renderProfilePicker,
-         renderGarage }       from './garage.js';
+import { renderProfilePicker }from './profile-picker.js';
+import { renderGarage }       from './garage.js';
 import { renderWorkbench }    from './workbench.js';
 import { renderJunkyard }     from './gacha.js';
 import { renderShop }         from './shop.js';
