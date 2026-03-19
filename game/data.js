@@ -262,6 +262,7 @@ GD.PART_TREES.ae86 = {
   ],
 };
 
+<<<<<<< HEAD
 // ══════════════════════════════════════════════════════════════
 //  MULTI-MECHANIC SEQUENCES (spec §5 — Multi-Mechanic Sequences)
 //  Each sequence chains multiple mechanics together.
@@ -970,6 +971,8 @@ GD.PART_TREES.fc3s = {
 };
 
 
+=======
+>>>>>>> parent of 2c2fd69 (new)
 // Export to window
 window.GD = GD;
 })();
