@@ -2,15 +2,7 @@
 
 window.GarageView = (function () {
 
-  // ── Constants ────────────────────────────────────────────────────
-
-  var PROFILES = [
-    { id: "nick",     name: "Nick"     },
-    { id: "tarro",    name: "Tarro"    },
-    { id: "nathan",   name: "Nathan"   },
-    { id: "damian",   name: "Damian"   },
-    { id: "harrison", name: "Harrison" },
-  ];
+  // Visit profiles are owned by main.js (App.getVisitProfiles())
 
   // ── Starter Car Gift ─────────────────────────────────────────────
 
@@ -171,12 +163,20 @@ window.GarageView = (function () {
 
   // ── Vehicle Card ─────────────────────────────────────────────────
 
-  function _renderVehicleCard(vehicleInstance, partTree) {
+  function _renderVehicleCard(vehicleInstance, partTree, readOnly) {
     var rarity      = vehicleInstance.rarity || 3;
     var stars       = "★".repeat(rarity);
     var completion  = Utils.calculateOverallCompletion(vehicleInstance);
     var statusHtml  = _statusBadge(completion, vehicleInstance.status);
     var systemsHtml = _renderSystemRows(vehicleInstance, partTree);
+
+    var footerHtml = readOnly
+      ? ""
+      : "<div class='vehicle-card-footer'>" +
+          "<button class='btn-primary btn-workbench' data-instance-id='" + _esc(vehicleInstance.instanceId) + "'>" +
+            "Open Workbench →" +
+          "</button>" +
+        "</div>";
 
     var card = document.createElement("div");
     card.className = "card garage-vehicle-card";
@@ -199,16 +199,13 @@ window.GarageView = (function () {
 
       "<div class='vehicle-systems'>" + systemsHtml + "</div>" +
 
-      "<div class='vehicle-card-footer'>" +
-        "<button class='btn-primary btn-workbench' data-instance-id='" + _esc(vehicleInstance.instanceId) + "'>" +
-          "Open Workbench →" +
-        "</button>" +
-      "</div>";
+      footerHtml;
 
-    // Wire the button
-    card.querySelector(".btn-workbench").addEventListener("click", function () {
-      App.navigate("#/workbench/" + vehicleInstance.instanceId);
-    });
+    if (!readOnly) {
+      card.querySelector(".btn-workbench").addEventListener("click", function () {
+        App.navigate("#/workbench/" + vehicleInstance.instanceId);
+      });
+    }
 
     return card;
   }
@@ -238,13 +235,13 @@ window.GarageView = (function () {
     container.innerHTML = "";
 
     // ── Player Summary ───────────────────────────────────────────
-    var profileId = GameState.getProfileId();
-    var yen       = GameState.get("currency.yen") || 0;
-    var wt        = GameState.get("currency.wrenchTokens") || 0;
-
-    // Find own profile display name
-    var ownProfile = PROFILES.find(function (p) { return p.id === profileId; });
-    var playerName = ownProfile ? ownProfile.name : profileId;
+    var profileId  = GameState.getProfileId();
+    var yen        = GameState.get("currency.yen") || 0;
+    var wt         = GameState.get("currency.wrenchTokens") || 0;
+    // Capitalise the profile ID as display name (e.g. "tarro" → "Tarro")
+    var playerName = profileId
+      ? profileId.charAt(0).toUpperCase() + profileId.slice(1)
+      : "Garage";
 
     var summary = document.createElement("div");
     summary.className = "garage-summary card";
@@ -297,9 +294,8 @@ window.GarageView = (function () {
     var visitLinks = document.createElement("div");
     visitLinks.className = "visit-links";
 
-    PROFILES
-      .filter(function (p) { return p.id !== profileId; })
-      .forEach(function (p) {
+    var visitProfiles = App.getVisitProfiles();
+    visitProfiles.forEach(function (p) {
         var link = document.createElement("a");
         link.className = "visit-link btn-secondary";
         link.href = "#/visit/" + p.id;
@@ -315,6 +311,85 @@ window.GarageView = (function () {
     container.appendChild(othersSection);
   }
 
+  // ── Visit Render ─────────────────────────────────────────────────
+
+  /**
+   * Read-only view of another player's garage, loaded directly from Firebase.
+   */
+  function renderVisit(container, visitProfileId) {
+    var profile = PROFILES.find(function (p) { return p.id === visitProfileId; });
+    var name    = profile ? profile.name : visitProfileId;
+
+    container.innerHTML =
+      "<div class='garage-loading'>Loading " + _esc(name) + "'s garage…</div>";
+
+    firebase.database()
+      .ref("tmcc-game/profiles/" + visitProfileId)
+      .once("value")
+      .then(function (snap) {
+        var data = snap.val();
+        _buildVisitUI(container, visitProfileId, name, data);
+      })
+      .catch(function () {
+        container.innerHTML =
+          "<div class='garage-loading'>Could not load " + _esc(name) + "'s garage — offline?</div>";
+      });
+  }
+
+  function _buildVisitUI(container, visitProfileId, name, data) {
+    container.innerHTML = "";
+
+    // ── Back button ──────────────────────────────────────────────
+    var back = document.createElement("button");
+    back.className = "btn-secondary garage-back-btn";
+    back.textContent = "← Back to My Garage";
+    back.addEventListener("click", function () { App.navigate("#/garage"); });
+    container.appendChild(back);
+
+    // ── Summary header ───────────────────────────────────────────
+    var yen = data && data.currency && data.currency.yen != null ? data.currency.yen : null;
+
+    var summary = document.createElement("div");
+    summary.className = "garage-summary card";
+    summary.innerHTML =
+      "<div class='summary-name'>" + _esc(name) + "'s Garage</div>" +
+      "<div class='summary-currency font-data'>" +
+        (yen !== null ? "<span class='yen-balance'>" + Utils.formatCurrency(yen) + "</span>" : "") +
+        "<span class='visit-badge badge'>Visiting</span>" +
+      "</div>";
+    container.appendChild(summary);
+
+    // ── Vehicles ─────────────────────────────────────────────────
+    var vehicles = data && data.garage && data.garage.vehicles
+      ? Object.values(data.garage.vehicles)
+      : [];
+
+    if (vehicles.length === 0) {
+      var empty = document.createElement("p");
+      empty.className = "text-secondary";
+      empty.style.padding = "1.5rem 0";
+      empty.textContent = name + " hasn't started a build yet.";
+      container.appendChild(empty);
+      return;
+    }
+
+    var grid = document.createElement("div");
+    grid.className = "garage-grid";
+    container.appendChild(grid);
+
+    vehicles.forEach(function (v) {
+      var placeholder = document.createElement("div");
+      placeholder.className = "card garage-vehicle-card garage-card-loading";
+      placeholder.innerHTML = "<p class='text-secondary'>Loading " + _esc(v.displayName || v.modelId) + "…</p>";
+      grid.appendChild(placeholder);
+
+      _getPartTree(v.modelId).then(function (partTree) {
+        var card = _renderVehicleCard(v, partTree, true /* readOnly */);
+        grid.replaceChild(card, placeholder);
+      });
+    });
+  }
+
   // ── Escape helper ────────────────────────────────────────────────
 
   function _esc(str) {
@@ -325,5 +400,5 @@ window.GarageView = (function () {
       .replace(/"/g, "&quot;");
   }
 
-  return { render };
+  return { render, renderVisit };
 })();
