@@ -1,82 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>JDM Restoration Garage</title>
-  <link rel="stylesheet" href="css/game.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>JDM Restoration Garage — TMCC</title>
+  <link rel="stylesheet" href="css/game.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
 
-  <!-- ═══════════════════════════════════════
-       Fixed Header Bar
-  ═══════════════════════════════════════ -->
-  <header id="game-header">
-    <div class="header-title">JDM Restoration Garage</div>
+  <a id="back-to-tmcc" href="../index.html">← Back to TMCC</a>
 
-    <div class="header-right">
-      <div class="header-currency font-data">
-        <span id="header-yen">¥0</span>
-        <span class="text-muted"> · </span>
-        <span id="header-wt">0 WT</span>
-      </div>
+  <div id="game-root"></div>
 
-      <div class="header-sync" id="sync-indicator">
-        🟢 Saved
-      </div>
-
-      <button class="btn-icon" id="btn-mute" title="Toggle sound" aria-label="Toggle sound">🔊</button>
+  <noscript>
+    <div style="padding:2rem;color:#cdd1e8;font-family:sans-serif;text-align:center;">
+      <h2>JavaScript Required</h2>
+      <p>JDM Restoration Garage needs JavaScript enabled to run. Please enable it in your browser settings.</p>
     </div>
-  </header>
+  </noscript>
 
-  <!-- ═══════════════════════════════════════
-       Main Content Root
-  ═══════════════════════════════════════ -->
-  <main id="game-root"></main>
+  <script type="module">
+    // ── Firebase Realtime Database Init ──────────────────────────
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue, push }
+      from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
 
-  <!-- ═══════════════════════════════════════
-       Firebase Compat SDK (CDN)
-  ═══════════════════════════════════════ -->
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    const firebaseConfig = {
+      apiKey:        "YOUR_API_KEY",
+      authDomain:    "YOUR_PROJECT.firebaseapp.com",
+      databaseURL:   "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+      projectId:     "YOUR_PROJECT"
+    };
 
-  <!-- ═══════════════════════════════════════
-       Firebase Config
-  ═══════════════════════════════════════ -->
-  <script>
-    try {
-      const firebaseConfig = {
-        apiKey:            "AIzaSyAOVZlazcx9gktgnIthaM3iB_Q1-9wyarA",
-        authDomain:        "test-531f9.firebaseapp.com",
-        databaseURL:       "https://test-531f9-default-rtdb.firebaseio.com",
-        projectId:         "test-531f9",
-        storageBucket:     "test-531f9.firebasestorage.app",
-        messagingSenderId: "365348741958",
-        appId:             "1:365348741958:web:2886ae3d47789021917b47"
-      };
-      firebase.initializeApp(firebaseConfig);
-    } catch (e) {
-      console.warn("[Firebase] Init failed:", e.message);
-    }
+    const app = initializeApp(firebaseConfig, "jdm-game");
+    const db  = getDatabase(app);
+
+    // Expose on window so sync.js (and other modules) can access without re-importing
+    window._firebase = {
+      db,
+      ref:     (path) => ref(db, path),
+      set,
+      get,
+      onValue,
+      push
+    };
+
+    window.dispatchEvent(new Event("firebaseReady"));
   </script>
 
-  <!-- ═══════════════════════════════════════
-       Game Scripts — dependency order
-  ═══════════════════════════════════════ -->
-  <script src="js/utils.js"></script>
-  <script src="js/state.js"></script>
-  <script src="js/sync.js"></script>
-  <script src="js/audio.js"></script>
-  <script src="js/garage.js"></script>
-  <script src="js/workbench.js"></script>
-  <script src="js/wrench.js"></script>
-  <script src="js/precision.js"></script>
-  <script src="js/diagnosis.js"></script>
-  <script src="js/bodywork.js"></script>
-  <script src="js/gacha.js"></script>
-  <script src="js/shop.js"></script>
-  <script src="js/social.js"></script>
-  <script src="js/main.js"></script>
-
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
