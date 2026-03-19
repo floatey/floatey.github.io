@@ -574,11 +574,29 @@ function renderPartItem(partDef, partInstance) {
   const isRevealed = partInstance && partInstance.revealed;
   const isSelected = wb.selectedPartId === partDef.id;
 
+  // Not yet revealed by a hiddenReveal action — fully hidden
   if (!isRevealed) {
     const item = el('div', { className: 'part-item part-item--hidden' });
     item.innerHTML = `<span style="display:flex;align-items:center;gap:var(--space-sm);">
       <span>🔒</span><span>???</span></span>`;
     return item;
+  }
+
+  // Prerequisites not yet met — hide from navigator until the blocker is fixed
+  const prereqs = partDef.prerequisites || [];
+  if (prereqs.length > 0) {
+    const { state } = getApp();
+    const vehicle = state.getVehicle(wb.instanceId);
+    const unmet = prereqs.some(pid => {
+      const p = vehicle?.parts[pid];
+      return !p || p.condition === null || p.condition < 0.70;
+    });
+    if (unmet) {
+      const item = el('div', { className: 'part-item part-item--hidden' });
+      item.innerHTML = `<span style="display:flex;align-items:center;gap:var(--space-sm);">
+        <span>🔒</span><span style="font-size:var(--font-size-xs);color:var(--text-muted);">Locked</span></span>`;
+      return item;
+    }
   }
 
   const condition = partInstance.condition;
@@ -930,6 +948,23 @@ function completeRepair(partId, overrides = {}) {
   // ── Side effects ──
   checkHiddenReveal(partId, 'repair');
   checkSystemCompletion(partId);
+
+  // ── Clear selection if the selected part just became locked ──
+  // Repairing partId may have changed conditions such that the currently
+  // selected part now has unmet prerequisites and should be hidden.
+  if (wb.selectedPartId && wb.selectedPartId !== partId) {
+    const selectedDef = findPartDef(partTree, wb.selectedPartId);
+    if (selectedDef) {
+      const selectedPrereqs = selectedDef.prerequisites || [];
+      if (selectedPrereqs.length > 0) {
+        const stillUnmet = selectedPrereqs.some(pid => {
+          const p = vehicle.parts[pid];
+          return !p || p.condition === null || p.condition < 0.70;
+        });
+        if (stillUnmet) wb.selectedPartId = null;
+      }
+    }
+  }
 
   // ── Refresh UI ──
   refreshSystemList();
