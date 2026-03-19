@@ -527,47 +527,60 @@ function _injectCSS() {
       border-color: #f59e0b22;
     }
 
-    /* ── Trap beats: call row (plays normally but with danger marker) ── */
+    /* ── Trap beats: call row (plays normally — ↺ signals back-off in response) ── */
     .wv2-cell--trap-call {
       position: relative;
-      border-color: #ef444466;
+      border-color: #f59e0b66;
     }
     .wv2-cell--trap-call::after {
-      content: '⚠';
+      content: '↺';
       position: absolute;
       top: 1px;
       right: 3px;
-      font-size: 8px;
+      font-size: 9px;
       line-height: 1;
-      color: #ef4444aa;
+      color: #f59e0baa;
       pointer-events: none;
     }
 
-    /* ── Trap beats: response row (danger zone — do NOT tap) ── */
+    /* ── Trap beats: response row (right-click / F to back the bolt off) ── */
     .wv2-cell--trap-resp {
-      background: rgba(239, 68, 68, 0.08);
-      border: 1.5px dashed #ef444466;
+      background: rgba(245, 158, 11, 0.07);
+      border: 1.5px dashed #f59e0b66;
       position: relative;
     }
     .wv2-cell--trap-resp::after {
-      content: '✕';
+      content: '↺';
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 700;
-      color: #ef444444;
+      color: #f59e0b55;
       pointer-events: none;
     }
-    /* Pulse the trap zone when cursor reaches it */
-    .wv2-cell--trap-resp.wv2-cell--cursor {
-      animation: wv2-trap-pulse 300ms ease-in-out infinite alternate;
+    /* Pulse the trap zone when cursor arrives — amber active cue */
+    .wv2-cell--trap-resp.wv2-cell--cursor-active {
+      animation: wv2-trap-cursor-pulse 250ms ease-in-out infinite alternate;
     }
-    @keyframes wv2-trap-pulse {
-      from { background: rgba(239, 68, 68, 0.06); border-color: #ef444455; }
-      to   { background: rgba(239, 68, 68, 0.18); border-color: #ef4444aa; }
+    @keyframes wv2-trap-cursor-pulse {
+      from { background: rgba(245, 158, 11, 0.08); border-color: #f59e0b66; }
+      to   { background: rgba(245, 158, 11, 0.26); border-color: #f59e0b; }
     }
+
+    /* ── Trap beat: right-clicked correctly (bolt backed off) ── */
+    .wv2-cell--trap-hit {
+      background: rgba(245, 158, 11, 0.30);
+      border-color: #f59e0b;
+      transform: scale(1.05);
+    }
+    @keyframes wv2-trap-hit-pop {
+      0%   { transform: scale(1.05); }
+      60%  { transform: scale(1.08); }
+      100% { transform: scale(1.0);  background: rgba(245, 158, 11, 0.12); }
+    }
+    .wv2-cell--trap-hit-anim { animation: wv2-trap-hit-pop 300ms ease forwards; }
   `;
   document.head.appendChild(s);
 }
@@ -590,6 +603,14 @@ const STRIPPED_FLAVOR = [
   'Easy. Let the pattern do the work.',
   'You broke the rhythm.',
   'Too eager. Settle back in.',
+  'Wrong tool — right-click the marked beats to back them off.',
+];
+
+const TRAP_BACKED_FLAVOR = [
+  'Nice. Backed that one off clean.',
+  'Right call. Strip it and you lose ground.',
+  'Good instincts — reverse before you seize it.',
+  'Felt the resistance. Smart.',
 ];
 
 
@@ -697,8 +718,17 @@ export class WrenchMechanic {
     // isPrimary guard ensures only the first finger counts on multi-touch.
     this._handleKeyDown     = (e) => this._onKeyDown(e);
     this._handleKeyUp       = (e) => this._onKeyUp(e);
-    this._handlePointerDown = (e) => { if (e.isPrimary !== false) { e.preventDefault(); this._onPlayerPress(); } };
+    this._handlePointerDown = (e) => {
+      if (e.isPrimary === false) return;
+      e.preventDefault();
+      if (e.button === 2) {
+        this._onPlayerRightPress();
+      } else {
+        this._onPlayerPress();
+      }
+    };
     this._handlePointerUp   = (e) => { if (e.isPrimary !== false) { e.preventDefault(); this._onPlayerRelease(); } };
+    this._handleContextMenu = (e) => e.preventDefault();
   }
 
   // ── Public API ──────────────────────────────────────────────
@@ -888,7 +918,7 @@ export class WrenchMechanic {
 
     // RESPONSE row
     gridSection.appendChild(_el('div', { className: 'wv2-row-label',
-      textContent: 'RESPONSE  (match the pattern)' }));
+      textContent: 'RESPONSE  (match · right-click ↺ to back off)' }));
     const respRow = _el('div', { className: 'wv2-beat-row' });
     this._responseCells = [];
     for (let i = 0; i < 8; i++) {
@@ -961,6 +991,8 @@ export class WrenchMechanic {
     document.addEventListener('pointerdown',  this._handlePointerDown);
     document.addEventListener('pointerup',    this._handlePointerUp);
     document.addEventListener('pointercancel', this._handlePointerUp);
+    // Suppress browser context menu so right-click can be used as game input
+    document.addEventListener('contextmenu', this._handleContextMenu);
   }
 
   _detachInput() {
@@ -969,6 +1001,7 @@ export class WrenchMechanic {
     document.removeEventListener('pointerdown',  this._handlePointerDown);
     document.removeEventListener('pointerup',    this._handlePointerUp);
     document.removeEventListener('pointercancel', this._handlePointerUp);
+    document.removeEventListener('contextmenu', this._handleContextMenu);
   }
 
   // ── Beat callback (from RhythmEngine) ───────────────────────
@@ -1059,7 +1092,8 @@ export class WrenchMechanic {
 
       this._responseStep        = rStep;
       this._responseStepTime    = time;
-      this._responseStepActive  = !!this._typedPattern[rStep];
+      // Traps require right-click input — treat them as "active" for cursor-active class
+      this._responseStepActive  = !!this._typedPattern[rStep] || this._trapPositions.has(rStep);
       this._responseStepEval    = false;
 
       // ── JITTER COMPENSATION ─────────────────────────────────────
@@ -1147,7 +1181,7 @@ export class WrenchMechanic {
     const hasTrap = this._trapPositions.size > 0;
     this._setBannerState('call',
       isIntroDouble && this._introCallsDone < 1 ? 'LISTEN ×2'
-      : hasTrap ? 'LISTEN — ⚠ SKIP MARKED'
+      : hasTrap ? 'LISTEN — ↺ BACK OFF MARKED'
       : 'LISTEN'
     );
     this._setStatus('');
@@ -1156,7 +1190,7 @@ export class WrenchMechanic {
     // Phase-aware flavor cue
     if (entry) {
       if (hasTrap) {
-        this._setFlavor('Cross-threaded bolts. Skip the marked beats or you\'ll strip them.');
+        this._setFlavor('Cross-threaded bolt. Right-click (or F) the marked beats to back it off.');
       } else {
         const phaseLabels = {
           exposition:  'Learn the rhythm. Lock it in.',
@@ -1264,7 +1298,7 @@ export class WrenchMechanic {
     this._phase              = 'response';
     this._responseStep       = 0;
     this._responseStepTime   = stepTime;
-    this._responseStepActive = !!this._typedPattern[0];
+    this._responseStepActive = !!this._typedPattern[0] || this._trapPositions.has(0);
     this._responseStepEval   = false;
     this._responseTaps       = new Array(8).fill(null);
 
@@ -1329,10 +1363,22 @@ export class WrenchMechanic {
         this._showTimingLabel(prevStep, 'MISS', 'late');
       }
     } else {
-      // Rest — correctly ignored
-      this._responseTaps[prevStep] = 'ok';
-      const cell = this._responseCells[prevStep];
-      if (cell) cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active');
+      const isTrap = this._trapPositions.has(prevStep);
+      if (isTrap) {
+        // Trap beat — player needed to right-click but didn't
+        this._responseTaps[prevStep] = 'trap-miss';
+        const cell = this._responseCells[prevStep];
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--trap-resp');
+          cell.classList.add('wv2-cell--miss');
+          this._showTimingLabel(prevStep, 'MISS', 'late');
+        }
+      } else {
+        // Rest — correctly ignored
+        this._responseTaps[prevStep] = 'ok';
+        const cell = this._responseCells[prevStep];
+        if (cell) cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active');
+      }
     }
     this._responseStepEval = true;
   }
@@ -1352,6 +1398,14 @@ export class WrenchMechanic {
           cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active');
           cell.classList.add('wv2-cell--miss');
         }
+      } else if (this._trapPositions.has(7)) {
+        // Trap beat on step 7 not right-clicked
+        this._responseTaps[7] = 'trap-miss';
+        const cell = this._responseCells[7];
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--trap-resp');
+          cell.classList.add('wv2-cell--miss');
+        }
       } else {
         this._responseTaps[7] = 'ok';
       }
@@ -1369,7 +1423,7 @@ export class WrenchMechanic {
     for (let i = 0; i < 8; i++) {
       const t    = taps[i];
       const step = this._typedPattern[i];
-      if (!step) continue;  // rest: no penalty if null == ok
+      if (!step) continue;  // rest or trap: handled separately below
 
       if (t === 'correct' || t === 'hold-correct') {
         correct++;
@@ -1383,7 +1437,22 @@ export class WrenchMechanic {
       // 'held-ok', 'ok', 'held-broken' don't contribute separately
     }
 
-    const activeCount = this._typedPattern.filter(s => s && s.t !== 'held' && s.t !== 'hold-end').length;
+    // Score trap positions (null in typedPattern but require right-click)
+    for (const ti of this._trapPositions) {
+      const t = taps[ti];
+      if (t === 'trap-correct') {
+        correct++;
+      } else if (t === 'trap-stripped') {
+        stripped++;
+      } else {
+        // trap-miss or untouched
+        missed++;
+      }
+    }
+
+    // Traps count toward activeCount (they are required inputs)
+    const activeCount = this._typedPattern.filter(s => s && s.t !== 'held' && s.t !== 'hold-end').length
+                      + this._trapPositions.size;
     const isPerfect   = stripped === 0 && missed === 0 && correct > 0;
 
     if (isPerfect) {
@@ -1408,6 +1477,9 @@ export class WrenchMechanic {
       return;
     }
 
+    // Count how many trap beats were correctly backed off this cycle
+    const trapsBacked = [...this._trapPositions].filter(ti => taps[ti] === 'trap-correct').length;
+
     if (isPerfect && this._combo >= 3) {
       this._setFlavor(`Locked in. ×${mult.toFixed(1)} momentum.`);
     } else if (stripped > 0) {
@@ -1416,6 +1488,8 @@ export class WrenchMechanic {
         this._playArea.classList.add('wv2-play-area--stripped');
         setTimeout(() => this._playArea?.classList.remove('wv2-play-area--stripped'), 420);
       }
+    } else if (isPerfect && trapsBacked > 0) {
+      this._setFlavor(pickRandom(TRAP_BACKED_FLAVOR));
     } else if (missed > 0) {
       this._setFlavor('Missed one. Stay with the pattern.');
     } else if (correct > 0) {
@@ -1426,9 +1500,13 @@ export class WrenchMechanic {
   // ── Player input ─────────────────────────────────────────────
 
   _onKeyDown(e) {
-    if (e.key !== ' ') return;
-    e.preventDefault();
-    this._onPlayerPress();
+    if (e.key === ' ') {
+      e.preventDefault();
+      this._onPlayerPress();
+    } else if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault();
+      this._onPlayerRightPress();
+    }
   }
 
   _onKeyUp(e) {
@@ -1473,9 +1551,8 @@ export class WrenchMechanic {
       const isTrap = this._trapPositions.has(rStep);
 
       if (isTrap) {
-        // ── TRAP BEAT: bolt stripped ─────────────────────────────
-        // The player tapped a marked "skip" beat. This is the restraint
-        // test — the beat was in the call but must be avoided in response.
+        // ── TRAP BEAT: left-clicked a bolt that needs backing off ────
+        // Player used the wrong input — should have right-clicked to reverse.
         // Penalty: immediate progress loss + combo break.
         this._responseTaps[rStep] = 'trap-stripped';
         this._progress = Math.max(0, this._progress - 0.06);
@@ -1488,7 +1565,7 @@ export class WrenchMechanic {
           cell.classList.add('wv2-cell--stripped');
         }
         this.audio?.playWrenchSequenceBreak?.();
-        this._setStatus('⚠ STRIPPED');
+        this._setStatus('⚠ STRIPPED — right-click to back off');
         this._setFlavor(pickRandom(STRIPPED_FLAVOR));
         if (this._playArea) {
           this._playArea.classList.add('wv2-play-area--stripped');
@@ -1594,6 +1671,94 @@ export class WrenchMechanic {
     const latency     = (ctx?.outputLatency ?? 0) + (ctx?.baseLatency ?? 0.01);
 
     this._resolveHold(null, releaseTime, latency);
+  }
+
+  // ── Right-click / F key: "back the bolt off" ─────────────────
+  //
+  // Trap beats require this input instead of left-click. Tapping a trap
+  // with right-click on time = correct back-off = progress as normal.
+  // Tapping a trap with right-click early/late = miss (timing still counts).
+  // Right-clicking a normal beat = stripped (wrong tool).
+
+  _onPlayerRightPress() {
+    if (this._destroyed) return;
+    if (this._phase === 'countin' || this._phase === 'ready') return;
+    if (this._phase !== 'response') return;
+    if (this._responseStepEval) return;
+
+    const ctx      = this.audio?._ctx;
+    const tapTime  = ctx ? ctx.currentTime : performance.now() / 1000;
+    const latency  = (ctx?.outputLatency ?? 0) + (ctx?.baseLatency ?? 0.01);
+    const expected = (this._responseStepRealTime || this._responseStepTime) + latency;
+    const delta    = tapTime - expected;
+    const inTime   = Math.abs(delta) <= this._timingWindow;
+
+    const rStep  = this._responseStep;
+    const cell   = this._responseCells[rStep];
+    const isTrap = this._trapPositions.has(rStep);
+
+    if (isTrap) {
+      // ── TRAP BEAT: right-click = "back the bolt off" ──────────
+      if (inTime) {
+        this._responseTaps[rStep] = 'trap-correct';
+        if (cell) {
+          cell.classList.remove(
+            'wv2-cell--cursor', 'wv2-cell--cursor-active',
+            'wv2-cell--trap-resp'
+          );
+          cell.classList.add('wv2-cell--trap-hit', 'wv2-cell--trap-hit-anim');
+          setTimeout(() => {
+            cell?.classList.remove('wv2-cell--trap-hit-anim');
+            cell?.classList.add('wv2-cell--trap-hit');
+          }, 320);
+        }
+        // Distinctive reverse-ratchet click (reuse impact or ratchet with pitch hint)
+        this.audio?.play?.('impact') ?? this.audio?.playRatchet?.();
+        this._showTimingLabel(rStep, 'BACKED', 'perfect');
+        this._setFlavor(pickRandom(TRAP_BACKED_FLAVOR));
+      } else {
+        // Right timing, right action, wrong beat — miss
+        this._responseTaps[rStep] = 'trap-miss';
+        if (cell) {
+          cell.classList.remove(
+            'wv2-cell--cursor', 'wv2-cell--cursor-active',
+            'wv2-cell--trap-resp'
+          );
+          cell.classList.add('wv2-cell--miss');
+          this._showTimingLabel(rStep, delta < 0 ? 'EARLY' : 'LATE',
+            delta < 0 ? 'early' : 'late');
+        }
+      }
+      this._responseStepEval = true;
+
+    } else {
+      // ── Non-trap beat: right-clicking the wrong beat ──────────
+      // Treat as a stripped tap — using reverse on a normal bolt is bad.
+      const stepData = this._typedPattern[rStep];
+      if (stepData) {
+        // Was an active normal beat — using wrong action = miss
+        this._responseTaps[rStep] = 'miss';
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active',
+            'wv2-cell--resp-preview');
+          cell.classList.add('wv2-cell--miss');
+        }
+      } else {
+        // Was a rest — phantom right-click, strip penalty (wrong tool, wrong beat)
+        this._responseTaps[rStep] = 'stripped';
+        this._progress = Math.max(0, this._progress - 0.04);
+        this._combo = 0;
+        this._updateComboDisplay();
+        this._updateProgress();
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active');
+          cell.classList.add('wv2-cell--stripped');
+        }
+        this.audio?.playWrenchSequenceBreak?.();
+        this._setStatus('WRONG — don\'t reverse here');
+      }
+      this._responseStepEval = true;
+    }
   }
 
   // Central hold resolution.
