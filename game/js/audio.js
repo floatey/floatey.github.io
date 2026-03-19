@@ -33,6 +33,7 @@
 //    audio.playWrenchCallBeat(pitch?)           // call-phase guide beat
 //    audio.playWrenchComboBump(level)           // combo level 1–4 milestone
 //    audio.playWrenchSequenceBreak()            // missed rest / broken combo
+//    audio.playWrenchTrapBeat()                 // trap beat back-off (call + player right-click)
 //    audio.playBodyworkPad(freq, duration, vol?)// sustaining zone pad tone
 //    audio.playBodyworkZonePerfect()            // zone released at perfect time
 //    audio.playBodyworkZoneRush()               // zone released too early
@@ -2627,6 +2628,11 @@ export class AudioManager {
   /** playWrenchSequenceBreak() — tapped on a rest / missed an active beat */
   playWrenchSequenceBreak() {
     return this.play('wrench_sequence_break');
+  }
+
+  /** playWrenchTrapBeat() — trap beat back-off sound (call phase + player right-click) */
+  playWrenchTrapBeat() {
+    return this.play('wrench_trap_beat');
   }
 
   /**

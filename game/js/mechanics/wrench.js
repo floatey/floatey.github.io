@@ -1713,7 +1713,7 @@ export class WrenchMechanic {
             cell?.classList.add('wv2-cell--trap-hit');
           }, 320);
         }
-        this.audio?.play?.('impact');
+        this.audio?.playWrenchTrapBeat?.();
         this._showTimingLabel(rStep, 'BACKED', 'perfect');
         this._setFlavor(pickRandom(TRAP_BACKED_FLAVOR));
       } else {
