@@ -386,7 +386,7 @@ export function startWrenchWork(
     style: 'display:flex; justify-content:space-between; font-family:var(--font-data,monospace); font-size:11px; color:var(--text-secondary,#aaa);',
   });
   const progressPctEl = _el('span', { textContent: '0%' });
-  const progressClicksEl = _el('span', { textContent: `0 / ${totalClicks} clicks` });
+  const progressClicksEl = _el('span', { textContent: `0 clicks · ~${totalClicks} left` });
   progressLabelRow.appendChild(progressPctEl);
   progressLabelRow.appendChild(progressClicksEl);
 
@@ -425,12 +425,32 @@ export function startWrenchWork(
     style: 'font-family:var(--font-data,monospace); font-size:13px; color:var(--text-muted,#888);',
     textContent: 'COMBO x1.0',
   });
-  const tempoEl = _el('div', {
-    style: 'font-family:var(--font-data,monospace); font-size:11px; color:var(--text-muted,#666);',
-    textContent: `Tempo: ${Math.round(idealTempo)}ms ±${tolerance}ms`,
+
+  // Visual momentum bar — shows rhythm quality
+  const momentumWrap = _el('div', {
+    style: 'display:flex; align-items:center; gap:6px; flex:1; max-width:180px;',
   });
+  const momentumLabel = _el('span', {
+    style: 'font-family:var(--font-data,monospace); font-size:10px; color:var(--text-muted,#666); white-space:nowrap;',
+    textContent: '⚡ Momentum',
+  });
+  const momentumTrack = _el('div', {
+    style: 'flex:1; height:8px; border-radius:4px; background:var(--bg-elevated,#1a1a1a); border:1px solid var(--border,#333); overflow:hidden;',
+  });
+  const momentumFill = _el('div', {
+    style: 'height:100%; width:0%; border-radius:4px; background:var(--text-muted,#555); transition:width 150ms ease, background 150ms ease;',
+  });
+  const momentumRhythm = _el('span', {
+    style: 'font-family:var(--font-data,monospace); font-size:10px; color:var(--text-muted,#666); min-width:38px; text-align:right;',
+    textContent: '',
+  });
+  momentumTrack.appendChild(momentumFill);
+  momentumWrap.appendChild(momentumLabel);
+  momentumWrap.appendChild(momentumTrack);
+  momentumWrap.appendChild(momentumRhythm);
+
   comboRow.appendChild(comboEl);
-  comboRow.appendChild(tempoEl);
+  comboRow.appendChild(momentumWrap);
   container.appendChild(comboRow);
 
   // ── Tap target ───────────────────────────────────────────────
@@ -510,13 +530,43 @@ export function startWrenchWork(
     const pct = Math.min(100, Math.round(progress * 100));
     progressBar.style.width   = `${pct}%`;
     progressPctEl.textContent = `${pct}%`;
-    progressClicksEl.textContent = `${clickCount} / ${totalClicks} clicks`;
+
+    // Show actual clicks done + estimated remaining (accounts for combo/tools)
+    const remaining = progress >= 1.0
+      ? 0
+      : Math.max(1, Math.ceil((1.0 - progress) / baseClickVal));
+    progressClicksEl.textContent = `${clickCount} clicks · ~${remaining} left`;
   }
 
   function updateComboDisplay() {
     const tier = getComboTier(comboCount);
     comboEl.textContent = `COMBO ${tier.label}`;
     comboEl.style.color = tier.color;
+
+    // Update visual momentum bar — maps comboCount 0-15 to 0-100%
+    const pct = Math.min(100, Math.round((comboCount / 15) * 100));
+    momentumFill.style.width = `${pct}%`;
+
+    if (comboCount >= 10) {
+      momentumFill.style.background = '#f59e0b';
+      momentumRhythm.textContent = 'GREAT';
+      momentumRhythm.style.color = '#f59e0b';
+      momentumTrack.classList.add('ww-momentum-pulsing');
+    } else if (comboCount >= 6) {
+      momentumFill.style.background = '#22c55e';
+      momentumRhythm.textContent = 'GOOD';
+      momentumRhythm.style.color = '#22c55e';
+      momentumTrack.classList.remove('ww-momentum-pulsing');
+    } else if (comboCount >= 3) {
+      momentumFill.style.background = '#84cc16';
+      momentumRhythm.textContent = 'OK';
+      momentumRhythm.style.color = '#84cc16';
+      momentumTrack.classList.remove('ww-momentum-pulsing');
+    } else {
+      momentumFill.style.background = 'var(--text-muted,#555)';
+      momentumRhythm.textContent = '';
+      momentumTrack.classList.remove('ww-momentum-pulsing');
+    }
   }
 
   function setFlavor(text, animate = true) {

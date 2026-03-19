@@ -672,7 +672,7 @@ function renderSystemList(container) {
             for (const part of sub.parts) {
               const partInstance = vehicle.parts[part.id];
               const partItem = renderPartItem(part, partInstance);
-              subList.appendChild(partItem);
+              if (partItem) subList.appendChild(partItem);
             }
           }
         }
@@ -727,12 +727,10 @@ function renderPartItem(partDef, partInstance) {
   const isRevealed = partInstance && partInstance.revealed;
   const isSelected = wb.selectedPartId === partDef.id;
 
-  // Not yet revealed by a hiddenReveal action — fully hidden
+  // Not yet revealed by a hiddenReveal action — completely hidden from navigator
+  // per GDD: "Discovery over disclosure. Don't show the player everything upfront."
   if (!isRevealed) {
-    const item = el('div', { className: 'part-item part-item--hidden' });
-    item.innerHTML = `<span style="display:flex;align-items:center;gap:var(--space-sm);">
-      <span>🔒</span><span>???</span></span>`;
-    return item;
+    return null;
   }
 
   // Prerequisites not yet met — hide from navigator until the blocker is fixed
@@ -991,29 +989,34 @@ function renderPartDetail(container) {
 
   detail.appendChild(actions);
 
-  // 5b. Multi-mechanic sequence buttons
-  if (!isBundle && condition > 0.10 && condition < 0.90) {
+  // 5b. Multi-mechanic sequence buttons — show for ANY part that belongs to a
+  // sequence, regardless of this particular part's condition. The sequence is
+  // actionable as long as at least one step still needs work.
+  if (!isBundle) {
     const sequences = findSequencesForPart(partTree, selectedPartId);
     if (sequences.length > 0) {
       const seqSection = el('div', {
-        style: `margin-top:var(--space-sm); padding-top:var(--space-sm);
-                border-top:1px solid var(--border);`,
+        style: `margin-top:var(--space-sm); padding:var(--space-sm);
+                border:1px solid var(--border); border-radius:var(--radius-md);
+                background:rgba(245,158,11,0.04);`,
       });
 
       seqSection.appendChild(el('div', {
-        style: 'font-size:var(--font-size-xs); color:var(--text-muted); margin-bottom:var(--space-xs); text-transform:uppercase; letter-spacing:0.05em;',
-        textContent: 'Multi-step sequences',
+        style: `font-size:var(--font-size-xs); color:var(--rarity-5,#f59e0b);
+                margin-bottom:var(--space-xs); text-transform:uppercase;
+                letter-spacing:0.06em; font-family:var(--font-data);`,
+        textContent: '⚡ Multi-step sequences',
       }));
 
       for (const { sequence } of sequences) {
         const seqActionable = isSequenceActionable(sequence, vehicle);
         const seqBtn = el('button', {
           className: 'btn btn--secondary',
-          style: 'width:100%; margin-bottom:4px; text-align:left;',
+          style: 'width:100%; margin-bottom:4px; text-align:left; font-size:var(--font-size-sm);',
         });
         seqBtn.innerHTML = `⚡ ${escHtml(sequence.name)} <span style="color:var(--text-muted); font-size:var(--font-size-xs);">(${sequence.steps.length} steps)</span>`;
 
-        if (!prereqsMet || !seqActionable || _activeSequence) {
+        if (!seqActionable || _activeSequence) {
           seqBtn.disabled = true;
         }
         seqBtn.addEventListener('click', () => {
@@ -1021,6 +1024,14 @@ function renderPartDetail(container) {
           startSequence(sequence);
         });
         seqSection.appendChild(seqBtn);
+
+        // Description under button
+        if (sequence.description) {
+          seqSection.appendChild(el('div', {
+            style: 'font-size:11px; color:var(--text-muted); font-style:italic; margin-bottom:4px; padding-left:2px;',
+            textContent: sequence.description,
+          }));
+        }
       }
 
       detail.appendChild(seqSection);
