@@ -32,7 +32,13 @@
   window._setDoc      = setDoc;
   window._deleteDoc   = deleteDoc;
 <<<<<<< HEAD
+<<<<<<< HEAD
   window._getDoc      = getDoc;
+=======
+  // Leaderboard writes are always merge:true — each player only touches their own key
+  window._saveLbEntry = (name, entry) => setDoc(lbRef, { [name]: entry }, { merge: true });
+  window._listenLb    = (cb, err)     => onSnapshot(lbRef, cb, err);
+>>>>>>> parent of 3884345 (the)
 =======
   // Leaderboard writes are always merge:true — each player only touches their own key
   window._saveLbEntry = (name, entry) => setDoc(lbRef, { [name]: entry }, { merge: true });
@@ -486,6 +492,7 @@ function SidebarClock() {
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 // ═══════════════════════════════════════════════════════════════
 // ██  JDM RESTORATION GARAGE — Full Spec Implementation v3
@@ -771,6 +778,8 @@ function DiagnosisMechanic({ scenario, tools, diagLevel, allPartsRef, onComplete
         </div>
       </div>
 =======
+=======
+>>>>>>> parent of 3884345 (the)
 // ─── UMA MUSUME: PRETTY DERBY ───────────────────────────────────────────────
 
 const UMA_ROSTER = [
@@ -1181,11 +1190,15 @@ function GachaCaseOpening({ winner, onDone }) {
           🎉 {winner.name} SCOUTED!
         </div>
       )}
+<<<<<<< HEAD
+>>>>>>> parent of 3884345 (the)
+=======
 >>>>>>> parent of 3884345 (the)
     </div>
   );
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 // ── BODYWORK — Hold & Zone Coverage (spec §5.4) ──
 // Sand→Prime→Paint. Rust 2x. Tools: DA Polisher (2x speed), Media Blaster (clear rust).
@@ -1260,6 +1273,8 @@ function BodyworkMechanic({ part, difficulty, skillLevel, tools, gridSize, onCom
       </div>
       <div style={{ display:"flex",gap:10,justifyContent:"center" }}>{STEPS.map((s,i) => <span key={s} className="game-mono" style={{ fontSize:9,color:SC[i]+"80" }}>{i+1}.{s}</span>)}</div>
 =======
+=======
+>>>>>>> parent of 3884345 (the)
 // ── Race Animation Component ──
 function RaceAnimation({ girl, score, threshold, onFinish }) {
   const tickRef = useRef(0);
@@ -1353,11 +1368,15 @@ function RaceAnimation({ girl, score, threshold, onFinish }) {
           <button onClick={onFinish} style={{ ...btnBase, padding: "12px 32px", background: T.accent, color: "#fff", fontSize: 14, fontWeight: 700 }}>Continue</button>
         </div>
       )}
+<<<<<<< HEAD
+>>>>>>> parent of 3884345 (the)
+=======
 >>>>>>> parent of 3884345 (the)
     </div>
   );
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 // ── SEQUENCE MECHANIC (spec §5 Multi-Mechanic Sequences) ──
@@ -1398,6 +1417,8 @@ function SequenceMechanic({ sequence, allParts, diagnosticScenarios, partTree, s
         <div style={{ fontSize: 26, fontWeight: 800, color: "#e2e8f0", marginBottom: 6 }}>✓</div>
         <div style={{ fontSize: 13, color: "#6b7280", marginTop: 16 }}>Next: {nextStep?.label || "Final step"}</div>
 =======
+=======
+>>>>>>> parent of 3884345 (the)
 
 // ── Main UmaMusumeView ──
 function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
@@ -1654,11 +1675,15 @@ function UmaMusumeView({ umaData, team, onSyncLeaderboard }) {
             });
           })()}
         </div>
+<<<<<<< HEAD
+>>>>>>> parent of 3884345 (the)
+=======
 >>>>>>> parent of 3884345 (the)
       </div>
     );
   }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
   const pd = step.partId ? allParts.find(p => p.id === step.partId) : null;
   const scenario = step.scenarioId ? allScenarios[step.scenarioId] : null;
@@ -2183,6 +2208,8 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
         </div>
       </div>
 =======
+=======
+>>>>>>> parent of 3884345 (the)
   // ── RENDER: Trainer Home (no career) ──
   if (!career || career.finished) {
     const unlocked = pd.unlockedGirls || UMA_ROSTER.filter(g=>g.starter).map(g=>g.id);
@@ -2550,11 +2577,15 @@ function GameWorkbench({ state, setState, vehicleId, onBack, onNavigateShop }) {
           </div>
         </div>
       )}
+<<<<<<< HEAD
+>>>>>>> parent of 3884345 (the)
+=======
 >>>>>>> parent of 3884345 (the)
     </div>
   );
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 // ── GARAGE VIEW ──
 function GameGarage({ state, onSelectCar, onNavigateShop, onNavigateGacha, onNavigateStats }) {
@@ -2634,6 +2665,8 @@ function GameView() {
 // ═══════════════════════════════════════════════════════════════
 
 =======
+=======
+>>>>>>> parent of 3884345 (the)
 // ─── MAIN APP ───
 >>>>>>> parent of 3884345 (the)
 function App() {
@@ -2948,7 +2981,11 @@ function App() {
     { id: "burndown",  label: "Burndown",  icon: "◿" },
     { id: "team",      label: "Team",      icon: "◉" },
 <<<<<<< HEAD
+<<<<<<< HEAD
     { id: "game",      label: "Garage",    icon: "🔧" },
+=======
+    { id: "tomo",      label: "Uma Musume", icon: "🏇" },
+>>>>>>> parent of 3884345 (the)
 =======
     { id: "tomo",      label: "Uma Musume", icon: "🏇" },
 >>>>>>> parent of 3884345 (the)
@@ -3095,6 +3132,9 @@ function App() {
         <div style={{ flex: 1, overflow: "auto", padding: 28 }}>
           {view === "tomo"
             ? <UmaMusumeView umaData={umaLb} team={team} onSyncLeaderboard={syncUmaLeaderboard} />
+<<<<<<< HEAD
+>>>>>>> parent of 3884345 (the)
+=======
 >>>>>>> parent of 3884345 (the)
             : !sprint
             ? <Empty icon="🚀" title="No Sprint Selected" subtitle="Create your first sprint to get started." action={<button onClick={() => setShowNewSprint(true)} style={{ ...btnBase, padding: "10px 22px", background: T.accent, color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 4px 16px " + T.accent + "40" }}>Create Sprint</button>} />
