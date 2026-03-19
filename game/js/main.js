@@ -1,204 +1,172 @@
-/* ═══════════════════════════════════════════════════════════════════
-   JDM RESTORATION GARAGE — main.js  (Cluster 01)
-   Hash-based SPA router + App namespace
-   ═══════════════════════════════════════════════════════════════════ */
+// JDM RESTORATION GARAGE — Main / Router
 
-(function () {
-  'use strict';
+window.App = (function () {
 
-  // ─── Stub view renderers ──────────────────────────────────────────
-  // Each receives (container: HTMLElement, params: Object).
-  // Later clusters will replace these with real implementations.
-
-  function renderProfilePicker(container) {
-    container.innerHTML = '<h2>Profile Picker</h2>';
-  }
-
-  function renderGarage(container) {
-    container.innerHTML = '<h2>Garage View</h2>';
-  }
-
-  function renderWorkbench(container, params) {
-    container.innerHTML = '<h2>Workbench</h2><p class="text-secondary font-data">car id: ' + (params.id || '—') + '</p>';
-  }
-
-  function renderJunkyard(container) {
-    container.innerHTML = '<h2>Junkyard (coming soon)</h2>';
-  }
-
-  function renderShop(container) {
-    container.innerHTML = '<h2>Shop</h2>';
-  }
-
-  function renderVisit(container, params) {
-    container.innerHTML = '<h2>Visiting: ' + (params.who || '—') + '</h2>';
-  }
-
-  function render404(container, hash) {
-    container.innerHTML = '<h2>404</h2><p class="text-secondary">No route matched: <code>' + hash + '</code></p>';
-  }
-
-  // ─── Route table ──────────────────────────────────────────────────
-  // Each entry: { pattern: RegExp, keys: string[], render: fn }
-
-  var ROUTES = [
-    {
-      pattern: /^\/$/,
-      keys: [],
-      render: renderProfilePicker
-    },
-    {
-      pattern: /^\/garage$/,
-      keys: [],
-      render: renderGarage
-    },
-    {
-      pattern: /^\/workbench\/([^/]+)$/,
-      keys: ['id'],
-      render: renderWorkbench
-    },
-    {
-      pattern: /^\/junkyard$/,
-      keys: [],
-      render: renderJunkyard
-    },
-    {
-      pattern: /^\/shop$/,
-      keys: [],
-      render: renderShop
-    },
-    {
-      pattern: /^\/visit\/([^/]+)$/,
-      keys: ['who'],
-      render: renderVisit
-    }
+  const PROFILES = [
+    { id: "nick",     name: "Nick"     },
+    { id: "tarro",    name: "Tarro"    },
+    { id: "nathan",   name: "Nathan"   },
+    { id: "damian",   name: "Damian"   },
+    { id: "harrison", name: "Harrison" },
   ];
 
-  // ─── Router ───────────────────────────────────────────────────────
+  // ── Header ─────────────────────────────────────────────────────────
 
-  /**
-   * Parse window.location.hash into a path string.
-   * "#/garage" → "/garage"
-   * ""         → "/"
-   */
-  function parsePath() {
-    var hash = window.location.hash || '';
-    // Strip leading '#'
-    var path = hash.replace(/^#/, '') || '/';
-    return path;
-  }
-
-  /**
-   * Match a path against the route table.
-   * Returns { route, params } or null.
-   */
-  function matchRoute(path) {
-    for (var i = 0; i < ROUTES.length; i++) {
-      var route = ROUTES[i];
-      var match = path.match(route.pattern);
-      if (match) {
-        var params = {};
-        route.keys.forEach(function (key, idx) {
-          params[key] = decodeURIComponent(match[idx + 1] || '');
-        });
-        return { route: route, params: params };
+  function updateHeader(opts) {
+    opts = opts || {};
+    if (opts.syncStatus !== undefined) {
+      const el = document.getElementById("sync-indicator");
+      if (el) {
+        const labels = { saved: "🟢 Saved", saving: "🟡 Saving...", offline: "🔴 Offline", conflict: "⚠️ Conflict" };
+        el.className = "sync-" + opts.syncStatus;
+        el.textContent = labels[opts.syncStatus] || opts.syncStatus;
       }
     }
-    return null;
-  }
-
-  var _currentPath = '/';
-
-  /** Clear game-root and render the view for the current hash. */
-  function dispatch() {
-    var container = document.getElementById('game-root');
-    if (!container) return;
-
-    var path = parsePath();
-    _currentPath = path;
-
-    // Clear previous content
-    container.innerHTML = '';
-
-    var result = matchRoute(path);
-    if (result) {
-      result.route.render(container, result.params);
-    } else {
-      render404(container, window.location.hash);
+    if (opts.yen !== undefined) {
+      const el = document.getElementById("header-yen");
+      if (el) el.textContent = Utils.formatCurrency(opts.yen);
+    }
+    if (opts.wt !== undefined) {
+      const el = document.getElementById("header-wt");
+      if (el) el.textContent = Utils.formatWT(opts.wt);
     }
   }
 
-  // ─── Mute toggle (basic wiring) ───────────────────────────────────
-  function initMuteToggle() {
-    var btn = document.getElementById('btn-mute');
-    if (!btn) return;
-    btn.addEventListener('click', function () {
-      var muted = btn.getAttribute('data-muted') === 'true';
-      muted = !muted;
-      btn.setAttribute('data-muted', muted);
-      btn.textContent = muted ? '🔇' : '🔊';
+  function _refreshHeaderCurrency() {
+    updateHeader({
+      yen: GameState.get("currency.yen"),
+      wt:  GameState.get("currency.wrenchTokens")
     });
   }
 
-  // ─── App namespace ────────────────────────────────────────────────
-  window.App = {
-    /**
-     * Navigate to a hash route programmatically.
-     * @param {string} hash  e.g. "#/garage"
-     */
-    navigate: function (hash) {
-      window.location.hash = hash;
-    },
+  // ── Profile Picker ─────────────────────────────────────────────────
 
-    /**
-     * Return the currently rendered path.
-     * @returns {string}
-     */
-    getCurrentRoute: function () {
-      return _currentPath;
-    },
+  function _renderProfilePicker(root) {
+    root.innerHTML = [
+      "<div class='profile-picker'>",
+      "<h1 class='picker-title'>JDM Restoration Garage</h1>",
+      "<div class='profile-grid' id='profile-grid'></div>",
+      "<section class='feed-section'>",
+      "<h2 class='feed-title'>Recent Activity</h2>",
+      "<div id='activity-feed'></div>",
+      "</section>",
+      "</div>"
+    ].join("");
 
-    /**
-     * Update header currency display and/or sync indicator.
-     * @param {{ yen?: number, wt?: number, sync?: 'saved'|'saving'|'offline'|'conflict', syncLabel?: string }} data
-     */
-    updateHeader: function (data) {
-      if (data == null) return;
+    const grid = document.getElementById("profile-grid");
 
-      if (data.yen !== undefined) {
-        var yenEl = document.getElementById('hdr-yen');
-        if (yenEl) yenEl.textContent = '¥' + Number(data.yen).toLocaleString();
-      }
+    // Render skeleton cards immediately
+    const cardEls = {};
+    PROFILES.forEach(function (p) {
+      const card = document.createElement("div");
+      card.className = "profile-card";
+      card.dataset.profileId = p.id;
+      card.innerHTML = [
+        "<h2 class='card-name'>" + p.name + "</h2>",
+        "<p class='card-project'>...</p>",
+        "<p class='card-last-active'>Last active: ...</p>",
+        "<p class='card-yen'>¥ ...</p>"
+      ].join("");
+      card.addEventListener("click", function () { _selectProfile(p.id); });
+      grid.appendChild(card);
+      cardEls[p.id] = card;
+    });
 
-      if (data.wt !== undefined) {
-        var wtEl = document.getElementById('hdr-wt');
-        if (wtEl) wtEl.textContent = Number(data.wt).toLocaleString() + ' WT';
-      }
+    // Fetch all profile summaries in parallel
+    PROFILES.forEach(function (p) {
+      firebase.database().ref("tmcc-game/profiles/" + p.id)
+        .once("value")
+        .then(function (snap) {
+          const data = snap.val();
+          _populateCard(cardEls[p.id], data);
+        })
+        .catch(function () {
+          _populateCard(cardEls[p.id], null);
+        });
+    });
 
-      if (data.sync) {
-        var dot   = document.getElementById('sync-dot');
-        var label = document.getElementById('sync-label');
-        var states = ['sync-saved', 'sync-saving', 'sync-offline', 'sync-conflict'];
-        if (dot) {
-          states.forEach(function (s) { dot.classList.remove(s); });
-          dot.classList.add('sync-' + data.sync);
-        }
-        if (label) {
-          label.textContent = data.syncLabel || capitalize(data.sync);
-        }
-      }
-    }
-  };
-
-  function capitalize(str) {
-    return str.charAt(0).toUpperCase() + str.slice(1);
+    // Render activity feed
+    const feedContainer = document.getElementById("activity-feed");
+    SocialFeatures.renderFeed(feedContainer, 20);
   }
 
-  // ─── Bootstrap ────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', function () {
-    initMuteToggle();
-    window.addEventListener('hashchange', dispatch);
-    dispatch(); // render initial route
-  });
+  function _populateCard(card, data) {
+    if (!data) {
+      card.querySelector(".card-project").textContent    = "No active project";
+      card.querySelector(".card-last-active").textContent = "Last active: Unknown";
+      card.querySelector(".card-yen").textContent        = "¥ Unknown";
+      return;
+    }
 
-}());
+    // Current project car
+    const vehicles = data.garage && data.garage.vehicles ? data.garage.vehicles : {};
+    const activeVehicles = Object.values(vehicles).filter(function (v) {
+      return v.status === "in_progress";
+    });
+    if (activeVehicles.length) {
+      const v = activeVehicles[0];
+      const parts = v.parts ? Object.values(v.parts) : [];
+      const pct = parts.length
+        ? Math.round(parts.filter(function (p) { return p.installed; }).length / parts.length * 100)
+        : 0;
+      card.querySelector(".card-project").textContent =
+        (v.nickname || v.modelId || "Active build") + " — " + pct + "%";
+    } else {
+      card.querySelector(".card-project").textContent = "No active project";
+    }
+
+    // Last active
+    card.querySelector(".card-last-active").textContent =
+      "Last active: " + (data.lastModified ? Utils.timeAgo(data.lastModified) : "Unknown");
+
+    // Yen balance
+    const yen = data.currency && data.currency.yen != null ? data.currency.yen : 0;
+    card.querySelector(".card-yen").textContent = Utils.formatCurrency(yen);
+  }
+
+  function _selectProfile(profileId) {
+    // Disable all cards to prevent double-init
+    document.querySelectorAll(".profile-card").forEach(function (c) {
+      c.style.pointerEvents = "none";
+      c.style.opacity = "0.6";
+    });
+    const active = document.querySelector(".profile-card[data-profile-id='" + profileId + "']");
+    if (active) {
+      active.querySelector(".card-name").insertAdjacentHTML(
+        "afterend", "<p class='card-loading'>Loading...</p>"
+      );
+    }
+
+    GameState.init(profileId);
+    SyncManager.init(profileId).then(function () {
+      _refreshHeaderCurrency();
+      window.location.hash = "#/garage";
+    });
+  }
+
+  // ── Router ─────────────────────────────────────────────────────────
+
+  function _route() {
+    const root = document.getElementById("game-root");
+    if (!root) return;
+    const hash = window.location.hash || "#/";
+
+    if (hash === "#/" || hash === "") {
+      _renderProfilePicker(root);
+    } else if (hash === "#/garage") {
+      root.innerHTML = "<p style='padding:2rem;color:#eee'>Garage — coming soon (Cluster 05)</p>";
+    } else {
+      root.innerHTML = "<p style='padding:2rem;color:#eee'>404 — Unknown route</p>";
+    }
+  }
+
+  function init() {
+    window.addEventListener("hashchange", _route);
+    _route();
+  }
+
+  return { init, updateHeader };
+})();
+
+// Boot
+document.addEventListener("DOMContentLoaded", function () { App.init(); });
