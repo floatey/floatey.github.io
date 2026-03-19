@@ -726,8 +726,7 @@ export class WrenchMechanic {
     this._totalCycles   = Math.max(4, Math.round((1 - condition) * 10));
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
     // One 16th-note step — matches the engine _advance() formula (60/bpm/4).
-    // Previously 60/bpm (a quarter note = 4x too long), making call-cell
-    // highlights overshoot into adjacent steps so the rhythm felt smeared.
+    // Previously 60/bpm (a quarter note = 4x too long).
     this._stepDuration  = (60 / this._map.bpm / 4) * 1000;  // ms  per 16th-note step
     this._stepDurSec    = 60 / this._map.bpm / 4;            // sec per 16th-note step
 
@@ -1019,10 +1018,7 @@ export class WrenchMechanic {
         }, this._stepDuration * 0.55);
       }
 
-      // Steps 4-7: BPM-locked GET READY — one pip per step, driven by engine
-      // callbacks (not setTimeout) so it is immune to jitter and locked to the
-      // same grid as the call. The player gets a full beat of metered preparation
-      // before the response cursor arrives at step 8.
+      // Steps 4-7: BPM-locked GET READY — one pip per step, no setTimeout.
       if (step === 4) {
         this._setBannerState('ready', 'GET READY');
         this._countdownEl.style.display = 'flex';
@@ -1110,7 +1106,8 @@ export class WrenchMechanic {
     // UI and audio derive from the same static data.
 
     const comp = this._map.composition;
-    const ci   = Math.min(this._cycleIndex, (comp?.length ?? 1) - 1);
+    // Modulo so patterns loop once all cycles are complete.
+    const ci   = comp ? (this._cycleIndex % comp.length) : 0;
     const entry = comp?.[ci];
 
     if (entry) {
@@ -1251,9 +1248,14 @@ export class WrenchMechanic {
     // Intro double-call: replay call instead of starting response (skill 1–5, first cycle)
     if (this.skillLevel <= 5 && this._cycleIndex === 0 && this._introCallsDone < 1) {
       this._introCallsDone++;
+      // The engine will tick through one full extra cycle while the UI replays
+      // composition[0]. Increment _countInCycles so applyVariation subtracts
+      // the extra cycle and keeps audio locked to the same composition entry
+      // as the UI. Without this, audio plays composition[1] while the UI
+      // shows composition[0], and that 1-cycle offset persists for the whole session.
+      this._map._countInCycles++;
       this._setBannerState('call', 'LISTEN AGAIN');
       this._setStatus('Listen again — then echo it back');
-      // Re-render call row as preview and keep going (engine will handle it)
       this._renderCallRow(false);
       return;
     }
