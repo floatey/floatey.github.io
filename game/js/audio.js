@@ -916,11 +916,12 @@ export class AudioManager {
   /**
    * stop(handle) — stop a looping sound.
    *
-   * Pass the value returned by play('sand_loop').
+   * Pass the OBJECT returned by play() — NOT the sound name string.
+   * play('sand_loop') returns { stop() }; pass that object here.
    * Safe to call with null or undefined.
    */
   stop(handle) {
-    if (!handle) return;
+    if (!handle || typeof handle.stop !== 'function') return;
     try { handle.stop(); } catch (_) { /* already stopped */ }
   }
 

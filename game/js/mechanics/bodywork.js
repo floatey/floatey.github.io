@@ -362,16 +362,16 @@ function _qualityLabel(q) {
 function _playAudio(name, opts = {}) {
   try {
     const am = window.audioManager;
-    if (!am) return;
-    am.play(name, opts);
-  } catch (_) { /* audio not loaded */ }
+    if (!am) return null;
+    return am.play(name, opts) ?? null;
+  } catch (_) { return null; }
 }
 
-function _stopAudio(name) {
+function _stopAudioHandle(handle) {
+  if (!handle) return;
   try {
     const am = window.audioManager;
-    if (!am) return;
-    am.stop(name);
+    if (am) am.stop(handle);
   } catch (_) {}
 }
 
@@ -446,6 +446,7 @@ export function startBodywork(
   let holdStartTime       = 0;      // performance.now() when hold began
   let holdRAF             = null;   // requestAnimationFrame id for fill loop
   let fillAtHoldStart     = 0;      // fill % when hold started (for partial progress)
+  let _sandLoopHandle     = null;   // { stop() } handle returned by audio.play('sand_loop')
 
   let timerStart          = performance.now();
   let timerRAF            = null;
@@ -668,14 +669,17 @@ export function startBodywork(
     fillAtHoldStart  = zoneFill[idx];
     holdStartTime    = performance.now();
 
-    _playAudio('sand_loop', { loop: true });
+    // Stop any loop that might still be running (safety guard against double-start)
+    _stopAudioHandle(_sandLoopHandle);
+    _sandLoopHandle = _playAudio('sand_loop', { loop: true });
     _tickFill();
   }
 
   function _endHold(idx) {
     if (activeZoneIdx !== idx) return;
 
-    _stopAudio('sand_loop');
+    _stopAudioHandle(_sandLoopHandle);
+    _sandLoopHandle = null;
     cancelAnimationFrame(holdRAF);
     holdRAF = null;
 
@@ -724,7 +728,8 @@ export function startBodywork(
     holdRAF       = null;
     activeZoneIdx = -1;
 
-    _stopAudio('sand_loop');
+    _stopAudioHandle(_sandLoopHandle);
+    _sandLoopHandle = null;
 
     zoneFill[idx] = 1.0;
     zoneQuality[currentStep][idx] = 1.0;
@@ -883,7 +888,8 @@ export function startBodywork(
 
     cancelAnimationFrame(timerRAF);
     cancelAnimationFrame(holdRAF);
-    _stopAudio('sand_loop');
+    _stopAudioHandle(_sandLoopHandle);
+    _sandLoopHandle = null;
 
     const qualityScore = _overallQuality();
 
@@ -955,7 +961,8 @@ export function startBodywork(
     document.removeEventListener('touchcancel', _onGlobalRelease);
     cancelAnimationFrame(holdRAF);
     cancelAnimationFrame(timerRAF);
-    _stopAudio('sand_loop');
+    _stopAudioHandle(_sandLoopHandle);
+    _sandLoopHandle = null;
   };
 
 
