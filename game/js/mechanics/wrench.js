@@ -128,15 +128,16 @@ function _injectCSS() {
       animation: ww-gold-shimmer 900ms ease infinite;
     }
 
-    /* ── Impact Wrench burst flash ── */
+    /* ── Impact Wrench burst flash (on progress bar, not tap button) ── */
     @keyframes ww-impact-burst {
-      0%   { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
-      20%  { box-shadow: 0 0 36px rgba(245,158,11,0.9); filter: brightness(2); }
-      65%  { box-shadow: 0 0 18px rgba(245,158,11,0.45); filter: brightness(1.3); }
-      100% { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
+      0%   { background: var(--condition-good); filter: brightness(1); }
+      15%  { background: #f59e0b; filter: brightness(2.2); transform: scaleY(1.6) scaleX(1.01); }
+      55%  { background: #fbbf24; filter: brightness(1.5); transform: scaleY(1.2) scaleX(1); }
+      100% { background: var(--condition-good); filter: brightness(1); transform: scaleY(1) scaleX(1); }
     }
     .ww-impact-burst {
-      animation: ww-impact-burst 500ms ease !important;
+      animation: ww-impact-burst 480ms ease !important;
+      transform-origin: left center;
     }
 
     /* ── Penetrating Oil applied flash ── */
@@ -299,6 +300,7 @@ export function startWrenchWork(
 
   // Impact wrench: fires every 15th click
   let impactClickTracker = 0;
+  let justBursted        = false;  // suppresses animateTap on burst click
 
   let isComplete      = false;
 
@@ -580,15 +582,18 @@ export function startWrenchWork(
 
   /**
    * Impact Wrench: fires on every 15th click as an automatic 5× progress burst.
-   * No player input required — the wrench does the work.
+   * Animation runs on progressBar (not tapTarget) to avoid conflicting with
+   * the ww-pressing animation that fires on the same click.
    */
   function triggerImpactBurst() {
     const jump = baseClickVal * 5;
     progress = Math.min(1.0, progress + jump);
 
-    _triggerAnimation(tapTarget, 'ww-impact-burst');
+    // Burst animation on the progress bar — avoids collision with ww-pressing
+    _triggerAnimation(progressBar, 'ww-impact-burst');
     setFlavor(pickRandom(IMPACT_WRENCH_FLAVOR));
 
+    justBursted = true;   // tell processClick to skip animateTap this click
     playAudio('impact');
     updateProgressDisplay();
   }
@@ -796,7 +801,8 @@ export function startWrenchWork(
 
     progress = Math.min(1.0, progress + baseClickVal * effectiveMult);
 
-    animateTap();
+    if (!justBursted) animateTap();
+    justBursted = false;
     updateComboDisplay();
     updateProgressDisplay();
 
