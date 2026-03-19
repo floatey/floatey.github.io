@@ -1295,6 +1295,106 @@
         "ae86_drivetrain_flywheel"
       ],
       "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_cam_wear",
+      "symptom": "Uneven idle and a faint knocking from the head at low RPM that gets worse when the engine is warm",
+      "clues": {
+        "free": [
+          "Knocking is audible with a stethoscope on the valve cover, loudest near the cam journals",
+          "Oil pressure drops slightly at hot idle — gauge reads lower than normal"
+        ],
+        "multimeter": null,
+        "compressionTester": "Compression is even across all four cylinders — bottom end is fine",
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_engine_camshaft_wear",
+      "wrongOptions": [
+        "ae86_engine_valve_adjustment",
+        "ae86_engine_piston_rings",
+        "ae86_engine_timing_belt"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_vacuum_leak",
+      "symptom": "Idle hangs high after blipping the throttle and the car hesitates on light acceleration",
+      "clues": {
+        "free": [
+          "Spraying carb cleaner around the intake changes the idle speed",
+          "You can hear a faint hissing near the back of the intake manifold"
+        ],
+        "multimeter": "O2 sensor voltage is pegged lean — 0.1V steady at idle",
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_engine_vacuum_lines",
+      "wrongOptions": [
+        "ae86_engine_iacv",
+        "ae86_engine_throttle_body",
+        "ae86_engine_intake_manifold_gasket"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_fuel_pressure",
+      "symptom": "Car runs rich at idle with black smoke, but stumbles and bogs down under hard acceleration",
+      "clues": {
+        "free": [
+          "Spark plugs are sooty black on all four cylinders",
+          "Fuel smell is strong at the exhaust tip even after warm-up"
+        ],
+        "multimeter": "Injector pulse width looks normal — ECU is commanding correctly",
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_fuel_pressure_regulator",
+      "wrongOptions": [
+        "ae86_fuel_injector_2",
+        "ae86_fuel_fuel_pump",
+        "ae86_exhaust_o2_sensor"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_o2_sensor",
+      "symptom": "Fuel economy has tanked and the car smells rich, but there's no obvious misfire or power loss",
+      "clues": {
+        "free": [
+          "Exhaust has a rotten egg smell that wasn't there before",
+          "No visible leaks in the exhaust system — everything is sealed"
+        ],
+        "multimeter": "O2 sensor voltage is stuck at 0.45V — no switching between rich and lean",
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "ae86_exhaust_o2_sensor",
+      "wrongOptions": [
+        "ae86_exhaust_catalytic_converter",
+        "ae86_fuel_pressure_regulator",
+        "ae86_fuel_fuel_filter"
+      ],
+      "multiLayer": null
+    },
+    {
+      "id": "ae86_diag_electrical",
+      "symptom": "Headlights dim at idle, the starter cranks slowly on cold mornings, and the voltmeter reads low",
+      "clues": {
+        "free": [
+          "Battery is less than a year old — tested good at the parts store",
+          "There's a rats nest of spliced wires behind the dash from a stereo install"
+        ],
+        "multimeter": "Alternator output is 11.8V at idle — should be 13.5-14.5V. Ground strap resistance is 4 ohms — way too high",
+        "compressionTester": null,
+        "boostLeakTester": null
+      },
+      "correctDiagnosis": "electrical",
+      "wrongOptions": [
+        "ae86_engine_timing_belt",
+        "ae86_fuel_fuel_pump",
+        "ae86_engine_iacv"
+      ],
+      "multiLayer": null
     }
   ],
   "firstStartText": "You flip the key. The starter cranks — once, twice — and the 4A-GE catches. That distinctive twin-cam wail rises through the rev range. Four throttle bodies gulping air, sixteen valves dancing. She's alive. Takumi would be proud.",
