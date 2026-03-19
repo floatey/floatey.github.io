@@ -676,6 +676,7 @@ export class WrenchMechanic {
     this._responseTaps       = [];   // result per step: 'correct'|'stripped'|'miss'|'ok'|'hold-correct'|etc.
     this._responseStep       = -1;
     this._responseStepTime   = 0;    // audio clock time for current response step
+    this._responseStepRealTime = 0;  // actual callback fire time (jitter-compensated)
     this._responseStepActive = false;
     this._responseStepEval   = false;
 
@@ -684,6 +685,7 @@ export class WrenchMechanic {
     this._holdStartStep   = -1;      // response step where hold started
     this._holdEndStep     = -1;      // response step where hold should end
     this._holdEndTime     = 0;       // audio clock time when hold-end beat fires (0 = not yet)
+    this._holdEndRealTime = 0;       // actual callback fire time (jitter-compensated)
     this._holdPressEval   = false;   // press timing was already evaluated
     this._holdResultSet   = false;   // final hold result was already written
 
@@ -759,7 +761,15 @@ export class WrenchMechanic {
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
     this._stepDuration  = (60 / this._map.bpm) * 1000;  // ms
     this._stepDurSec    = 60 / this._map.bpm;             // seconds
-    this._hazardDuration = this._stepDuration * 8;
+
+    // ── BUG C FIX ─────────────────────────────────────────────────────
+    // Hazard phase occupies a full engine cycle (16 steps, i.e. step 0
+    // fires _startHazardPhase, step 0 of the NEXT cycle fires
+    // _endHazardPhase). The hold-bar animation must fill over the full
+    // 16-step duration. Previously this was set to 8 steps — the bar
+    // hit 100% halfway through and then sat full for 8 silent steps
+    // with no visual feedback, making the hazard feel broken.
+    this._hazardDuration = this._stepDuration * 16;
 
     // ── NEW: Pre-compose entire session (motif-centric) ─────────────
     //
@@ -1109,8 +1119,24 @@ export class WrenchMechanic {
       this._responseStepActive  = !!this._typedPattern[rStep];
       this._responseStepEval    = false;
 
+      // ── JITTER COMPENSATION ─────────────────────────────────────
+      // Record when this callback actually fires (setTimeout is imprecise).
+      // During response phase, the player reacts to the VISUAL cursor
+      // (the only cue — no audio plays during response). If setTimeout
+      // fires 30ms late, the player sees the cursor 30ms late and taps
+      // 30ms late, but without this correction their tap would be judged
+      // against the originally scheduled `time` — penalising them for
+      // unavoidable browser jitter.
+      //
+      // _responseStepRealTime is used by _onPlayerPress instead of
+      // _responseStepTime when available.
+      const ctx = this.audio?._ctx;
+      this._responseStepRealTime = ctx ? ctx.currentTime : performance.now() / 1000;
+
       if (rStep === this._holdEndStep && this._isHolding && !this._holdEndTime) {
         this._holdEndTime = time;
+        // Also store actual callback fire time for jitter-compensated hold release
+        this._holdEndRealTime = ctx ? ctx.currentTime : performance.now() / 1000;
       }
 
       this._responseCells.forEach((cell, i) => {
@@ -1135,6 +1161,7 @@ export class WrenchMechanic {
     this._holdStartStep = -1;
     this._holdEndStep   = -1;
     this._holdEndTime   = 0;
+    this._holdEndRealTime = 0;
     this._holdPressEval = false;
     this._holdResultSet = false;
 
@@ -1277,6 +1304,7 @@ export class WrenchMechanic {
     this._holdStartStep = -1;
     this._holdEndStep   = -1;
     this._holdEndTime   = 0;
+    this._holdEndRealTime = 0;
     this._holdPressEval = false;
     this._holdResultSet = false;
 
@@ -1345,6 +1373,15 @@ export class WrenchMechanic {
     if (this._hazardHoldRaf) { cancelAnimationFrame(this._hazardHoldRaf); this._hazardHoldRaf = null; }
     this._hazardEl.style.display = 'none';
     this._holdBarWrap.classList.remove('wv2-hold-bar-wrap--visible');
+
+    // ── BUG E FIX ──────────────────────────────────────────────────
+    // Clear any inline styles set during hazard (e.g. legacy
+    // style.borderColor from Bug D, or any future inline style
+    // contamination). _clearAllCells only resets className — inline
+    // styles survive and bleed into subsequent cycles.
+    this._callCells.forEach(c => { c.style.borderColor = ''; });
+    this._responseCells.forEach(c => { c.style.borderColor = ''; });
+
     this._clearAllCells();
 
     if (!this._hazardFailed) {
@@ -1361,7 +1398,8 @@ export class WrenchMechanic {
       this._setBannerState('call', '—');
     }
 
-    this._hazardInterval = 3 + Math.floor(Math.random() * 3);
+    // Hazard interval is already set from composition; no need to
+    // re-randomize with Math.random (which is non-deterministic)
   }
 
   _endResponsePhase() {
@@ -1509,7 +1547,13 @@ export class WrenchMechanic {
 
     if (this._phase === 'hazard') {
       this._hazardFailed = true;
-      this._callCells.forEach(c => c.style.borderColor = '#ff0000');
+      // ── BUG D FIX ──────────────────────────────────────────────
+      // Previously set inline style.borderColor = '#ff0000' which
+      // _clearAllCells (className reset) never removed, causing red
+      // borders to bleed into subsequent cycles. Now uses the existing
+      // CSS class which _clearAllCells already handles.
+      this._callCells.forEach(c => c.classList.add('wv2-cell--stripped'));
+      this._responseCells.forEach(c => c.classList.add('wv2-cell--stripped'));
       this.audio?.playWrenchSequenceBreak?.();
       return;
     }
@@ -1521,11 +1565,21 @@ export class WrenchMechanic {
     const ctx         = this.audio?._ctx;
     const tapTime     = ctx ? ctx.currentTime : performance.now() / 1000;
 
-    // The engine schedules beats slightly ahead (lookahead scheduler).
-    // The player hears the beat at scheduledTime + outputLatency + baseLatency.
-    // Without this offset, every tap registers as early by ~20–80ms.
+    // ── JITTER-COMPENSATED INPUT JUDGMENT ─────────────────────────
+    //
+    // During response phase the player's only cue is the visual cursor,
+    // which appears when the _onBeat setTimeout fires (imprecise).
+    // Use _responseStepRealTime (actual fire time) as the reference so
+    // the judgment window is centred on when the player SAW the cue,
+    // not when it was scheduled.
+    //
+    // Audio latency compensation is still applied because the call-phase
+    // audio (sample-accurate after Bug A fix) trained the player's
+    // internal tempo at scheduledTime + outputLatency. The real-time
+    // reference captures setTimeout jitter; the latency offset captures
+    // audio pipeline delay.
     const latency     = (ctx?.outputLatency ?? 0) + (ctx?.baseLatency ?? 0.01);
-    const expected    = this._responseStepTime + latency;
+    const expected    = (this._responseStepRealTime || this._responseStepTime) + latency;
     const delta       = tapTime - expected;     // negative = early, positive = late
     const inTime      = Math.abs(delta) <= this._timingWindow;
 
@@ -1571,6 +1625,7 @@ export class WrenchMechanic {
       this._holdStartStep   = rStep;
       this._holdEndStep     = stepData.endStep;
       this._holdEndTime     = 0;  // will be set when hold-end beat fires
+      this._holdEndRealTime = 0;
       this._holdPressEval   = true;
       this._holdResultSet   = false;
       this._isHolding       = true;
@@ -1649,7 +1704,10 @@ export class WrenchMechanic {
       if (this._holdEndTime === 0) {
         result = 'hold-early';
       } else {
-        const expectedRelease = this._holdEndTime + latency;
+        // Use jitter-compensated real time if available (same rationale
+        // as _responseStepRealTime — player reacts to visual cursor,
+        // not the scheduled audio timestamp)
+        const expectedRelease = (this._holdEndRealTime || this._holdEndTime) + latency;
         const delta = releaseTime - expectedRelease;
         if (Math.abs(delta) <= this._timingWindow) {
           result = 'hold-correct';

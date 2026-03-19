@@ -530,8 +530,8 @@ const SYNTHS = {
   // + a sine thud with fast pitch drop (low-freq "thunk").
   // Three variants differ only in tuning so rapid clicks feel varied.
 
-  _ratchet(ctx, out, vol, pitch) {
-    const now = ctx.currentTime;
+  _ratchet(ctx, out, vol, pitch, at) {
+    const now = at || ctx.currentTime;
 
     const tickBuf  = noiseBuffer(ctx, 0.07);
     const tick     = ctx.createBufferSource();
@@ -539,7 +539,7 @@ const SYNTHS = {
     const tickBP   = filter(ctx, 'bandpass', 4200 * pitch, 2.2);
     const tickHP   = filter(ctx, 'highpass',  1800 * pitch, 0.7);
     const tickGain = ctx.createGain();
-    adsr(tickGain.gain, ctx, { attack: 0.001, hold: 0.003, decay: 0.045, peak: 0.55 * vol });
+    adsr(tickGain.gain, ctx, { t: now, attack: 0.001, hold: 0.003, decay: 0.045, peak: 0.55 * vol });
     tick.connect(tickBP); tickBP.connect(tickHP); tickHP.connect(tickGain); tickGain.connect(out);
     tick.start(now); tick.stop(now + 0.07);
 
@@ -548,16 +548,16 @@ const SYNTHS = {
     thud.frequency.setValueAtTime(170 * pitch, now);
     thud.frequency.exponentialRampToValueAtTime(55 * pitch, now + 0.055);
     const thudGain = ctx.createGain();
-    adsr(thudGain.gain, ctx, { attack: 0.001, hold: 0.004, decay: 0.048, peak: 0.38 * vol });
+    adsr(thudGain.gain, ctx, { t: now, attack: 0.001, hold: 0.004, decay: 0.048, peak: 0.38 * vol });
     thud.connect(thudGain); thudGain.connect(out);
     thud.start(now); thud.stop(now + 0.08);
 
     return null;
   },
 
-  ratchet_1(ctx, out, vol, pitch) { return SYNTHS._ratchet(ctx, out, vol, pitch * 1.00); },
-  ratchet_2(ctx, out, vol, pitch) { return SYNTHS._ratchet(ctx, out, vol, pitch * 1.09); },
-  ratchet_3(ctx, out, vol, pitch) { return SYNTHS._ratchet(ctx, out, vol, pitch * 0.92); },
+  ratchet_1(ctx, out, vol, pitch, at) { return SYNTHS._ratchet(ctx, out, vol, pitch * 1.00, at); },
+  ratchet_2(ctx, out, vol, pitch, at) { return SYNTHS._ratchet(ctx, out, vol, pitch * 1.09, at); },
+  ratchet_3(ctx, out, vol, pitch, at) { return SYNTHS._ratchet(ctx, out, vol, pitch * 0.92, at); },
 
 
   // ── impact — critical click / bolt breaking free ──────────────────────────
@@ -1056,11 +1056,11 @@ const SYNTHS = {
   // occupies its own frequency space above the click noise and can be
   // clearly heard through other ambient sounds.
 
-  wrench_call_beat(ctx, out, vol, pitch) {
-    const now = ctx.currentTime;
+  wrench_call_beat(ctx, out, vol, pitch, at) {
+    const now = at || ctx.currentTime;
 
     // The base ratchet (reuse at slightly higher gain)
-    SYNTHS._ratchet(ctx, out, vol * 0.85, pitch);
+    SYNTHS._ratchet(ctx, out, vol * 0.85, pitch, now);
 
     // Metallic overtone ring — distinguishes "call" from player click
     const ring = ctx.createOscillator();
@@ -1069,7 +1069,7 @@ const SYNTHS = {
     ring.frequency.exponentialRampToValueAtTime(1100 * pitch, now + 0.06);
     const ringBP   = filter(ctx, 'bandpass', 1800 * pitch, 4);
     const ringGain = ctx.createGain();
-    adsr(ringGain.gain, ctx, { attack: 0.001, hold: 0.005, decay: 0.055, peak: 0.22 * vol });
+    adsr(ringGain.gain, ctx, { t: now, attack: 0.001, hold: 0.005, decay: 0.055, peak: 0.22 * vol });
     ring.connect(ringBP); ringBP.connect(ringGain); ringGain.connect(out);
     ring.start(now); ring.stop(now + 0.09);
 
@@ -1376,8 +1376,8 @@ const SYNTHS = {
   //
   // See theory §7 for the tritone/minor-second rationale.
 
-  diag_scan_pulse(ctx, out, vol, pitch) {
-    const now  = ctx.currentTime;
+  diag_scan_pulse(ctx, out, vol, pitch, at) {
+    const now  = at || ctx.currentTime;
     const type = Math.round(pitch); // 1, 2, or 3
     const freq = type === 2 ? SCALES.diag_fault
                : type === 3 ? SCALES.diag_decoy
@@ -1392,7 +1392,7 @@ const SYNTHS = {
     // Normal pulse: short clean blip.  Fault: slightly longer + louder.
     const duration = type === 1 ? 0.055 : 0.08;
     const peak     = type === 1 ? 0.18 * vol : 0.26 * vol;
-    adsr(gain.gain, ctx, { attack: 0.004, hold: duration - 0.015, decay: 0.03, peak });
+    adsr(gain.gain, ctx, { t: now, attack: 0.004, hold: duration - 0.015, decay: 0.03, peak });
 
     osc.connect(lp); lp.connect(gain); gain.connect(out);
     osc.start(now); osc.stop(now + duration + 0.04);
@@ -2132,29 +2132,32 @@ export class RhythmEngine {
     const out  = this._audio._masterGain;
     const vol  = this._audio._muted ? 0 : this._audio._volume;
 
-    // All sounds use Web Audio absolute timestamps (time parameter)
-    // so they fire precisely regardless of setTimeout jitter.
-
-    // Store original currentTime reference for timestamp-relative scheduling
-    const delay = time - ctx.currentTime;
+    // ── SAMPLE-ACCURATE SCHEDULING ────────────────────────────────────
+    //
+    // Call synths directly with the scheduled `time` parameter.
+    // Web Audio API schedules oscillator.start(time) and gain envelope
+    // ramps at sample-level precision — no setTimeout jitter.
+    //
+    // Before this fix, synths were wrapped in setTimeout and read
+    // ctx.currentTime when the timer fired (±20–50ms jitter).
+    // The player heard the beat late, but input was judged against
+    // the scheduled time → every tap felt early/late by the jitter amount.
 
     switch (map.mechanicType) {
       case 'wrench': {
         // Only play the call beat sound during the CALL phase (steps 0–7).
         // During response (steps 8–15) we stay silent so the player can hear
         // themselves clearly and the call/response boundary is unambiguous.
-        // A fading guide was here before but it played on the response-half
-        // of the pattern which can differ from the call (turnaround), making
-        // it actively misleading.
         if (step < 8) {
-          setTimeout(() => SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0), delay * 1000);
+          SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0, time);
         }
         break;
       }
 
       case 'diagnostic': {
         const event = map.lane?.[step % map.laneLength] ?? { signalType: 1 };
-        setTimeout(() => SYNTHS.diag_scan_pulse(ctx, out, vol * 0.7, event.signalType), delay * 1000);
+        // Diagnostic scan pulses also benefit from precise scheduling
+        SYNTHS.diag_scan_pulse(ctx, out, vol * 0.7, event.signalType, time);
         break;
       }
 
