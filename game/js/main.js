@@ -10,6 +10,12 @@ window.App = (function () {
     { id: "harrison", name: "Harrison" },
   ];
 
+  // ── Navigation ─────────────────────────────────────────────────────
+
+  function navigate(hash) {
+    window.location.hash = hash;
+  }
+
   // ── Header ─────────────────────────────────────────────────────────
 
   function updateHeader(opts) {
@@ -55,7 +61,6 @@ window.App = (function () {
 
     const grid = document.getElementById("profile-grid");
 
-    // Render skeleton cards immediately
     const cardEls = {};
     PROFILES.forEach(function (p) {
       const card = document.createElement("div");
@@ -72,41 +77,37 @@ window.App = (function () {
       cardEls[p.id] = card;
     });
 
-    // Fetch all profile summaries in parallel
     PROFILES.forEach(function (p) {
       firebase.database().ref("tmcc-game/profiles/" + p.id)
         .once("value")
         .then(function (snap) {
-          const data = snap.val();
-          _populateCard(cardEls[p.id], data);
+          _populateCard(cardEls[p.id], snap.val());
         })
         .catch(function () {
           _populateCard(cardEls[p.id], null);
         });
     });
 
-    // Render activity feed
     const feedContainer = document.getElementById("activity-feed");
     SocialFeatures.renderFeed(feedContainer, 20);
   }
 
   function _populateCard(card, data) {
     if (!data) {
-      card.querySelector(".card-project").textContent    = "No active project";
+      card.querySelector(".card-project").textContent     = "No active project";
       card.querySelector(".card-last-active").textContent = "Last active: Unknown";
-      card.querySelector(".card-yen").textContent        = "¥ Unknown";
+      card.querySelector(".card-yen").textContent         = "¥ Unknown";
       return;
     }
 
-    // Current project car
     const vehicles = data.garage && data.garage.vehicles ? data.garage.vehicles : {};
     const activeVehicles = Object.values(vehicles).filter(function (v) {
       return v.status === "in_progress";
     });
     if (activeVehicles.length) {
-      const v = activeVehicles[0];
+      const v    = activeVehicles[0];
       const parts = v.parts ? Object.values(v.parts) : [];
-      const pct = parts.length
+      const pct  = parts.length
         ? Math.round(parts.filter(function (p) { return p.installed; }).length / parts.length * 100)
         : 0;
       card.querySelector(".card-project").textContent =
@@ -115,17 +116,14 @@ window.App = (function () {
       card.querySelector(".card-project").textContent = "No active project";
     }
 
-    // Last active
     card.querySelector(".card-last-active").textContent =
       "Last active: " + (data.lastModified ? Utils.timeAgo(data.lastModified) : "Unknown");
 
-    // Yen balance
     const yen = data.currency && data.currency.yen != null ? data.currency.yen : 0;
     card.querySelector(".card-yen").textContent = Utils.formatCurrency(yen);
   }
 
   function _selectProfile(profileId) {
-    // Disable all cards to prevent double-init
     document.querySelectorAll(".profile-card").forEach(function (c) {
       c.style.pointerEvents = "none";
       c.style.opacity = "0.6";
@@ -140,7 +138,7 @@ window.App = (function () {
     GameState.init(profileId);
     SyncManager.init(profileId).then(function () {
       _refreshHeaderCurrency();
-      window.location.hash = "#/garage";
+      navigate("#/garage");
     });
   }
 
@@ -151,10 +149,30 @@ window.App = (function () {
     if (!root) return;
     const hash = window.location.hash || "#/";
 
+    // Guard: require a profile for authenticated routes
+    const needsProfile = hash !== "#/" && hash !== "";
+    if (needsProfile && !GameState.getProfileId()) {
+      navigate("#/");
+      return;
+    }
+
     if (hash === "#/" || hash === "") {
       _renderProfilePicker(root);
+
     } else if (hash === "#/garage") {
-      root.innerHTML = "<p style='padding:2rem;color:#eee'>Garage — coming soon (Cluster 05)</p>";
+      root.innerHTML = "";
+      GarageView.render(root);
+
+    } else if (hash.startsWith("#/workbench/")) {
+      const instanceId = hash.replace("#/workbench/", "");
+      root.innerHTML =
+        "<p style='padding:2rem;color:#eee'>Workbench — coming soon (instanceId: " + instanceId + ")</p>";
+
+    } else if (hash.startsWith("#/visit/")) {
+      const profileId = hash.replace("#/visit/", "");
+      root.innerHTML =
+        "<p style='padding:2rem;color:#eee'>Visiting " + profileId + "'s garage — coming soon</p>";
+
     } else {
       root.innerHTML = "<p style='padding:2rem;color:#eee'>404 — Unknown route</p>";
     }
@@ -165,7 +183,7 @@ window.App = (function () {
     _route();
   }
 
-  return { init, updateHeader };
+  return { init, navigate, updateHeader };
 })();
 
 // Boot
