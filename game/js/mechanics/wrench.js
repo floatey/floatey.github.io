@@ -120,20 +120,9 @@ function _injectCSS() {
     }
     .wv2-phase-banner--response .wv2-phase-label { color: #22c55e; }
 
-    .wv2-phase-banner--hazard {
-      border-color: #ef4444aa;
-      background: rgba(239, 68, 68, 0.10);
-      animation: wv2-hazard-banner-pulse 700ms ease-in-out infinite;
-    }
-    .wv2-phase-banner--hazard .wv2-phase-label { color: #ef4444; }
-
     @keyframes wv2-ready-pulse {
       0%, 100% { background: rgba(245, 158, 11, 0.06); }
       50%       { background: rgba(245, 158, 11, 0.24); }
-    }
-    @keyframes wv2-hazard-banner-pulse {
-      0%, 100% { background: rgba(239, 68, 68, 0.10); }
-      50%       { background: rgba(239, 68, 68, 0.22); }
     }
 
     /* ── Countdown / count-in pips ── */
@@ -417,36 +406,6 @@ function _injectCSS() {
     .wv2-timing-label--early   { color: #f59e0b; }
     .wv2-timing-label--late    { color: #f97316; }
 
-    /* ── Hazard: whole grid flashes ── */
-    @keyframes wv2-hazard-flash {
-      0%, 100% { border-color: #ef4444; background: rgba(239,68,68,0.12); }
-      50%       { border-color: #fca5a5; background: rgba(239,68,68,0.28); }
-    }
-    .wv2-cell--hazard { animation: wv2-hazard-flash 380ms ease infinite; }
-
-    /* ── Hazard hold-progress bar (inside the banner) ── */
-    .wv2-hold-bar-wrap {
-      flex: 1;
-      height: 6px;
-      border-radius: 3px;
-      background: rgba(239, 68, 68, 0.18);
-      border: 1px solid #ef444444;
-      overflow: hidden;
-      display: none;
-    }
-    .wv2-hold-bar-wrap--visible { display: block; }
-    .wv2-hold-bar-fill {
-      height: 100%;
-      border-radius: 3px;
-      background: #ef4444;
-      width: 0%;
-      transition: width 80ms linear;
-    }
-    .wv2-hold-bar-fill--safe {
-      background: #22c55e;
-      transition: width 80ms linear, background 200ms ease;
-    }
-
     /* ── Combo & bolt ── */
     .wv2-combo-row {
       display: flex;
@@ -535,21 +494,6 @@ function _injectCSS() {
     }
     .wv2-play-area:active { border-color: var(--accent, #60a5fa); }
 
-    /* ── Hazard overlay text ── */
-    .wv2-hazard-text {
-      font-family: var(--font-data, monospace);
-      font-size: 14px;
-      font-weight: 700;
-      color: #ef4444;
-      text-align: center;
-      letter-spacing: 0.1em;
-      animation: wv2-hazard-pulse 600ms ease-in-out infinite;
-    }
-    @keyframes wv2-hazard-pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.5; }
-    }
-
     @keyframes wv2-complete-flash {
       from { background: rgba(34,197,94,0.15); }
       to   { background: transparent; }
@@ -582,6 +526,48 @@ function _injectCSS() {
       background: rgba(245, 158, 11, 0.05);
       border-color: #f59e0b22;
     }
+
+    /* ── Trap beats: call row (plays normally but with danger marker) ── */
+    .wv2-cell--trap-call {
+      position: relative;
+      border-color: #ef444466;
+    }
+    .wv2-cell--trap-call::after {
+      content: '⚠';
+      position: absolute;
+      top: 1px;
+      right: 3px;
+      font-size: 8px;
+      line-height: 1;
+      color: #ef4444aa;
+      pointer-events: none;
+    }
+
+    /* ── Trap beats: response row (danger zone — do NOT tap) ── */
+    .wv2-cell--trap-resp {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1.5px dashed #ef444466;
+      position: relative;
+    }
+    .wv2-cell--trap-resp::after {
+      content: '✕';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 14px;
+      font-weight: 700;
+      color: #ef444444;
+      pointer-events: none;
+    }
+    /* Pulse the trap zone when cursor reaches it */
+    .wv2-cell--trap-resp.wv2-cell--cursor {
+      animation: wv2-trap-pulse 300ms ease-in-out infinite alternate;
+    }
+    @keyframes wv2-trap-pulse {
+      from { background: rgba(239, 68, 68, 0.06); border-color: #ef444455; }
+      to   { background: rgba(239, 68, 68, 0.18); border-color: #ef4444aa; }
+    }
   `;
   document.head.appendChild(s);
 }
@@ -604,18 +590,6 @@ const STRIPPED_FLAVOR = [
   'Easy. Let the pattern do the work.',
   'You broke the rhythm.',
   'Too eager. Settle back in.',
-];
-
-const HAZARD_SUCCESS_FLAVOR = [
-  'Broke it loose. Good patience.',
-  'Waited it out. Smart.',
-  'That\'s how you handle a seized bolt.',
-];
-
-const HAZARD_FAIL_FLAVOR = [
-  'You tapped through it. Start again.',
-  'Too eager on the seized bolt.',
-  'Can\'t force a seized bolt. Back off.',
 ];
 
 
@@ -660,7 +634,7 @@ export class WrenchMechanic {
       ? this.tools.penetrating_oil : (this.tools.penetrating_oil ? 10 : 0);
 
     // Runtime state
-    this._phase          = 'idle';  // 'countin'|'call'|'ready'|'response'|'hazard'|'done'
+    this._phase          = 'idle';  // 'countin'|'call'|'ready'|'response'|'done'
     this._cycleIndex     = 0;
     this._progress       = 0;
     this._combo          = 0;
@@ -689,15 +663,10 @@ export class WrenchMechanic {
     this._holdPressEval   = false;   // press timing was already evaluated
     this._holdResultSet   = false;   // final hold result was already written
 
-    // Hazard
-    this._hazardInterval      = 4;
-    this._patternsSinceHazard = 0;
-    this._hazardActive        = false;
-    this._hazardFailed        = false;
-    this._hazardHoldRaf       = null;
-    this._hazardStartTime     = 0;
-    this._hazardDuration      = 0;
-    this._oilBPMReduced       = false;
+    // Hazard system removed — replaced by trap beats embedded in
+    // normal cycles (see rhythm-composer.js). Trap positions per cycle:
+    this._trapPositions  = new Set();  // indices of trap beats this cycle
+    this._oilBPMReduced  = false;
 
     // Count-in (driven by engine beats, not setTimeout)
     this._countInDone     = false;  // true after first full engine cycle
@@ -714,14 +683,11 @@ export class WrenchMechanic {
     this._statusEl       = null;
     this._flavorEl       = null;
     this._boltEl         = null;
-    this._hazardEl       = null;
     this._phaseBanner    = null;
     this._phaseLabel     = null;
     this._phaseRight     = null;
     this._countdownPips  = [];
     this._countdownEl    = null;
-    this._holdBarWrap    = null;
-    this._holdBarFill    = null;
     this._playArea       = null;
 
     this._destroyed      = false;
@@ -762,24 +728,12 @@ export class WrenchMechanic {
     this._stepDuration  = (60 / this._map.bpm) * 1000;  // ms
     this._stepDurSec    = 60 / this._map.bpm;             // seconds
 
-    // ── BUG C FIX ─────────────────────────────────────────────────────
-    // Hazard phase occupies a full engine cycle (16 steps, i.e. step 0
-    // fires _startHazardPhase, step 0 of the NEXT cycle fires
-    // _endHazardPhase). The hold-bar animation must fill over the full
-    // 16-step duration. Previously this was set to 8 steps — the bar
-    // hit 100% halfway through and then sat full for 8 silent steps
-    // with no visual feedback, making the hazard feel broken.
-    this._hazardDuration = this._stepDuration * 16;
-
-    // ── NEW: Pre-compose entire session (motif-centric) ─────────────
+    // ── Pre-compose entire session (motif-centric) ──────────────
     //
     // Generates all cycle patterns up front as a single composition[].
-    // Both the UI (_startCallPhase) and the audio scheduler
-    // (applyVariation → _currentPattern) read from this same array,
-    // eliminating audio/visual desync by construction.
-    //
-    // See rhythm-composer.js for the motif-cell catalog and
-    // transformation operators (displacement, inversion, retrograde).
+    // The audio scheduler looks up patterns by engine cycle index
+    // directly via applyVariation (no mutable _currentPattern, no
+    // setTimeout race condition). See rhythm-composer.js.
 
     this._composition = composeWrenchSession(
       this.part.id ?? 'unknown',
@@ -787,14 +741,11 @@ export class WrenchMechanic {
       this._totalCycles
     );
 
-    // Attach composition data to the map so applyVariation can use it
+    // Attach composition to the map — the scheduler reads it directly.
+    // _countInCycles tells the scheduler that engine cycle 0 is the
+    // count-in (returns silence), and cycle N (N≥1) = composition[N-1].
     this._map.composition     = this._composition.composition;
-    this._map.hazardCycles    = this._composition.hazardCycles;
-    this._hazardInterval      = this._composition.hazardInterval;
-
-    // Deterministic hash for hold generation (legacy fallback, kept for safety)
-    this._partHash = [...(this.part.id ?? 'x')]
-      .reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 0);
+    this._map._countInCycles  = 1;
 
     this._introCallsDone = 0;
     this._countInDone    = false;
@@ -809,11 +760,8 @@ export class WrenchMechanic {
     this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
     this._setFlavor('Count yourself in…');
 
-    // Silence the beat scheduler during count-in — no call beats should fire
-    // until _startCallPhase sets the real pattern
-    this._map._currentPattern = new Array(16).fill(false);
-
-    // Engine starts immediately — first cycle is the count-in (see _onBeat)
+    // Engine starts immediately — first cycle is the count-in (see _onBeat).
+    // Audio is muted during count-in via _countInCycles on the map.
     this.engine.start(this._map, (step, time, isActive) => {
       if (!this._destroyed) this._onBeat(step, time, isActive);
       this._extBeat(step, time, isActive);
@@ -823,7 +771,6 @@ export class WrenchMechanic {
   destroy() {
     this._destroyed = true;
     this.engine.stop();
-    if (this._hazardHoldRaf) cancelAnimationFrame(this._hazardHoldRaf);
     this._detachInput();
   }
 
@@ -909,12 +856,6 @@ export class WrenchMechanic {
     this._phaseRight.appendChild(countdownEl);
     this._countdownEl = countdownEl;
 
-    // Hazard hold bar
-    this._holdBarWrap = _el('div', { className: 'wv2-hold-bar-wrap' });
-    this._holdBarFill = _el('div', { className: 'wv2-hold-bar-fill' });
-    this._holdBarWrap.appendChild(this._holdBarFill);
-    this._phaseRight.appendChild(this._holdBarWrap);
-
     this._phaseBanner.appendChild(this._phaseLabel);
     this._phaseBanner.appendChild(this._phaseRight);
     c.appendChild(this._phaseBanner);
@@ -922,11 +863,6 @@ export class WrenchMechanic {
     // Play area wrapper
     this._playArea = _el('div', { className: 'wv2-play-area' });
     c.appendChild(this._playArea);
-
-    // Hazard overlay text
-    this._hazardEl = _el('div', { className: 'wv2-hazard-text' });
-    this._hazardEl.style.display = 'none';
-    this._playArea.appendChild(this._hazardEl);
 
     // Grid section
     const gridSection = _el('div', { className: 'wv2-grid-section' });
@@ -1060,15 +996,9 @@ export class WrenchMechanic {
         this._evaluateMissedLastStep();
         if (this._isHolding && !this._holdResultSet) this._resolveHold('late');
         this._endResponsePhase();
-      } else if (this._phase === 'hazard') {
-        this._endHazardPhase();
       }
 
-      if (this._shouldFireHazard()) {
-        this._startHazardPhase();
-      } else {
-        this._startCallPhase();
-      }
+      this._startCallPhase();
     }
 
     // ── Call phase (steps 0–7) ───────────────────────────
@@ -1147,8 +1077,6 @@ export class WrenchMechanic {
         }
       });
     }
-
-    if (this._phase === 'hazard') return;
   }
 
   // ── Phase management ─────────────────────────────────────────
@@ -1165,12 +1093,10 @@ export class WrenchMechanic {
     this._holdPressEval = false;
     this._holdResultSet = false;
 
-    // ── Composition-based pattern (single source of truth) ─────
-    //
-    // Read the pre-composed cycle from the composition array.
-    // Set _currentPattern on the map so the audio scheduler's
-    // applyVariation() reads the EXACT same pattern we display.
-    // This eliminates the audio/visual desync bug (see design doc §1.2).
+    // ── Read composition entry ──────────────────────────────────
+    // The audio scheduler reads the same composition via applyVariation
+    // indexed by engine cycleCount. No _currentPattern needed — both
+    // UI and audio derive from the same static data.
 
     const comp = this._map.composition;
     const ci   = Math.min(this._cycleIndex, (comp?.length ?? 1) - 1);
@@ -1179,63 +1105,83 @@ export class WrenchMechanic {
     if (entry) {
       this._callPattern     = [...entry.call];
       this._responsePattern = [...entry.response];
-      this._typedPattern    = entry.typed;   // pre-composed with holds
-
-      // Set on map → scheduler reads this instead of generating its own
-      this._map._currentPattern = [...entry.call, ...entry.response];
+      this._typedPattern    = entry.typed;   // pre-composed with holds + trap nulls
+      this._trapPositions   = new Set(entry.traps ?? []);
     } else {
       // Fallback to legacy generation if composition is missing
       const variedCall = RhythmEngine.applyVariation(this._map, this._cycleIndex);
       this._callPattern     = variedCall.slice(0, 8);
-      this._responsePattern = (this._map.responsePattern ?? [...this._callPattern]).map((v, i) =>
-        i < variedCall.length ? variedCall[i] : v
-      );
-      this._typedPattern = this._upgradePattern(this._callPattern, this._cycleIndex);
-      this._map._currentPattern = [...this._callPattern, ...this._responsePattern];
+      this._responsePattern = [...this._callPattern];
+      this._typedPattern    = this._upgradePattern(this._callPattern, this._cycleIndex);
+      this._trapPositions   = new Set();
     }
 
     // Clear all cells
     this._callCells.forEach(c => { c.className = 'wv2-cell'; });
-    this._responseCells.forEach(c => { c.className = 'wv2-cell'; c.querySelector?.('.wv2-timing-label')?.classList.remove('wv2-timing-label--show'); });
+    this._responseCells.forEach(c => {
+      const label = c.querySelector('.wv2-timing-label');
+      c.className = 'wv2-cell';
+      if (label) { label.className = 'wv2-timing-label'; c.appendChild(label); }
+    });
 
-    // Render call row: show dim preview with hold connections visible
+    // Render call row with trap indicators
     this._renderCallRow(false);
 
-    // Pre-light response row so player can see what's coming
+    // Pre-light response row — traps show as "don't tap" zones
     this._renderResponsePreview();
 
     const isIntroDouble = this.skillLevel <= 5 && this._cycleIndex === 0;
+    const hasTrap = this._trapPositions.size > 0;
     this._setBannerState('call',
-      isIntroDouble && this._introCallsDone < 1 ? 'LISTEN ×2' : 'LISTEN'
+      isIntroDouble && this._introCallsDone < 1 ? 'LISTEN ×2'
+      : hasTrap ? 'LISTEN — ⚠ SKIP MARKED'
+      : 'LISTEN'
     );
     this._setStatus('');
     this._countdownEl.style.display = 'none';
-    this._holdBarWrap.classList.remove('wv2-hold-bar-wrap--visible');
 
-    // Phase-aware flavor cue — tells the player what's changing
+    // Phase-aware flavor cue
     if (entry) {
-      const phaseLabels = {
-        exposition:  'Learn the rhythm. Lock it in.',
-        development: 'Pattern\'s shifting. Stay with it.',
-        variation:   'Hold notes now. Feel the change.',
-        climax:      'Full send. Everything\'s moving.',
-      };
-      if (this._cycleIndex === 0 || (ci > 0 && comp[ci - 1]?.phase !== entry.phase)) {
-        this._setFlavor(phaseLabels[entry.phase] ?? '');
+      if (hasTrap) {
+        this._setFlavor('Cross-threaded bolts. Skip the marked beats or you\'ll strip them.');
+      } else {
+        const phaseLabels = {
+          exposition:  'Learn the rhythm. Lock it in.',
+          development: 'Pattern\'s shifting. Stay with it.',
+          variation:   'Hold notes now. Feel the change.',
+          climax:      'Full send. Everything\'s moving.',
+        };
+        if (this._cycleIndex === 0 || (ci > 0 && comp[ci - 1]?.phase !== entry.phase)) {
+          this._setFlavor(phaseLabels[entry.phase] ?? '');
+        }
       }
     }
   }
 
-  // Render the call row with preview (dim) or played state
+  // Render the call row with preview (dim) or played state.
+  // Trap beats render the same as normal call beats (the player hears them)
+  // but get a danger CSS class so the ⚠ is visible during call phase.
   _renderCallRow(showPlayed = false) {
     for (let i = 0; i < 8; i++) {
       const cell   = this._callCells[i];
-      const step   = this._typedPattern[i];
       cell.className = 'wv2-cell';
 
-      if (!step) continue;
+      // Traps are active in the CALL (the player hears them) even though
+      // _typedPattern has them as null (rest in response). Check the raw
+      // call pattern for whether this step has audio.
+      const isActive = this._callPattern[i];
+      const isTrap   = this._trapPositions.has(i);
+      const step     = this._typedPattern[i]; // null for traps
 
-      if (step.t === 'tap') {
+      if (!isActive) continue;
+
+      if (isTrap) {
+        // Trap beat: show as active call beat + danger marker
+        cell.classList.add(showPlayed ? 'wv2-cell--call-played' : 'wv2-cell--call-preview');
+        cell.classList.add('wv2-cell--trap-call');
+      } else if (!step) {
+        continue; // natural rest
+      } else if (step.t === 'tap') {
         cell.classList.add(showPlayed ? 'wv2-cell--call-played' : 'wv2-cell--call-preview');
       } else if (step.t === 'hold') {
         cell.classList.add('wv2-cell--hold-start');
@@ -1250,12 +1196,25 @@ export class WrenchMechanic {
     }
   }
 
-  // Pre-light response row so player can read the pattern before it arrives
+  // Pre-light response row so player can read the pattern before it arrives.
+  // Trap positions show as "don't tap" danger zones.
   _renderResponsePreview() {
     for (let i = 0; i < 8; i++) {
       const cell = this._responseCells[i];
       const step = this._typedPattern[i];
+
+      // Preserve timing label
+      const label = cell.querySelector('.wv2-timing-label');
       cell.className = 'wv2-cell';
+      if (label) cell.appendChild(label);
+
+      const isTrap = this._trapPositions.has(i);
+
+      if (isTrap) {
+        // Trap position: danger zone — player must NOT tap here
+        cell.classList.add('wv2-cell--trap-resp');
+        continue;
+      }
 
       if (!step) continue;
 
@@ -1271,10 +1230,6 @@ export class WrenchMechanic {
         cell.classList.add('wv2-cell--hold-cue-end');
         cell.classList.add('wv2-cell--resp-preview-hold');
       }
-
-      // Preserve timing label
-      const label = cell.querySelector('.wv2-timing-label');
-      if (label) cell.appendChild(label);
     }
   }
 
@@ -1329,84 +1284,10 @@ export class WrenchMechanic {
     this._setStatus('');
   }
 
-  _startHazardPhase() {
-    this._phase        = 'hazard';
-    this._hazardFailed = false;
-    this._patternsSinceHazard = 0;
-
-    // Silence the beat scheduler — no call beats during hazard
-    this._map._currentPattern = new Array(16).fill(false);
-
-    this._callCells.forEach(c => { c.className = 'wv2-cell wv2-cell--hazard'; });
-    this._responseCells.forEach(c => { c.className = 'wv2-cell wv2-cell--hazard'; });
-
-    this._hazardEl.textContent = '⚠ SEIZED — HOLD';
-    this._hazardEl.style.display = 'block';
-
-    this._setBannerState('hazard', '⚠ SEIZED — DON\'T TAP');
-    this._holdBarWrap.classList.add('wv2-hold-bar-wrap--visible');
-    this._holdBarFill.style.width = '0%';
-    this._holdBarFill.className = 'wv2-hold-bar-fill';
-
-    this.audio?.play?.('stuck');
-    this._setStatus('');
-    this._setFlavor('Seized. Hold still — let it breathe.');
-
-    this._hazardStartTime = performance.now();
-    this._animateHazardBar();
-  }
-
-  _animateHazardBar() {
-    if (this._hazardHoldRaf) cancelAnimationFrame(this._hazardHoldRaf);
-    const tick = (now) => {
-      if (this._destroyed || this._phase !== 'hazard') return;
-      const elapsed  = now - this._hazardStartTime;
-      const progress = Math.min(elapsed / this._hazardDuration, 1);
-      this._holdBarFill.style.width = `${(progress * 100).toFixed(1)}%`;
-      if (progress >= 0.80) this._holdBarFill.classList.add('wv2-hold-bar-fill--safe');
-      if (progress < 1) this._hazardHoldRaf = requestAnimationFrame(tick);
-    };
-    this._hazardHoldRaf = requestAnimationFrame(tick);
-  }
-
-  _endHazardPhase() {
-    if (this._hazardHoldRaf) { cancelAnimationFrame(this._hazardHoldRaf); this._hazardHoldRaf = null; }
-    this._hazardEl.style.display = 'none';
-    this._holdBarWrap.classList.remove('wv2-hold-bar-wrap--visible');
-
-    // ── BUG E FIX ──────────────────────────────────────────────────
-    // Clear any inline styles set during hazard (e.g. legacy
-    // style.borderColor from Bug D, or any future inline style
-    // contamination). _clearAllCells only resets className — inline
-    // styles survive and bleed into subsequent cycles.
-    this._callCells.forEach(c => { c.style.borderColor = ''; });
-    this._responseCells.forEach(c => { c.style.borderColor = ''; });
-
-    this._clearAllCells();
-
-    if (!this._hazardFailed) {
-      this._setFlavor(pickRandom(HAZARD_SUCCESS_FLAVOR));
-      this._setStatus('Broke it loose ✓');
-      this._setBannerState('call', '—');
-    } else {
-      this._progress = Math.max(0, this._progress - 0.08);
-      this._combo = 0;
-      this._updateComboDisplay();
-      this._updateProgress();
-      this._setFlavor(pickRandom(HAZARD_FAIL_FLAVOR));
-      this._setStatus('STRIPPED — hazard failed');
-      this._setBannerState('call', '—');
-    }
-
-    // Hazard interval is already set from composition; no need to
-    // re-randomize with Math.random (which is non-deterministic)
-  }
-
   _endResponsePhase() {
     this._evaluateCycle();
     this._cycleIndex++;
     this._totalPatterns++;
-    this._patternsSinceHazard++;
   }
 
   // ── Response evaluation ───────────────────────────────────────
@@ -1545,19 +1426,6 @@ export class WrenchMechanic {
   _onPlayerPress() {
     if (this._destroyed) return;
 
-    if (this._phase === 'hazard') {
-      this._hazardFailed = true;
-      // ── BUG D FIX ──────────────────────────────────────────────
-      // Previously set inline style.borderColor = '#ff0000' which
-      // _clearAllCells (className reset) never removed, causing red
-      // borders to bleed into subsequent cycles. Now uses the existing
-      // CSS class which _clearAllCells already handles.
-      this._callCells.forEach(c => c.classList.add('wv2-cell--stripped'));
-      this._responseCells.forEach(c => c.classList.add('wv2-cell--stripped'));
-      this.audio?.playWrenchSequenceBreak?.();
-      return;
-    }
-
     if (this._phase === 'countin' || this._phase === 'ready') return;
     if (this._phase !== 'response') return;
     if (this._responseStepEval) return;
@@ -1588,13 +1456,40 @@ export class WrenchMechanic {
     const stepData = this._typedPattern[rStep];
 
     if (!stepData) {
-      this._responseTaps[rStep] = 'stripped';
-      if (cell) {
-        cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--resp-preview');
-        cell.classList.add('wv2-cell--stripped');
+      const isTrap = this._trapPositions.has(rStep);
+
+      if (isTrap) {
+        // ── TRAP BEAT: bolt stripped ─────────────────────────────
+        // The player tapped a marked "skip" beat. This is the restraint
+        // test — the beat was in the call but must be avoided in response.
+        // Penalty: immediate progress loss + combo break.
+        this._responseTaps[rStep] = 'trap-stripped';
+        this._progress = Math.max(0, this._progress - 0.06);
+        this._combo = 0;
+        this._updateComboDisplay();
+        this._updateProgress();
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active',
+            'wv2-cell--trap-resp', 'wv2-cell--resp-preview');
+          cell.classList.add('wv2-cell--stripped');
+        }
+        this.audio?.playWrenchSequenceBreak?.();
+        this._setStatus('⚠ STRIPPED');
+        this._setFlavor(pickRandom(STRIPPED_FLAVOR));
+        if (this._playArea) {
+          this._playArea.classList.add('wv2-play-area--stripped');
+          setTimeout(() => this._playArea?.classList.remove('wv2-play-area--stripped'), 420);
+        }
+      } else {
+        // ── Normal rest: tapped where you shouldn't ──────────────
+        this._responseTaps[rStep] = 'stripped';
+        if (cell) {
+          cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--resp-preview');
+          cell.classList.add('wv2-cell--stripped');
+        }
+        this.audio?.playWrenchSequenceBreak?.();
+        this._setStatus('STRIPPED');
       }
-      this.audio?.playWrenchSequenceBreak?.();
-      this._setStatus('STRIPPED');
       this._responseStepEval = true;
       return;
     }
@@ -1776,12 +1671,6 @@ export class WrenchMechanic {
     label.classList.add('wv2-timing-label--show');
   }
 
-  // ── Hazard scheduling ─────────────────────────────────────────
-
-  _shouldFireHazard() {
-    return this._patternsSinceHazard >= this._hazardInterval;
-  }
-
   // ── Completion ────────────────────────────────────────────────
 
   _complete() {
@@ -1789,8 +1678,6 @@ export class WrenchMechanic {
     this._progress = 1.0;
     this.engine.stop();
     this._detachInput();
-
-    if (this._hazardHoldRaf) { cancelAnimationFrame(this._hazardHoldRaf); this._hazardHoldRaf = null; }
 
     this._updateProgress();
     this._setBannerState('response', '✓ DONE');

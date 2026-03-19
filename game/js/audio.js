@@ -2023,18 +2023,27 @@ export class RhythmEngine {
    *
    * COMPOSITION MODE (wrench v2):
    *   If map._currentPattern is set (by WrenchMechanic._startCallPhase),
-   *   return it directly. This ensures the audio scheduler plays EXACTLY
-   *   the pattern the UI is showing — eliminating audio/visual desync
-   *   caused by independent RNG calls. See WRENCH_RHYTHM_REDESIGN.md §1.2.
+   * COMPOSITION MODE (wrench v2):
+   *   If map.composition exists, look up the pattern directly by
+   *   cycleIndex. Engine cycle 0 = count-in (returns silence).
+   *   Engine cycle N (N≥1) = composition[N-1].
+   *   This eliminates the scheduler/callback race condition because
+   *   the pattern is computed from static data, not a mutable field
+   *   that depends on setTimeout ordering.
    *
    * LEGACY MODE (all other mechanics):
    *   1–2 non-anchor steps are toggled using the variationSeed RNG.
    *   See Music Theory Reference §10.
    */
   static applyVariation(map, cycleIndex) {
-    // ── Composition mode: single source of truth ──────────────
-    if (map._currentPattern) {
-      return [...map._currentPattern];
+    // ── Composition mode: indexed lookup (no race condition) ───
+    if (map.composition) {
+      const countIn = map._countInCycles ?? 0;
+      const compIdx = cycleIndex - countIn;
+      if (compIdx < 0) return new Array(16).fill(false); // count-in: silence
+      const idx = Math.min(compIdx, map.composition.length - 1);
+      const entry = map.composition[idx];
+      if (entry) return [...entry.call, ...entry.response];
     }
 
     // ── Legacy mode: seeded random variation ──────────────────
@@ -2129,6 +2138,11 @@ export class RhythmEngine {
     const map  = this._map;
     const ctx  = this._audio._ctx;
     if (!ctx) return;
+
+    // Skip sounds during count-in cycles (metronome is handled separately
+    // by the _onBeat callback in wrench.js)
+    if (map._countInCycles && this._cycleCount < map._countInCycles) return;
+
     const out  = this._audio._masterGain;
     const vol  = this._audio._muted ? 0 : this._audio._volume;
 
