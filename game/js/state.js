@@ -264,4 +264,161 @@ export class GameState {
     }
     return true;
   }
+
+  // ══════════════════════════════════════════════════════════
+  //  SKILL XP MANAGEMENT
+  // ══════════════════════════════════════════════════════════
+
+  /**
+   * XP needed to advance FROM level N to N+1.
+   * Logarithmic curve ×1.5 per level:
+   *   Lv 1→2:  100 XP
+   *   Lv 2→3:  150 XP
+   *   Lv 3→4:  225 XP
+   *   …
+   *   Lv 19→20: ~149,881 XP
+   */
+  _xpForLevel(n) {
+    return Math.floor(100 * Math.pow(1.5, n - 1));
+  }
+
+  /** Returns the rank title for a given level. */
+  _rankForLevel(level) {
+    if (level <= 5)  return 'Apprentice';
+    if (level <= 10) return 'Shade Tree';
+    if (level <= 15) return 'Journeyman';
+    return 'Master Tech';
+  }
+
+  /**
+   * Add XP to a named skill. Handles multi-level-ups with XP overflow.
+   * Caps at level 20. Saves state automatically.
+   *
+   * @param {string} skillName  - 'wrench' | 'precision' | 'diagnosis' | 'bodywork'
+   * @param {number} amount     - XP to add (positive integer)
+   * @returns {Array}           - Array of level-up objects: { skill, newLevel, newRank }
+   *                             Empty array if no level-ups occurred.
+   */
+  addSkillXP(skillName, amount) {
+    if (!this._state?.skills) return [];
+    if (!this._state.skills[skillName]) return [];
+
+    const skill    = this._state.skills[skillName];
+    const levelUps = [];
+
+    skill.xp = (skill.xp || 0) + Math.max(0, amount);
+
+    while (skill.level < 20) {
+      const needed = this._xpForLevel(skill.level);
+      if (skill.xp < needed) break;
+      skill.xp -= needed;
+      skill.level++;
+      levelUps.push({
+        skill:    skillName,
+        newLevel: skill.level,
+        newRank:  this._rankForLevel(skill.level),
+      });
+    }
+
+    // Hard-cap: at level 20 XP is frozen at 0
+    if (skill.level >= 20) {
+      skill.xp = 0;
+    }
+
+    this.save();
+    return levelUps;
+  }
+
+  /**
+   * Returns the current level for a skill (1–20).
+   */
+  getSkillLevel(skillName) {
+    return this._state?.skills?.[skillName]?.level ?? 1;
+  }
+
+  /**
+   * Returns XP progress toward the next level.
+   * Shape: { current: number, needed: number, percent: number 0-100 }
+   * At level 20 returns { current: 0, needed: 0, percent: 100 }.
+   */
+  getSkillXP(skillName) {
+    const skill = this._state?.skills?.[skillName] ?? { level: 1, xp: 0 };
+    if (skill.level >= 20) return { current: 0, needed: 0, percent: 100 };
+    const needed  = this._xpForLevel(skill.level);
+    const current = skill.xp || 0;
+    const percent = Math.min(100, Math.round((current / needed) * 100));
+    return { current, needed, percent };
+  }
+
+  /**
+   * Returns the % efficiency bonus unlocked at the player's current skill level.
+   *
+   * Tier table (from GDD §6):
+   *   Apprentice  (Lv  1-5):  +0%
+   *   Shade Tree  (Lv  6-10): +10%
+   *   Journeyman  (Lv 11-15): +20%
+   *   Master Tech (Lv 16-20): +30%
+   */
+  getSkillBonus(skillName) {
+    const level = this.getSkillLevel(skillName);
+    if (level <= 5)  return 0;
+    if (level <= 10) return 10;
+    if (level <= 15) return 20;
+    return 30;
+  }
+
+  // ── Tool helpers ───────────────────────────────────────
+
+  /**
+   * Returns true if the player owns a given tool (any truthy value in tools map).
+   * Works for both permanent tools (stored as `true`) and consumables (stored as a count).
+   */
+  hasTool(toolId) {
+    const t = this._state?.tools?.[toolId];
+    if (t === undefined || t === false || t === null) return false;
+    if (typeof t === 'number') return t > 0;
+    return !!t;
+  }
+
+  /**
+   * Returns the remaining charge count for a consumable tool.
+   * For permanent (non-consumable) tools, returns Infinity.
+   * Returns 0 if tool is not owned.
+   */
+  getToolCharges(toolId) {
+    const t = this._state?.tools?.[toolId];
+    if (t === undefined || t === false || t === null) return 0;
+    if (typeof t === 'number') return t;
+    if (typeof t === 'boolean' && t) return Infinity; // permanent tool
+    if (typeof t === 'object' && typeof t.charges === 'number') return t.charges;
+    return 0;
+  }
+
+  /**
+   * Decrement one charge from a consumable tool.
+   * No-ops on permanent tools (returns true without saving).
+   * Returns false if tool not owned or out of charges.
+   */
+  useToolCharge(toolId) {
+    if (!this._state?.tools) return false;
+    const t = this._state.tools[toolId];
+
+    if (t === true) return true; // permanent — never consumed
+
+    if (typeof t === 'number') {
+      if (t <= 0) return false;
+      this._state.tools[toolId] = t - 1;
+      this.save();
+      return true;
+    }
+
+    if (typeof t === 'object' && t !== null && typeof t.charges === 'number') {
+      if (t.charges <= 0) return false;
+      t.charges--;
+      this.save();
+      return true;
+    }
+
+    return false;
+  }
 }

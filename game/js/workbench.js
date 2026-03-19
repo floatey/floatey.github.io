@@ -225,6 +225,115 @@ function showToast(message, durationMs = 3000) {
   }, durationMs);
 }
 
+// ── Level-up notification (stacking cards, auto-dismiss 3 s) ─
+
+const SKILL_ICONS = {
+  wrench:    '🔧',
+  precision: '⚙️',
+  diagnosis: '🔍',
+  bodywork:  '🎨',
+};
+
+/**
+ * Show a rich level-up card for a skill.
+ * Multiple cards stack without overlapping. Auto-dismisses after 3 s.
+ * @param {{ skill: string, newLevel: number, newRank: string }} levelUp
+ */
+function showLevelUpNotification(levelUp) {
+  let stack = document.getElementById('levelup-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'levelup-stack';
+    stack.style.cssText = [
+      'position:fixed',
+      'top:72px',
+      'right:16px',
+      'z-index:500',
+      'display:flex',
+      'flex-direction:column',
+      'gap:8px',
+      'pointer-events:none',
+    ].join(';');
+    document.body.appendChild(stack);
+  }
+
+  const icon  = SKILL_ICONS[levelUp.skill] || '⬆';
+  const label = levelUp.skill.charAt(0).toUpperCase() + levelUp.skill.slice(1);
+
+  let bonusLine = '';
+  if (levelUp.newLevel === 6)  bonusLine = '+10% efficiency unlocked';
+  if (levelUp.newLevel === 11) bonusLine = '+20% efficiency unlocked';
+  if (levelUp.newLevel === 16) bonusLine = '+30% efficiency &amp; Perfect Repair unlocked';
+
+  const card = document.createElement('div');
+  card.style.cssText = [
+    'background:var(--bg-elevated,#1c1c1c)',
+    'border:1px solid var(--rarity-5,#f59e0b)',
+    'border-radius:var(--radius-md,8px)',
+    'padding:10px 14px',
+    'min-width:220px',
+    'max-width:280px',
+    'font-family:var(--font-data,monospace)',
+    'pointer-events:auto',
+    'box-shadow:0 4px 24px rgba(245,158,11,0.25)',
+    'animation:fadeUp 300ms ease',
+    'transition:opacity 300ms ease',
+  ].join(';');
+
+  card.innerHTML = `
+    <div style="font-size:11px;letter-spacing:0.12em;color:var(--rarity-5,#f59e0b);margin-bottom:3px;text-transform:uppercase;">
+      ${icon} LEVEL UP!
+    </div>
+    <div style="font-size:14px;font-weight:700;color:var(--text-primary,#fff);margin-bottom:2px;">
+      ${label}: Level ${levelUp.newLevel}
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary,#aaa);">
+      Rank: ${levelUp.newRank}
+    </div>
+    ${bonusLine ? `<div style="font-size:10px;color:#4ade80;margin-top:3px;">${bonusLine}</div>` : ''}
+  `;
+
+  stack.appendChild(card);
+  setTimeout(() => {
+    card.style.opacity = '0';
+    setTimeout(() => {
+      card.remove();
+      if (stack.children.length === 0) stack.remove();
+    }, 300);
+  }, 3000);
+}
+
+/**
+ * Process level-ups returned by state.addSkillXP(), show notifications,
+ * and post to the activity feed on milestone levels (5, 10, 15, 20).
+ */
+function _handleLevelUps(levelUps) {
+  if (!levelUps || levelUps.length === 0) return;
+  const { state } = getApp();
+  const MILESTONES = new Set([5, 10, 15, 20]);
+
+  for (const lu of levelUps) {
+    showLevelUpNotification(lu);
+
+    if (MILESTONES.has(lu.newLevel)) {
+      try {
+        const { sync } = getApp();
+        const profile = state.getProfile();
+        if (sync && typeof sync.postToFeed === 'function') {
+          sync.postToFeed({
+            who:    profile.profileId,
+            what:   'skill_milestone',
+            detail: `reached ${lu.newRank} rank in ${lu.skill} (Level ${lu.newLevel})!`,
+            when:   Date.now(),
+          });
+        }
+      } catch (e) {
+        console.warn('Could not post skill milestone to feed:', e);
+      }
+    }
+  }
+}
+
 // ── Confetti ─────────────────────────────────────────────────
 
 function spawnConfetti(count = 40) {
@@ -869,20 +978,34 @@ function _getPlayerTools() {
   const { state } = getApp();
   const profile = state.getProfile();
   const raw = profile.tools || {};
+
+  // Penetrating oil is consumable — stored as a numeric charge count
+  const oilCharges = typeof raw.penetrating_oil === 'number'
+    ? raw.penetrating_oil
+    : (raw.penetrating_oil ? 1 : 0);
+
   return {
     // Wrench
-    impactWrench:      !!raw.impact_wrench,
-    penetratingOil:    !!raw.penetrating_oil,
+    impactWrench:           !!raw.impact_wrench,
+    penetratingOil:         oilCharges > 0,
+    penetratingOilCharges:  oilCharges,
     // Precision
-    torqueWrench:      !!raw.torque_wrench,
-    angleGauge:        !!raw.angle_gauge,
+    torqueWrench:           !!raw.torque_wrench,
+    angleGauge:             !!raw.angle_gauge,
     // Diagnosis
-    multimeter:        !!raw.multimeter,
-    compressionTester: !!raw.compression_tester,
-    boostLeakTester:   !!raw.boost_leak_tester,
+    multimeter:             !!raw.multimeter,
+    compressionTester:      !!raw.compression_tester,
+    boostLeakTester:        !!raw.boost_leak_tester,
     // Bodywork
-    daPolisher:        !!raw.da_polisher,
-    mediaBlaster:      !!raw.media_blaster,
+    daPolisher:             !!raw.da_polisher,
+    mediaBlaster:           !!raw.media_blaster,
+    /**
+     * Callback so mechanics can consume one charge of a consumable tool
+     * without needing to import state.js directly.
+     */
+    consumeTool(toolId) {
+      state.useToolCharge(toolId);
+    },
   };
 }
 
@@ -961,20 +1084,10 @@ function handleDiagnosisComplete(result, mechanicArea) {
     }
   }
 
-  // Award XP to diagnosis skill
+  // Award XP to diagnosis skill using the logarithmic XP curve
   if (result.xpEarned > 0) {
-    const profile = state.getProfile();
-    if (profile.skills?.diagnosis) {
-      profile.skills.diagnosis.xp += result.xpEarned;
-      while (profile.skills.diagnosis.level < 20) {
-        const xpToNext = profile.skills.diagnosis.level * 100;
-        if (profile.skills.diagnosis.xp < xpToNext) break;
-        profile.skills.diagnosis.xp -= xpToNext;
-        profile.skills.diagnosis.level++;
-        showToast(`⬆ Diagnosis leveled up to Lv.${profile.skills.diagnosis.level}!`, 4000);
-      }
-      state.save();
-    }
+    const levelUps = state.addSkillXP('diagnosis', result.xpEarned);
+    _handleLevelUps(levelUps);
   }
 
   if (result.wasCorrect) {
@@ -984,6 +1097,12 @@ function handleDiagnosisComplete(result, mechanicArea) {
       xpEarned: 0,   // already credited above
       logEntries: [],
     });
+
+    // If Perfect Repair proc fired in diagnosis, override condition to 1.00
+    if (result.perfectRepair) {
+      state.updatePart(instanceId, result.correctPartId, { condition: 1.00 });
+    }
+
     showToast(`✓ Correct diagnosis! ${findPartName(partTree, result.correctPartId)} marked for repair.`, 4000);
 
     // If there's a chained second scenario, launch it after a short pause
@@ -1071,7 +1190,14 @@ function handleBeginRepair(partId) {
   switch (repairType) {
 
     case 'wrench':
-      startWrenchWork(partDef, partInstance, mechanicArea, onRepairComplete);
+      startWrenchWork(
+        partDef,
+        partInstance,
+        mechanicArea,
+        onRepairComplete,
+        playerTools,
+        skillLevel,
+      );
       break;
 
     case 'precision':
@@ -1148,24 +1274,15 @@ function completeRepair(partId, overrides = {}) {
   }
 
   // ── XP award ──
-  // If wrench.js computed xpEarned (with combo multipliers), use it directly.
-  // Otherwise fall back to the workbench's own awardXP calculation.
+  // Use state.addSkillXP() which applies the correct logarithmic XP curve.
+  const repairType = partDef.repairType || 'wrench';
   if (overrides.xpEarned != null) {
-    const profile = state.getProfile();
-    const repairType = partDef.repairType || 'wrench';
-    if (profile.skills?.[repairType]) {
-      profile.skills[repairType].xp += overrides.xpEarned;
-      // FIX: recalculate xpToNext on each iteration of the level-up loop
-      while (profile.skills[repairType].level < 20) {
-        const xpToNext = profile.skills[repairType].level * 100;
-        if (profile.skills[repairType].xp < xpToNext) break;
-        profile.skills[repairType].xp -= xpToNext;
-        profile.skills[repairType].level++;
-        showToast(`⬆ ${repairType.charAt(0).toUpperCase() + repairType.slice(1)} leveled up to Lv.${profile.skills[repairType].level}!`, 4000);
-      }
-    }
+    const levelUps = state.addSkillXP(repairType, overrides.xpEarned);
+    _handleLevelUps(levelUps);
   } else {
-    awardXP(partDef.repairType, partDef.difficulty || 0.5);
+    const baseXP   = Math.round(10 + (partDef.difficulty || 0.5) * 40);
+    const levelUps = state.addSkillXP(repairType, baseXP);
+    _handleLevelUps(levelUps);
   }
 
   // ── Stats ──
@@ -1376,23 +1493,9 @@ function checkSystemCompletion(partId) {
 
 function awardXP(repairType, difficulty) {
   const { state } = getApp();
-  const profile = state.getProfile();
-  if (!profile.skills || !profile.skills[repairType]) return;
-
-  const baseXP = Math.round(10 + difficulty * 40);
-  const skill = profile.skills[repairType];
-  skill.xp += baseXP;
-
-  // FIX: recalculate xpToNext per iteration
-  while (skill.level < 20) {
-    const xpToNext = skill.level * 100;
-    if (skill.xp < xpToNext) break;
-    skill.xp -= xpToNext;
-    skill.level++;
-    showToast(`⬆ ${repairType.charAt(0).toUpperCase() + repairType.slice(1)} leveled up to Lv.${skill.level}!`, 4000);
-  }
-
-  state.save();
+  const baseXP   = Math.round(10 + difficulty * 40);
+  const levelUps = state.addSkillXP(repairType, baseXP);
+  _handleLevelUps(levelUps);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1461,22 +1564,53 @@ function renderSkillBar(container) {
   });
 
   for (const sd of skillDefs) {
-    const skill = skills[sd.key] || { level: 1, xp: 0 };
-    const xpToNext = skill.level * 100;
-    const xpPct = Math.min(100, Math.round((skill.xp / xpToNext) * 100));
+    const level  = state.getSkillLevel(sd.key);
+    const xpData = state.getSkillXP(sd.key);     // { current, needed, percent }
+    const bonus  = state.getSkillBonus(sd.key);  // 0 / 10 / 20 / 30
+
+    const RANK_NAMES = [
+      'Apprentice','Apprentice','Apprentice','Apprentice','Apprentice',
+      'Shade Tree','Shade Tree','Shade Tree','Shade Tree','Shade Tree',
+      'Journeyman','Journeyman','Journeyman','Journeyman','Journeyman',
+      'Master Tech','Master Tech','Master Tech','Master Tech','Master Tech',
+    ];
+    const rank = RANK_NAMES[Math.min(level - 1, 19)];
 
     const bar = el('div', { className: 'skill-bar' });
 
-    bar.appendChild(el('span', {
+    // Label row: skill name + level on the left, rank + bonus on the right
+    const labelRow = el('div', {
+      style: 'display:flex; justify-content:space-between; align-items:baseline;',
+    });
+    labelRow.appendChild(el('span', {
       className: 'skill-bar__label',
-      innerHTML: `${sd.label} <strong style="color:var(--text-primary);">Lv.${skill.level}</strong>`,
+      innerHTML: `${sd.label} <strong style="color:var(--text-primary);">Lv.${level}</strong>`,
     }));
+    labelRow.appendChild(el('span', {
+      style: 'font-size:var(--font-size-xs); color:var(--text-muted); font-family:var(--font-data);',
+      textContent: rank + (bonus > 0 ? ` +${bonus}%` : ''),
+    }));
+    bar.appendChild(labelRow);
 
+    // XP progress track
     const track = el('div', { className: 'skill-bar__track' });
-    const fill = el('div', { className: `skill-bar__fill skill-bar__fill--${sd.cssClass}` });
-    fill.style.setProperty('--fill-pct', `${xpPct}%`);
+    const fill  = el('div', { className: `skill-bar__fill skill-bar__fill--${sd.cssClass}` });
+    fill.style.setProperty('--fill-pct', `${xpData.percent}%`);
     track.appendChild(fill);
     bar.appendChild(track);
+
+    // XP sub-label
+    if (level < 20) {
+      bar.appendChild(el('div', {
+        style: 'font-size:10px; color:var(--text-muted); font-family:var(--font-data); margin-top:2px;',
+        textContent: `${xpData.current} / ${xpData.needed} XP`,
+      }));
+    } else {
+      bar.appendChild(el('div', {
+        style: 'font-size:10px; color:var(--rarity-5); font-family:var(--font-data); margin-top:2px;',
+        textContent: 'MAX LEVEL',
+      }));
+    }
 
     grid.appendChild(bar);
   }

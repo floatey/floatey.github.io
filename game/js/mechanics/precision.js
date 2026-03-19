@@ -831,30 +831,44 @@ export function startPrecisionWork(
     document.removeEventListener('keydown',     handleKeydown);
 
     // Clamp final condition
-    const newCondition = parseFloat(
+    let newCondition = parseFloat(
       clamp(startCondition + conditionDelta, 0.01, 0.95).toFixed(2)
     );
 
     // XP: baseXP * (greenHits / totalSteps) * perfectBonusMultiplier
     const greenRatio = greenHits / totalSteps;
-    const xpEarned   = Math.max(1, Math.round(baseXP * greenRatio * xpBonusMultiplier));
+    let   xpEarned   = Math.max(1, Math.round(baseXP * greenRatio * xpBonusMultiplier));
+
+    // ── Perfect Repair proc (skill level 16+, 5% chance) ──────
+    let perfectRepair = false;
+    if (skillLevel >= 16 && Math.random() < 0.05) {
+      perfectRepair = true;
+      newCondition  = 1.00;
+      xpEarned      = xpEarned * 2;
+    }
 
     // Summary flavor
-    setFlavor(
-      greenHits === totalSteps
-        ? "Perfect torque on every bolt. Beautiful work."
-        : greenHits > totalSteps * 0.7
-          ? "That's torqued to spec."
-          : "Could be tighter, but it'll hold."
-    );
+    if (perfectRepair) {
+      setFlavor('⚡ PERFECT REPAIR — Restored to factory spec!');
+    } else {
+      setFlavor(
+        greenHits === totalSteps
+          ? "Perfect torque on every bolt. Beautiful work."
+          : greenHits > totalSteps * 0.7
+            ? "That's torqued to spec."
+            : "Could be tighter, but it'll hold."
+      );
+    }
 
     // Visual completion
-    stepCounterEl.textContent = `Done!`;
-    stepCounterEl.style.color = 'var(--condition-excellent, #10b981)';
+    stepCounterEl.textContent = perfectRepair ? '⚡ PERFECT' : 'Done!';
+    stepCounterEl.style.color = perfectRepair
+      ? '#f59e0b'
+      : 'var(--condition-excellent, #10b981)';
     _triggerAnimation(barEl, 'pw-complete-bar', 900);
     indicatorEl.style.opacity = '0';
-    tapLabelEl.textContent = '✅ COMPLETE';
-    tapLabelEl.style.color = '#22c55e';
+    tapLabelEl.textContent = perfectRepair ? '⚡ PERFECT REPAIR' : '✅ COMPLETE';
+    tapLabelEl.style.color = perfectRepair ? '#f59e0b' : '#22c55e';
 
     // Summary line
     const summaryEl = _el('div', {
@@ -875,8 +889,12 @@ export function startPrecisionWork(
       `Precision XP earned: +${xpEarned}${perfectBonusCount > 0 ? ` (${perfectBonusCount}× Perfect Torque!)` : ''}`,
     ];
 
+    if (perfectRepair) {
+      logEntries.push('⚡ PERFECT REPAIR proc! Part restored to factory spec! (2× XP)');
+    }
+
     setTimeout(() => {
-      onComplete({ newCondition, xpEarned, logEntries });
+      onComplete({ newCondition, xpEarned, logEntries, perfectRepair });
     }, 1200);
   }
 

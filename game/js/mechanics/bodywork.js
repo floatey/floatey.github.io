@@ -181,6 +181,28 @@ function _injectCSS() {
       animation: bw-coverage-tick 150ms ease !important;
     }
 
+    /* ── Media Blaster instant-clear flash ─────────────────── */
+    @keyframes bw-media-blast {
+      0%   { box-shadow: inset 0 0  0   rgba(245,158,11,0);   border-color: #f59e0b; }
+      20%  { box-shadow: inset 0 0 32px rgba(245,158,11,0.8); border-color: #fbbf24; filter: brightness(1.6); }
+      70%  { box-shadow: inset 0 0 14px rgba(245,158,11,0.4); border-color: #f59e0b; filter: brightness(1.2); }
+      100% { box-shadow: inset 0 0  0   rgba(245,158,11,0);   border-color: var(--condition-good, #22c55e); }
+    }
+    .bw-media-blast {
+      animation: bw-media-blast 500ms ease forwards !important;
+    }
+
+    /* ── Perfect Repair gold flash ──────────────────────────── */
+    @keyframes bw-perfect-repair {
+      0%   { filter: brightness(1); }
+      25%  { filter: brightness(2.2); box-shadow: 0 0 50px rgba(245,158,11,0.9); }
+      70%  { filter: brightness(1.5); box-shadow: 0 0 24px rgba(245,158,11,0.5); }
+      100% { filter: brightness(1); }
+    }
+    .bw-perfect-repair-flash {
+      animation: bw-perfect-repair 900ms ease !important;
+    }
+
     /* ── Stats sidebar ──────────────────────────────────── */
     .bw-stat-block {
       display: flex;
@@ -735,8 +757,9 @@ export function startBodywork(
     zoneQuality[currentStep][idx] = 1.0;
 
     _applyZoneState(idx, 'done', 1.0);
-    _triggerAnimation(zoneEls[idx], 'bw-zone-complete-flash');
-    _playAudio('ui_click');
+    // Media Blaster instant-clear gets a distinct gold blast animation
+    _triggerAnimation(zoneEls[idx], instant ? 'bw-media-blast' : 'bw-zone-complete-flash');
+    _playAudio(instant ? 'impact' : 'ui_click');
 
     if (isRust) {
       rustZonesCleared++;
@@ -894,16 +917,24 @@ export function startBodywork(
     const qualityScore = _overallQuality();
 
     // Condition improvement: finalCondition = current + quality * (0.85 - current)
-    const gap          = 0.85 - startCond;
-    const newCondition = parseFloat(
+    const gap = 0.85 - startCond;
+    let newCondition = parseFloat(
       clamp(startCond + qualityScore * gap, startCond, 0.85).toFixed(2),
     );
 
     // XP
     const continuousBonus = continuousCoverage ? 1.10 : 1.0;
-    const xpEarned = Math.round(
+    let xpEarned = Math.round(
       baseXP * qualityScore * (1 + rustZonesCleared * 0.05) * continuousBonus,
     );
+
+    // ── Perfect Repair proc (skill level 16+, 5% chance) ──────
+    let perfectRepair = false;
+    if (skillLevel >= 16 && Math.random() < 0.05) {
+      perfectRepair = true;
+      newCondition  = 1.00;
+      xpEarned      = xpEarned * 2;
+    }
 
     const { label: qualLabel } = _qualityLabel(qualityScore);
 
@@ -923,18 +954,28 @@ export function startBodywork(
         `Hidden rust damage found — quality reduced by ${Math.round(rustDamagePenalty * 100)}%.`,
       );
     }
+    if (perfectRepair) {
+      logEntries.push('⚡ PERFECT REPAIR proc! Panel restored to factory spec! (2× XP)');
+    }
 
-    _setFlavor("Factory finish? No. But it's honest work.");
+    if (perfectRepair) {
+      _setFlavor('⚡ PERFECT REPAIR — Factory spec. No blemishes, no excuses.');
+      _triggerAnimation(gridEl, 'bw-perfect-repair-flash');
+    } else {
+      _setFlavor("Factory finish? No. But it's honest work.");
+    }
 
     // Mark all zones done visually if they weren't already
     for (let i = 0; i < totalZones; i++) {
       _applyZoneState(i, 'done', 1.0);
     }
 
-    hintEl.textContent = 'All steps complete. Good work.';
+    hintEl.textContent = perfectRepair
+      ? '⚡ Perfect Repair! All steps complete.'
+      : 'All steps complete. Good work.';
 
     setTimeout(() => {
-      onComplete({ newCondition, xpEarned, logEntries });
+      onComplete({ newCondition, xpEarned, logEntries, perfectRepair });
     }, 1000);
   }
 

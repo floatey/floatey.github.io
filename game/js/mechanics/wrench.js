@@ -2,9 +2,16 @@
 //  mechanics/wrench.js — Wrench Work (Rhythm Tapper)
 //
 //  Usage:
-//    startWrenchWork(partData, instanceState, container, onComplete)
+//    startWrenchWork(partData, instanceState, container, onComplete,
+//                   playerTools, skillLevel)
 //
-//  onComplete fires with: { newCondition, xpEarned, logEntries[] }
+//  onComplete fires with: { newCondition, xpEarned, logEntries[], perfectRepair? }
+//
+//  playerTools shape:
+//    impactWrench:           boolean
+//    penetratingOil:         boolean  (true if charges > 0)
+//    penetratingOilCharges:  number
+//    consumeTool:            (toolId) => void
 //
 //  FILE LOCATION: game/js/mechanics/wrench.js
 // ════════════════════════════════════════════════════════════
@@ -121,6 +128,38 @@ function _injectCSS() {
       animation: ww-gold-shimmer 900ms ease infinite;
     }
 
+    /* ── Impact Wrench burst flash ── */
+    @keyframes ww-impact-burst {
+      0%   { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
+      20%  { box-shadow: 0 0 36px rgba(245,158,11,0.9); filter: brightness(2); }
+      65%  { box-shadow: 0 0 18px rgba(245,158,11,0.45); filter: brightness(1.3); }
+      100% { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
+    }
+    .ww-impact-burst {
+      animation: ww-impact-burst 500ms ease !important;
+    }
+
+    /* ── Penetrating Oil applied flash ── */
+    @keyframes ww-oil-applied {
+      0%   { border-color: var(--border); }
+      30%  { border-color: #a3e635; box-shadow: 0 0 18px rgba(163,230,53,0.55); }
+      100% { border-color: var(--border); }
+    }
+    .ww-oil-applied {
+      animation: ww-oil-applied 700ms ease !important;
+    }
+
+    /* ── Perfect Repair gold flash ── */
+    @keyframes ww-perfect-repair {
+      0%   { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
+      20%  { box-shadow: 0 0 50px rgba(245,158,11,1.0); filter: brightness(2.5); }
+      70%  { box-shadow: 0 0 28px rgba(245,158,11,0.6); filter: brightness(1.5); }
+      100% { box-shadow: 0 0 0   rgba(245,158,11,0); filter: brightness(1); }
+    }
+    .ww-perfect-repair-flash {
+      animation: ww-perfect-repair 900ms ease !important;
+    }
+
     .ww-tap-target {
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
@@ -147,18 +186,48 @@ function _injectCSS() {
  * @param {object}   partData       - Part definition (name, difficulty, flavorText, …)
  * @param {object}   instanceState  - Part instance state (condition, repairProgress, …)
  * @param {Element}  container      - DOM element to render into
- * @param {Function} onComplete     - Called with { newCondition, xpEarned, logEntries[] }
+ * @param {Function} onComplete     - Called with { newCondition, xpEarned, logEntries[], perfectRepair? }
+ * @param {object}   playerTools    - { impactWrench, penetratingOil, penetratingOilCharges, consumeTool }
+ * @param {number}   skillLevel     - Player's wrench skill level (1–20)
  */
-export function startWrenchWork(partData, instanceState, container, onComplete) {
+export function startWrenchWork(
+  partData,
+  instanceState,
+  container,
+  onComplete,
+  playerTools = {},
+  skillLevel  = 1,
+) {
   _injectCSS();
 
+  // ── Tool flags ───────────────────────────────────────────────
+  const hasImpactWrench   = !!(playerTools.impactWrench   ?? playerTools.impact_wrench);
+  const oilCharges        = playerTools.penetratingOilCharges ?? 0;
+  const hasPenetratingOil = oilCharges > 0;
+  const consumeTool       = typeof playerTools.consumeTool === 'function'
+    ? playerTools.consumeTool
+    : () => {};
+
+  // ── Skill bonuses ────────────────────────────────────────────
+  // Tier: 1-5 → 0%, 6-10 → 10%, 11-15 → 20%, 16-20 → 30%
+  const skillBonusPct = skillLevel <= 5  ? 0
+                      : skillLevel <= 10 ? 10
+                      : skillLevel <= 15 ? 20
+                      :                   30;
+
   // ── Derived constants ────────────────────────────────────────
-  const difficulty    = clamp(partData.difficulty ?? 0.5, 0, 1);
-  const totalClicks   = Math.round(30 + difficulty * 70);   // 37 – 100
-  const idealTempo    = 200 + (1.0 - difficulty) * 300;     // 230 – 470 ms
-  const tolerance     = 80;                                  // ±ms
-  const baseXP        = 10 + difficulty * 40;               // 14 – 46
-  const baseClickVal  = 1.0 / totalClicks;
+  const difficulty   = clamp(partData.difficulty ?? 0.5, 0, 1);
+  let totalClicks    = Math.round(30 + difficulty * 70);   // 37 – 100
+  const idealTempo   = 200 + (1.0 - difficulty) * 300;    // 230 – 470 ms
+  const tolerance    = 80 + skillLevel * 2;               // ±ms: wider with skill
+  const baseXP       = 10 + difficulty * 40;              // 14 – 46
+  // Base click value boosted by skill efficiency bonus
+  const baseClickVal = (1.0 / totalClicks) * (1 + skillBonusPct / 100);
+  // Hazard warning duration: 1.5s base + 50ms per skill level
+  const hazardDuration = 1500 + skillLevel * 50;
+
+  // Penetrating oil flag — tracks if oil has been used this session
+  let oilApplied = false;
 
   const GENERIC_FLAVOR = [
     'Keep the rhythm.',
@@ -194,6 +263,17 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     "Easy! You just made it worse.",
   ];
 
+  const IMPACT_WRENCH_FLAVOR = [
+    '⚡ Impact burst!',
+    '⚡ Braaap — 5× progress!',
+    '⚡ Impact doing its thing.',
+  ];
+
+  const OIL_FLAVOR = [
+    '🫗 Penetrating oil soaking in — resistance reduced.',
+    '🫗 Oil applied. This one\'s giving now.',
+  ];
+
   // ── Mutable state ────────────────────────────────────────────
   let progress        = 0;
   let clickCount      = 0;
@@ -216,6 +296,9 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
 
   let nextFlavorAt    = randomInt(5, 10);
   let clicksSinceFlavor = 0;
+
+  // Impact wrench: fires every 15th click
+  let impactClickTracker = 0;
 
   let isComplete      = false;
 
@@ -263,142 +346,156 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     style: 'display:flex; justify-content:space-between; align-items:flex-start; gap:8px;',
   });
 
-  const partInfoCol = _el('div', { style: 'min-width:0; flex:1;' });
-  const partLabel   = _el('div', {
-    style: 'font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); font-family:var(--font-data);',
-    textContent: 'Removing',
-  });
-  const partName    = _el('div', {
-    style: 'font-size:15px; font-weight:700; color:var(--text-primary); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;',
-    textContent: partData.name,
-  });
-  const resistRow   = _el('div', {
-    style: 'font-size:12px; color:var(--text-secondary); margin-top:5px; font-family:var(--font-data);',
-  });
-  resistRow.append('Resistance: ');
-  const resistLabel = _el('span', {
-    style: `color:${resistance.color}; font-weight:700;`,
-    textContent: resistance.label,
-  });
-  if (difficulty >= 0.85) {
-    resistLabel.style.animation = 'ww-hazard-flash 800ms ease infinite';
+  const titleBlock = _el('div', {});
+  titleBlock.appendChild(_el('div', {
+    style: 'font-size:15px; font-weight:700; color:var(--text-primary,#fff); margin-bottom:2px;',
+    textContent: `Wrenching: ${partData.name ?? 'Component'}`,
+  }));
+  titleBlock.appendChild(_el('div', {
+    style: `font-family:var(--font-data,monospace); font-size:11px; color:${resistance.color}; letter-spacing:0.06em;`,
+    textContent: `Resistance: ${resistance.label}`,
+  }));
+  headerRow.appendChild(titleBlock);
+
+  // Skill / tool badges
+  const badgeCol = _el('div', { style: 'display:flex; flex-direction:column; gap:4px; align-items:flex-end;' });
+  if (skillLevel > 1) {
+    const skillBadge = _el('span', {
+      style: 'font-family:var(--font-data,monospace); font-size:10px; padding:2px 7px; border-radius:3px; background:rgba(78,127,255,0.12); color:#4e7fff; border:1px solid #4e7fff44;',
+      textContent: `Lv.${skillLevel} ${skillBonusPct > 0 ? `+${skillBonusPct}%` : ''}`,
+    });
+    badgeCol.appendChild(skillBadge);
   }
-  resistRow.appendChild(resistLabel);
-  partInfoCol.append(partLabel, partName, resistRow);
-
-  const comboCol      = _el('div', { style: 'text-align:right; flex-shrink:0;' });
-  const comboTagLine  = _el('div', {
-    style: 'font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); font-family:var(--font-data);',
-    textContent: 'Combo',
-  });
-  const comboBig      = _el('div', {
-    style: 'font-size:26px; font-weight:800; font-family:var(--font-data); color:var(--text-muted); line-height:1; margin-top:1px;',
-    textContent: 'x1.0',
-  });
-  comboCol.append(comboTagLine, comboBig);
-
-  headerRow.append(partInfoCol, comboCol);
+  if (hasImpactWrench) {
+    badgeCol.appendChild(_el('span', {
+      style: 'font-family:var(--font-data,monospace); font-size:10px; padding:2px 7px; border-radius:3px; background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid #f59e0b44;',
+      textContent: '⚡ Impact Wrench',
+    }));
+  }
+  headerRow.appendChild(badgeCol);
   container.appendChild(headerRow);
 
-
-  // ── Tap target ───────────────────────────────────────────────
-  const tapTarget = _el('button', {
-    className: 'ww-tap-target',
-    style: [
-      'display:flex',
-      'align-items:center',
-      'justify-content:center',
-      'flex-direction:column',
-      'gap:6px',
-      'width:100%',
-      'min-height:160px',
-      'background:var(--bg-secondary)',
-      'border:2px solid var(--border)',
-      'border-radius:var(--radius-md)',
-      'cursor:pointer',
-      'padding:16px',
-      'transition:border-color 220ms ease, box-shadow 220ms ease',
-      'position:relative',
-    ].join(';'),
-  });
-
-  const tapIcon  = _el('span', {
-    style: 'font-size:42px; display:block; line-height:1; transition:transform 120ms ease;',
-    textContent: '🔧',
-  });
-  const tapLabel = _el('span', {
-    style: 'font-size:13px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--text-secondary); transition:color 200ms ease;',
-    textContent: 'CLICK',
-  });
-  tapTarget.append(tapIcon, tapLabel);
-  container.appendChild(tapTarget);
-
-
   // ── Progress bar ─────────────────────────────────────────────
-  const progressSection = _el('div', { style: 'display:flex; flex-direction:column; gap:5px;' });
-  const progressMeta    = _el('div', {
-    style: 'display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary); font-family:var(--font-data);',
+  const progressWrap = _el('div', {
+    style: 'display:flex; flex-direction:column; gap:4px;',
   });
-  const progressLabelTxt = _el('span', { textContent: 'Progress' });
-  const progressPct      = _el('span', { textContent: '0%' });
-  progressMeta.append(progressLabelTxt, progressPct);
+
+  const progressLabelRow = _el('div', {
+    style: 'display:flex; justify-content:space-between; font-family:var(--font-data,monospace); font-size:11px; color:var(--text-secondary,#aaa);',
+  });
+  const progressPctEl = _el('span', { textContent: '0%' });
+  const progressClicksEl = _el('span', { textContent: `0 / ${totalClicks} clicks` });
+  progressLabelRow.appendChild(progressPctEl);
+  progressLabelRow.appendChild(progressClicksEl);
 
   const progressTrack = _el('div', {
-    style: 'height:18px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;',
+    style: [
+      'width: 100%',
+      'height: 14px',
+      'border-radius: 7px',
+      'background: var(--bg-elevated,#1a1a1a)',
+      'border: 1px solid var(--border,#333)',
+      'overflow: hidden',
+    ].join(';'),
   });
+
   const progressBar = _el('div', {
     style: [
-      'height:100%',
-      'width:0%',
-      'background:var(--condition-good)',
-      'border-radius:var(--radius-sm)',
-      'transition:width 90ms ease',
-      'transform-origin:left center',
+      'height: 100%',
+      'width: 0%',
+      'border-radius: 7px',
+      'background: var(--condition-good,#22c55e)',
+      'transition: width 80ms linear',
     ].join(';'),
   });
+
   progressTrack.appendChild(progressBar);
-  progressSection.append(progressMeta, progressTrack);
-  container.appendChild(progressSection);
+  progressWrap.appendChild(progressLabelRow);
+  progressWrap.appendChild(progressTrack);
+  container.appendChild(progressWrap);
 
-
-  // ── Momentum bar ─────────────────────────────────────────────
-  const momentumSection  = _el('div', { style: 'display:flex; flex-direction:column; gap:5px;' });
-  const momentumMeta     = _el('div', {
-    style: 'display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary); font-family:var(--font-data);',
+  // ── Combo display ────────────────────────────────────────────
+  const comboRow = _el('div', {
+    style: 'display:flex; justify-content:space-between; align-items:center;',
   });
-  const momentumTxt     = _el('span', { textContent: '⚡ Momentum' });
-  const rhythmLabel     = _el('span', { style: 'color:var(--text-muted);', textContent: 'rhythm: —' });
-  momentumMeta.append(momentumTxt, rhythmLabel);
 
-  const momentumTrack = _el('div', {
-    style: 'height:9px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden;',
+  const comboEl = _el('div', {
+    style: 'font-family:var(--font-data,monospace); font-size:13px; color:var(--text-muted,#888);',
+    textContent: 'COMBO x1.0',
   });
-  const momentumBar = _el('div', {
+  const tempoEl = _el('div', {
+    style: 'font-family:var(--font-data,monospace); font-size:11px; color:var(--text-muted,#666);',
+    textContent: `Tempo: ${Math.round(idealTempo)}ms ±${tolerance}ms`,
+  });
+  comboRow.appendChild(comboEl);
+  comboRow.appendChild(tempoEl);
+  container.appendChild(comboRow);
+
+  // ── Tap target ───────────────────────────────────────────────
+  const tapTarget = _el('div', {
+    className: 'ww-tap-target',
     style: [
-      'height:100%',
-      'width:0%',
-      'background:var(--text-muted)',
-      'border-radius:var(--radius-sm)',
-      'transition:width 250ms ease, background 300ms ease',
+      'display: flex',
+      'flex-direction: column',
+      'align-items: center',
+      'justify-content: center',
+      'gap: 8px',
+      'padding: 28px 16px',
+      'border-radius: 12px',
+      'border: 2px solid var(--border,#333)',
+      'background: var(--bg-card,#141414)',
+      'cursor: pointer',
+      'transition: border-color 200ms ease',
+      'min-height: 130px',
     ].join(';'),
+    tabIndex: '0',
   });
-  momentumTrack.appendChild(momentumBar);
-  momentumSection.append(momentumMeta, momentumTrack);
-  container.appendChild(momentumSection);
 
+  const tapIcon  = _el('div', { style: 'font-size:36px; line-height:1;', textContent: '🔧' });
+  const tapLabel = _el('div', {
+    style: 'font-family:var(--font-data,monospace); font-size:14px; font-weight:700; letter-spacing:0.08em; color:var(--text-primary,#fff);',
+    textContent: 'CLICK',
+  });
+
+  tapTarget.appendChild(tapIcon);
+  tapTarget.appendChild(tapLabel);
+  container.appendChild(tapTarget);
+
+  // ── Penetrating Oil button (only if player has charges) ──────
+  let oilBtn = null;
+  if (hasPenetratingOil) {
+    oilBtn = _el('button', {
+      style: [
+        'padding: 8px 14px',
+        'font-family: var(--font-data,monospace)',
+        'font-size: 12px',
+        'font-weight: 700',
+        'letter-spacing: 0.06em',
+        'background: rgba(163,230,53,0.12)',
+        'color: #a3e635',
+        'border: 1px solid rgba(163,230,53,0.4)',
+        'border-radius: 6px',
+        'cursor: pointer',
+        'transition: opacity 150ms ease',
+        'align-self: flex-start',
+      ].join(';'),
+      textContent: `🫗 Use Penetrating Oil (${oilCharges} remaining)`,
+    });
+
+    oilBtn.addEventListener('click', applyPenetratingOil);
+    container.appendChild(oilBtn);
+  }
 
   // ── Flavor text ──────────────────────────────────────────────
   const flavorEl = _el('div', {
     style: [
-      'font-style:italic',
-      'color:var(--text-secondary)',
-      'font-size:13px',
-      'min-height:22px',
-      'text-align:center',
-      'padding:2px 0',
-      'line-height:1.5',
+      'font-style: italic',
+      'font-size: 12px',
+      'color: var(--text-muted,#777)',
+      'text-align: center',
+      'min-height: 1.4em',
+      'padding: 0 4px',
     ].join(';'),
-    textContent: `"${pickRandom(ALL_FLAVOR)}"`,
   });
   container.appendChild(flavorEl);
 
@@ -407,41 +504,17 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
   //  UI UPDATE HELPERS
   // ════════════════════════════════════════════════════════════
 
-  function updateComboDisplay() {
-    const tier = getComboTier(comboCount);
-    comboBig.textContent = tier.label;
-    comboBig.style.color = tier.color;
-
-    tapTarget.style.borderColor = tier.color === 'var(--text-muted)' ? 'var(--border)' : tier.color;
-
-    if (comboCount >= 15) {
-      tapTarget.classList.add('ww-gold-shimmer');
-    } else {
-      tapTarget.classList.remove('ww-gold-shimmer');
-    }
-
-    const momentumPct = Math.min(100, (comboCount / 20) * 100);
-    momentumBar.style.width = `${momentumPct}%`;
-    momentumBar.style.background = tier.color;
-
-    if (comboCount >= 3) {
-      const rhythmWord =
-        comboCount >= 15 ? 'PERFECT' :
-        comboCount >= 10 ? 'GREAT'   : 'GOOD';
-      rhythmLabel.textContent = `rhythm: ${rhythmWord}`;
-      rhythmLabel.style.color = tier.color;
-      momentumBar.classList.add('ww-momentum-pulsing');
-    } else {
-      rhythmLabel.textContent = 'rhythm: —';
-      rhythmLabel.style.color = 'var(--text-muted)';
-      momentumBar.classList.remove('ww-momentum-pulsing');
-    }
-  }
-
   function updateProgressDisplay() {
     const pct = Math.min(100, Math.round(progress * 100));
-    progressBar.style.width = `${pct}%`;
-    progressPct.textContent = `${pct}%`;
+    progressBar.style.width   = `${pct}%`;
+    progressPctEl.textContent = `${pct}%`;
+    progressClicksEl.textContent = `${clickCount} / ${totalClicks} clicks`;
+  }
+
+  function updateComboDisplay() {
+    const tier = getComboTier(comboCount);
+    comboEl.textContent = `COMBO ${tier.label}`;
+    comboEl.style.color = tier.color;
   }
 
   function setFlavor(text, animate = true) {
@@ -471,7 +544,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
       const am = window.audioManager;
       if (!am) return;
       if (name === 'ratchet') {
-        // FIX: use the playRatchet() helper which picks ratchet_1/2/3 with pitch variance
         am.playRatchet();
       } else {
         am.play(name, opts);
@@ -498,13 +570,59 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     setFlavor(pickRandom(CRITICAL_FLAVOR));
     criticalBonus = 3;
 
-    // FIX: 'impact' is the correct sound name in audio.js
     playAudio('impact');
 
     nextCriticalAt      = randomInt(8, 35);
     clicksSinceCritical = 0;
 
     updateProgressDisplay();
+  }
+
+  /**
+   * Impact Wrench: fires on every 15th click as an automatic 5× progress burst.
+   * No player input required — the wrench does the work.
+   */
+  function triggerImpactBurst() {
+    const jump = baseClickVal * 5;
+    progress = Math.min(1.0, progress + jump);
+
+    _triggerAnimation(tapTarget, 'ww-impact-burst');
+    setFlavor(pickRandom(IMPACT_WRENCH_FLAVOR));
+
+    playAudio('impact');
+    updateProgressDisplay();
+  }
+
+  /**
+   * Penetrating Oil: reduces total clicks needed by 30%.
+   * Triggered once per repair by the [Use Oil] button.
+   * Deducts one charge from state via consumeTool callback.
+   */
+  function applyPenetratingOil() {
+    if (oilApplied || isComplete) return;
+    oilApplied = true;
+
+    // -30% resistance: the remaining progress gap shrinks by 30%
+    const remaining = 1.0 - progress;
+    progress = Math.min(1.0, progress + remaining * 0.30);
+
+    // Consume charge via workbench callback
+    consumeTool('penetrating_oil');
+
+    // Hide the oil button (used up)
+    if (oilBtn) {
+      oilBtn.style.opacity = '0.4';
+      oilBtn.disabled = true;
+      oilBtn.textContent = '🫗 Oil Applied';
+    }
+
+    _triggerAnimation(tapTarget, 'ww-oil-applied');
+    setFlavor(pickRandom(OIL_FLAVOR));
+    updateProgressDisplay();
+
+    if (progress >= 1.0) {
+      completeWork();
+    }
   }
 
   function startHazard() {
@@ -516,10 +634,10 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     tapIcon.textContent  = '🛑';
     tapTarget.classList.add('ww-hazard-active');
 
-    // FIX: 'stuck' is the correct sound name in audio.js
     playAudio('stuck');
 
-    hazardTimer = setTimeout(() => endHazard(!hazardClicked), 1500);
+    // hazardDuration is skill-scaled: longer warning for higher skill players
+    hazardTimer = setTimeout(() => endHazard(!hazardClicked), hazardDuration);
   }
 
   function endHazard(success) {
@@ -574,28 +692,50 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     const actionWords = ['sorted', 'off', 'done', 'free'];
     setFlavor(`Done. ${partData.name} is ${pickRandom(actionWords)}.`);
 
-    // FIX: correct sound name is 'system_complete' (not 'systemComplete')
     playAudio('system_complete');
 
     // ── Result calculation ──
     const startCondition = instanceState.condition ?? 0.2;
-    const newCondition   = parseFloat(
+    let   newCondition   = parseFloat(
       (startCondition + (1.0 - startCondition) * 0.70).toFixed(2)
     );
 
     const avgCombo = totalComboSamples > 0 ? totalComboSum / totalComboSamples : 1.0;
-    const xpEarned = Math.round(baseXP * avgCombo);
+    let   xpEarned = Math.round(baseXP * avgCombo);
+
+    // ── Perfect Repair proc (level 16+, 5% chance) ──────────────
+    let perfectRepair = false;
+    if (skillLevel >= 16 && Math.random() < 0.05) {
+      perfectRepair = true;
+      newCondition  = 1.00;
+      xpEarned      = xpEarned * 2;   // double XP
+
+      // Gold flash on the container
+      setTimeout(() => {
+        _triggerAnimation(tapTarget, 'ww-perfect-repair-flash', 900);
+        setFlavor('⚡ PERFECT REPAIR — Restored to factory spec!');
+        tapLabel.textContent = '⚡ PERFECT';
+        tapLabel.style.color = '#f59e0b';
+      }, 200);
+    }
 
     const logEntries = [
-      `Removed ${partData.name} — ${totalClicks} clicks (avg combo x${avgCombo.toFixed(1)})`,
+      `Removed ${partData.name} — ${clickCount} clicks (avg combo x${avgCombo.toFixed(1)})`,
       `Condition: ${Math.round(startCondition * 100)}% → ${Math.round(newCondition * 100)}%`,
       `Wrench XP earned: +${xpEarned}`,
     ];
 
+    if (oilApplied) {
+      logEntries.push('Penetrating oil used — resistance reduced by 30%.');
+    }
+    if (perfectRepair) {
+      logEntries.push('⚡ PERFECT REPAIR proc! Restored to factory spec! (2× XP)');
+    }
+
     // 1-second delay so the player sees the completion flash
     setTimeout(() => {
-      onComplete({ newCondition, xpEarned, logEntries });
-    }, 1000);
+      onComplete({ newCondition, xpEarned, logEntries, perfectRepair });
+    }, perfectRepair ? 1400 : 1000);
   }
 
 
@@ -617,6 +757,19 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     clicksSinceHazard++;
     clicksSinceCritical++;
     clicksSinceFlavor++;
+
+    // ── Impact Wrench: auto burst every 15th click ─────────────
+    if (hasImpactWrench) {
+      impactClickTracker++;
+      if (impactClickTracker >= 15) {
+        impactClickTracker = 0;
+        triggerImpactBurst();
+        if (progress >= 1.0) {
+          completeWork();
+          return;
+        }
+      }
+    }
 
     let inRhythm = false;
     if (lastClickTime > 0) {
@@ -647,7 +800,6 @@ export function startWrenchWork(partData, instanceState, container, onComplete) 
     updateComboDisplay();
     updateProgressDisplay();
 
-    // FIX: 'ratchet' is handled by playAudio to call playRatchet() with pitch variance
     playAudio('ratchet');
 
     if (clicksSinceHazard >= nextHazardAt && !inHazard) {

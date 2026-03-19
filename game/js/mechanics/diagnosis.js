@@ -666,6 +666,17 @@ function _renderLayer(
   const eliminatedSet  = new Set();
   const revealedTools  = new Set();
 
+  // ── Multimeter: auto-reveal one extra tool clue ──────────────
+  // If player owns the Multimeter, one additional tool-gated clue is
+  // pre-revealed at no cost (the Multimeter's own clue is excluded
+  // to avoid redundancy — it reveals a *different* tool clue instead).
+  if (_hasTool(playerTools, TOOL_DEFS.find(t => t.clueKey === 'multimeter'))) {
+    const bonusDef = TOOL_DEFS.find(
+      t => t.clueKey !== 'multimeter' && scenario.clues?.[t.clueKey] != null
+    );
+    if (bonusDef) revealedTools.add(bonusDef.clueKey);
+  }
+
   // ── Derived constants ────────────────────────────────────────
   const useIntuition = (skillLevel ?? 0) >= 10;
   // XP: 20 base + 2 per extra wrong option (more distractors → harder)
@@ -982,6 +993,20 @@ function _renderLayer(
         }, 1800);
 
       } else {
+        // ── Perfect Repair proc (skill level 16+, 5% chance) ──
+        const dxPerfectRepair = (skillLevel ?? 1) >= 16 && Math.random() < 0.05;
+        if (dxPerfectRepair) {
+          accumulated.xpEarned = accumulated.xpEarned * 2;
+          accumulated.logEntries.push(
+            '⚡ PERFECT REPAIR proc! Part diagnosed and instantly restored to factory spec! (2× XP)'
+          );
+          _showResult(
+            `<strong>⚡ PERFECT REPAIR!</strong> <em>${_getPartName(scenario.correctDiagnosis, vehicleParts)}</em> restored to factory spec.` +
+            `<span style="color:#f59e0b; margin-left:10px;">+${accumulated.xpEarned} XP (2×)</span>`,
+            true
+          );
+        }
+
         setTimeout(() => {
           onComplete({
             correctPartId:   scenario.correctDiagnosis,
@@ -990,8 +1015,9 @@ function _renderLayer(
             xpEarned:        accumulated.xpEarned,
             logEntries:      [...accumulated.logEntries],
             revealsScenario: null,
+            perfectRepair:   dxPerfectRepair,
           });
-        }, 1400);
+        }, dxPerfectRepair ? 1800 : 1400);
       }
 
     } else {
