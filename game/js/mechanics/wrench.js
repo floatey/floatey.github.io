@@ -696,9 +696,8 @@ export class WrenchMechanic {
     this._hazardDuration      = 0;
     this._oilBPMReduced       = false;
 
-    // Count-in
-    this._countInTimeout  = null;
-    this._countInBeat     = 0;
+    // Count-in (driven by engine beats, not setTimeout)
+    this._countInDone     = false;  // true after first full engine cycle
 
     // Intro double-call
     this._introCallsDone  = 0;
@@ -725,12 +724,12 @@ export class WrenchMechanic {
     this._destroyed      = false;
 
     // Input handlers (bound once)
-    this._handleKeyDown   = (e) => this._onKeyDown(e);
-    this._handleKeyUp     = (e) => this._onKeyUp(e);
-    this._handlePointerDown = (e) => { e.preventDefault(); this._onPlayerPress(); };
-    this._handlePointerUp   = (e) => { e.preventDefault(); this._onPlayerRelease(); };
-    this._handleTouch     = (e) => { e.preventDefault(); this._onPlayerPress(); };
-    this._handleTouchEnd  = (e) => { e.preventDefault(); this._onPlayerRelease(); };
+    // Only pointer events — touch fires pointer+touch+click causing triple-fire.
+    // isPrimary guard ensures only the first finger counts on multi-touch.
+    this._handleKeyDown     = (e) => this._onKeyDown(e);
+    this._handleKeyUp       = (e) => this._onKeyUp(e);
+    this._handlePointerDown = (e) => { if (e.isPrimary !== false) { e.preventDefault(); this._onPlayerPress(); } };
+    this._handlePointerUp   = (e) => { if (e.isPrimary !== false) { e.preventDefault(); this._onPlayerRelease(); } };
   }
 
   // ── Public API ──────────────────────────────────────────────
@@ -754,7 +753,7 @@ export class WrenchMechanic {
     }
 
     // Cache derived values
-    this._timingWindow  = RhythmEngine.getTimingWindow('wrench', this.skillLevel, this._map.bpm);
+    this._timingWindow  = RhythmEngine.getTimingWindow('wrench', this.skillLevel, this._map.bpm) * 1.4;
     this._totalCycles   = Math.max(4, Math.round((1 - condition) * 10));
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
     this._hazardInterval = this._map.hazardInterval ?? 4;
@@ -767,78 +766,30 @@ export class WrenchMechanic {
       .reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 0);
 
     this._introCallsDone = 0;
+    this._countInDone    = false;
+    this._phase          = 'countin';
 
     this._buildUI();
     this._attachInput();
 
-    // Start with 4-beat count-in before the engine
-    this._runCountIn();
+    // Show count-in UI immediately so player sees it from the first beat
+    this._setBannerState('countin', '1 — 2 — 3 — 4');
+    this._countdownEl.style.display = 'flex';
+    this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
+    this._setFlavor('Count yourself in…');
+
+    // Engine starts immediately — first cycle is the count-in (see _onBeat)
+    this.engine.start(this._map, (step, time, isActive) => {
+      if (!this._destroyed) this._onBeat(step, time, isActive);
+      this._extBeat(step, time, isActive);
+    });
   }
 
   destroy() {
     this._destroyed = true;
     this.engine.stop();
-    if (this._hazardHoldRaf)  cancelAnimationFrame(this._hazardHoldRaf);
-    if (this._countInTimeout) clearTimeout(this._countInTimeout);
+    if (this._hazardHoldRaf) cancelAnimationFrame(this._hazardHoldRaf);
     this._detachInput();
-  }
-
-  // ── Count-in (4 metronome beats before engine starts) ───────
-
-  _runCountIn() {
-    this._phase = 'countin';
-    this._setBannerState('countin', 'COUNT IN');
-    this._countdownEl.style.display = 'flex';
-    this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
-    this._setStatus('');
-    this._setFlavor('Count yourself in…');
-
-    const beatMs = this._stepDuration;
-    let beat = 0;
-
-    const tick = () => {
-      if (this._destroyed) return;
-
-      // Light pip
-      this._countdownPips.forEach((p, i) => {
-        if (i < beat) {
-          p.className = 'wv2-countdown-pip wv2-countdown-pip--done';
-        } else if (i === beat) {
-          p.className = 'wv2-countdown-pip wv2-countdown-pip--active';
-        } else {
-          p.className = 'wv2-countdown-pip';
-        }
-      });
-
-      // Play metronome tick sound (beat 4 gets an accent)
-      if (beat === 3) {
-        this.audio?.playMetronomeTick?.(true);
-      } else {
-        this.audio?.playMetronomeTick?.(false);
-      }
-
-      beat++;
-
-      if (beat < 4) {
-        this._countInTimeout = setTimeout(tick, beatMs);
-      } else {
-        // All 4 beats done — start engine
-        this._countInTimeout = setTimeout(() => {
-          if (this._destroyed) return;
-          this._countdownEl.style.display = 'none';
-          this._startEngine();
-        }, beatMs);
-      }
-    };
-
-    tick();
-  }
-
-  _startEngine() {
-    this.engine.start(this._map, (step, time, isActive) => {
-      if (!this._destroyed) this._onBeat(step, time, isActive);
-      this._extBeat(step, time, isActive);
-    });
   }
 
   // ── Pattern upgrade: booleans → typed tap/hold steps ────────
@@ -855,41 +806,36 @@ export class WrenchMechanic {
 
     if (diff < 0.35 || cycleIdx === 0) return typed;
 
-    // Seeded LCG for deterministic hold placement
-    let seed = (Math.abs(this._partHash) + cycleIdx * 37 + 0xdeadbeef) | 0;
+    // Seed against floor(cycleIdx/2) so the same hold layout repeats for
+    // two cycles before varying — mirrors Rhythm Heaven's "learn then tweak" feel.
+    const seedCycle = Math.floor(cycleIdx / 2);
+    let seed = (Math.abs(this._partHash) + seedCycle * 37 + 0xdeadbeef) | 0;
     const rand = () => {
       seed = (Math.imul(seed, 1664525) + 1013904223) | 0;
       return (seed >>> 0) / 0xffffffff;
     };
 
-    const holdChance  = diff < 0.55 ? 0.22 : diff < 0.75 ? 0.38 : 0.52;
-    const maxHoldLen  = diff < 0.55 ? 2    : 3;
+    const holdChance = diff < 0.55 ? 0.22 : diff < 0.75 ? 0.38 : 0.52;
+    const maxHoldLen = diff < 0.55 ? 2    : 3;
 
     let i = 0;
     while (i < typed.length) {
       if (typed[i]?.t !== 'tap') { i++; continue; }
 
-      // Measure run of consecutive taps
       let runLen = 1;
       while (i + runLen < typed.length && typed[i + runLen]?.t === 'tap') runLen++;
 
       if (runLen >= 2 && rand() < holdChance) {
-        const hLen = Math.min(runLen, maxHoldLen, 2 + Math.floor(rand() * 2));
+        const hLen   = Math.min(runLen, maxHoldLen, 2 + Math.floor(rand() * 2));
         const endIdx = i + hLen - 1;
 
         typed[i] = { t: 'hold', len: hLen, endStep: endIdx };
-
-        for (let j = i + 1; j < endIdx; j++) {
-          typed[j] = { t: 'held', start: i };
-        }
-        if (hLen > 1) {
-          typed[endIdx] = { t: 'hold-end', start: i };
-        }
+        for (let j = i + 1; j < endIdx; j++) typed[j] = { t: 'held', start: i };
+        if (hLen > 1) typed[endIdx] = { t: 'hold-end', start: i };
 
         i += hLen;
         continue;
       }
-
       i++;
     }
 
@@ -1029,26 +975,21 @@ export class WrenchMechanic {
   _attachInput() {
     document.addEventListener('keydown', this._handleKeyDown);
     document.addEventListener('keyup',   this._handleKeyUp);
-    if (this.container) {
-      this.container.addEventListener('pointerdown', this._handlePointerDown, { passive: false });
-      this.container.addEventListener('pointerup',   this._handlePointerUp,   { passive: false });
-      this.container.addEventListener('pointercancel', this._handlePointerUp, { passive: false });
-      // Touch fallback for devices that don't fire pointer events well
-      this.container.addEventListener('touchstart', this._handleTouch,   { passive: false });
-      this.container.addEventListener('touchend',   this._handleTouchEnd, { passive: false });
-    }
+    // Register on document so the hit area is the whole page — no missed taps
+    // from slightly inaccurate presses. Touch events are intentionally omitted:
+    // on mobile, a touch fires pointerdown → touchstart → click in sequence,
+    // causing triple-fire. Pointer events alone cover both mouse and touch.
+    document.addEventListener('pointerdown',  this._handlePointerDown);
+    document.addEventListener('pointerup',    this._handlePointerUp);
+    document.addEventListener('pointercancel', this._handlePointerUp);
   }
 
   _detachInput() {
     document.removeEventListener('keydown', this._handleKeyDown);
     document.removeEventListener('keyup',   this._handleKeyUp);
-    if (this.container) {
-      this.container.removeEventListener('pointerdown',  this._handlePointerDown);
-      this.container.removeEventListener('pointerup',    this._handlePointerUp);
-      this.container.removeEventListener('pointercancel', this._handlePointerUp);
-      this.container.removeEventListener('touchstart',   this._handleTouch);
-      this.container.removeEventListener('touchend',     this._handleTouchEnd);
-    }
+    document.removeEventListener('pointerdown',  this._handlePointerDown);
+    document.removeEventListener('pointerup',    this._handlePointerUp);
+    document.removeEventListener('pointercancel', this._handlePointerUp);
   }
 
   // ── Beat callback (from RhythmEngine) ───────────────────────
@@ -1056,14 +997,33 @@ export class WrenchMechanic {
   _onBeat(step, time, isActive) {
     if (this._phase === 'done') return;
 
+    // ── Count-in phase (first engine cycle, steps 0–15) ──────
+    // Quarter-note beats fall at steps 0, 4, 8, 12 of the 16th-note grid.
+    // This gives 4 perfectly audio-clock-synced ticks before the game starts.
+    if (!this._countInDone) {
+      if (step % 4 === 0) {
+        const pipIdx   = step / 4;          // 0 1 2 3
+        const isAccent = pipIdx === 3;       // accent on last beat ("1 is next")
+        this.audio?.playMetronomeTick?.(isAccent);
+        this._countdownPips.forEach((p, i) => {
+          p.className = i < pipIdx   ? 'wv2-countdown-pip wv2-countdown-pip--done'
+                      : i === pipIdx ? 'wv2-countdown-pip wv2-countdown-pip--active'
+                      : 'wv2-countdown-pip';
+        });
+      }
+      if (step === 15) {
+        // Last count-in step — next beat (step 0) is the real "1"
+        this._countInDone = true;
+        this._countdownEl.style.display = 'none';
+      }
+      return;  // skip all call/response logic during count-in
+    }
+
     // ── Cycle start (step 0) ──────────────────────────────
     if (step === 0) {
       if (this._phase === 'response') {
         this._evaluateMissedLastStep();
-        // Late-release check: if player is still holding past the end step
-        if (this._isHolding && !this._holdResultSet) {
-          this._resolveHold('late');
-        }
+        if (this._isHolding && !this._holdResultSet) this._resolveHold('late');
         this._endResponsePhase();
       } else if (this._phase === 'hazard') {
         this._endHazardPhase();
@@ -1078,12 +1038,10 @@ export class WrenchMechanic {
 
     // ── Call phase (steps 0–7) ───────────────────────────
     if (this._phase === 'call' && step < 8) {
-      // Remove active from previous call cell
       if (step > 0) this._callCells[step - 1]?.classList.remove('wv2-cell--call-active');
 
       if (isActive) {
         this._callCells[step]?.classList.add('wv2-cell--call-active');
-        // Transition to "played" state partway through the beat
         setTimeout(() => {
           const cell = this._callCells[step];
           if (cell && this._phase === 'call') {
@@ -1093,69 +1051,52 @@ export class WrenchMechanic {
         }, this._stepDuration * 0.55);
       }
 
-      // On step 7 (last call beat), pre-announce response
+      // Step 7: flash all pips at once — "YOUR TURN is next"
       if (step === 7) {
         this._setBannerState('ready', 'GET READY');
-        // Quick pip flash to signal response is coming
         this._countdownEl.style.display = 'flex';
         this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip wv2-countdown-pip--active'; });
         setTimeout(() => {
-          if (!this._destroyed) {
-            this._countdownEl.style.display = 'none';
-          }
+          if (!this._destroyed) this._countdownEl.style.display = 'none';
         }, this._stepDuration * 0.8);
       }
     }
 
     // ── Transition to response (step 8) ──────────────────
-    // NOTE: Response starts IMMEDIATELY — no rAF delay, so timing is accurate.
     if (step === 8) {
       this._callCells[7]?.classList.remove('wv2-cell--call-active');
       this._startResponsePhase(time);
-      // Fall through to response step 0 handling below
     }
 
     // ── Response phase (steps 8–15) ──────────────────────
     if (this._phase === 'response' && step >= 8) {
       const rStep = step - 8;  // 0–7
 
-      // Evaluate the previous response step if not yet done
       if (rStep > 0) {
         this._evaluatePreviousResponseStep(rStep - 1, time);
-        // Late-release check: if player is still holding past the hold end step
         if (this._isHolding && !this._holdResultSet && rStep === this._holdEndStep + 1) {
           this._resolveHold('late');
         }
       }
 
-      // Set up current response step
       this._responseStep        = rStep;
       this._responseStepTime    = time;
       this._responseStepActive  = !!this._typedPattern[rStep];
       this._responseStepEval    = false;
 
-      // When the hold-end step arrives, record its beat time for release evaluation
       if (rStep === this._holdEndStep && this._isHolding && !this._holdEndTime) {
         this._holdEndTime = time;
       }
 
-      // Advance cursor
       this._responseCells.forEach((cell, i) => {
         cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active');
-        if (i === rStep) {
-          const stepData = this._typedPattern[rStep];
-          // Don't re-cursor cells that are actively being held
-          if (!this._isHolding || this._holdStartStep === rStep) {
-            cell.classList.add(this._responseStepActive
-              ? 'wv2-cell--cursor-active'
-              : 'wv2-cell--cursor'
-            );
-          }
+        if (i === rStep && (!this._isHolding || this._holdStartStep === rStep)) {
+          cell.classList.add(this._responseStepActive
+            ? 'wv2-cell--cursor-active' : 'wv2-cell--cursor');
         }
       });
     }
 
-    // ── Hazard phase ──────────────────────────────────────
     if (this._phase === 'hazard') return;
   }
 
@@ -1505,7 +1446,6 @@ export class WrenchMechanic {
   _onPlayerPress() {
     if (this._destroyed) return;
 
-    // Hazard: any tap = failure
     if (this._phase === 'hazard') {
       this._hazardFailed = true;
       this._callCells.forEach(c => c.style.borderColor = '#ff0000');
@@ -1517,16 +1457,22 @@ export class WrenchMechanic {
     if (this._phase !== 'response') return;
     if (this._responseStepEval) return;
 
-    const ctx     = this.audio?._ctx;
-    const tapTime = ctx ? ctx.currentTime : performance.now() / 1000;
-    const delta   = tapTime - this._responseStepTime;  // signed: negative=early, positive=late
-    const inTime  = Math.abs(delta) <= this._timingWindow;
-    const rStep   = this._responseStep;
-    const cell    = this._responseCells[rStep];
+    const ctx         = this.audio?._ctx;
+    const tapTime     = ctx ? ctx.currentTime : performance.now() / 1000;
+
+    // The engine schedules beats slightly ahead (lookahead scheduler).
+    // The player hears the beat at scheduledTime + outputLatency + baseLatency.
+    // Without this offset, every tap registers as early by ~20–80ms.
+    const latency     = (ctx?.outputLatency ?? 0) + (ctx?.baseLatency ?? 0.01);
+    const expected    = this._responseStepTime + latency;
+    const delta       = tapTime - expected;     // negative = early, positive = late
+    const inTime      = Math.abs(delta) <= this._timingWindow;
+
+    const rStep    = this._responseStep;
+    const cell     = this._responseCells[rStep];
     const stepData = this._typedPattern[rStep];
 
     if (!stepData) {
-      // Tapped on a rest = STRIPPED
       this._responseTaps[rStep] = 'stripped';
       if (cell) {
         cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--resp-preview');
@@ -1539,7 +1485,6 @@ export class WrenchMechanic {
     }
 
     if (stepData.t === 'tap') {
-      // Normal tap
       if (inTime) {
         this._responseTaps[rStep] = 'correct';
         if (cell) {
@@ -1550,12 +1495,6 @@ export class WrenchMechanic {
             cell?.classList.add('wv2-cell--hit');
           }, 320);
         }
-        this._showTimingLabel(rStep,
-          delta < -this._timingWindow * 0.4 ? 'EARLY' :
-          delta >  this._timingWindow * 0.4 ? 'LATE'  : 'PERFECT',
-          delta < -this._timingWindow * 0.4 ? 'early' :
-          delta >  this._timingWindow * 0.4 ? 'late'  : 'perfect'
-        );
         this.audio?.playRatchet?.();
       } else {
         this._responseTaps[rStep] = 'miss';
@@ -1563,7 +1502,6 @@ export class WrenchMechanic {
           cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--resp-preview');
           cell.classList.add('wv2-cell--miss');
         }
-        this._showTimingLabel(rStep, delta < 0 ? 'EARLY' : 'LATE', delta < 0 ? 'early' : 'late');
       }
       this._responseStepEval = true;
 
@@ -1628,12 +1566,14 @@ export class WrenchMechanic {
 
     const ctx         = this.audio?._ctx;
     const releaseTime = ctx ? ctx.currentTime : performance.now() / 1000;
+    const latency     = (ctx?.outputLatency ?? 0) + (ctx?.baseLatency ?? 0.01);
 
-    this._resolveHold(null, releaseTime);
+    this._resolveHold(null, releaseTime, latency);
   }
 
-  // Central hold resolution. reason: null = player released, 'late' = overshot
-  _resolveHold(reason, releaseTime) {
+  // Central hold resolution.
+  // reason: null = player released, 'late' = overshot into next beat
+  _resolveHold(reason, releaseTime, latency = 0) {
     if (this._holdResultSet) return;
     this._holdResultSet = true;
     this._isHolding     = false;
@@ -1645,12 +1585,11 @@ export class WrenchMechanic {
     if (reason === 'late') {
       result = 'hold-late';
     } else {
-      // Determine timing of release vs expected end beat
       if (this._holdEndTime === 0) {
-        // End beat hasn't fired yet → definitely early
         result = 'hold-early';
       } else {
-        const delta = releaseTime - this._holdEndTime;
+        const expectedRelease = this._holdEndTime + latency;
+        const delta = releaseTime - expectedRelease;
         if (Math.abs(delta) <= this._timingWindow) {
           result = 'hold-correct';
         } else if (delta < 0) {
@@ -1696,7 +1635,7 @@ export class WrenchMechanic {
                       result === 'hold-early'   ? 'EARLY'   : 'LATE';
     const labelKind = result === 'hold-correct' ? 'perfect' :
                       result === 'hold-early'   ? 'early'   : 'late';
-    this._showTimingLabel(startStep, labelText, labelKind);
+    // (timing label display removed — too much visual noise)
 
     if (isCorrect) {
       this.audio?.playRatchet?.();
@@ -1733,7 +1672,6 @@ export class WrenchMechanic {
     this._detachInput();
 
     if (this._hazardHoldRaf) { cancelAnimationFrame(this._hazardHoldRaf); this._hazardHoldRaf = null; }
-    if (this._countInTimeout) { clearTimeout(this._countInTimeout); this._countInTimeout = null; }
 
     this._updateProgress();
     this._setBannerState('response', '✓ DONE');
