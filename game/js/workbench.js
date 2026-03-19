@@ -1046,7 +1046,12 @@ function renderPartDetail(container) {
   if (condition <= 0.10) {
     statusSection.appendChild(el('div', {
       style: 'color:var(--condition-destroyed); font-size:var(--font-size-sm); font-weight:600;',
-      textContent: 'Cannot repair. Must replace.',
+      textContent: 'DESTROYED — Must replace. Beyond repair.',
+    }));
+  } else if (condition <= 0.30) {
+    statusSection.appendChild(el('div', {
+      style: 'color:var(--condition-critical); font-size:var(--font-size-sm); font-weight:600;',
+      textContent: 'CRITICAL — Hard repair, or replace the part.',
     }));
   } else if (condition >= 0.90) {
     statusSection.appendChild(el('div', {
@@ -1064,29 +1069,31 @@ function renderPartDetail(container) {
 
   // 5. Action buttons
   const actions = el('div', { className: 'part-detail__actions' });
+  const replaceCost = isBundle ? (partDef.bundleCost || 0) : (partDef.replaceCost || 0);
+  const profile = state.getProfile();
+  const platform = vehicle.modelId;
+  const donorCount = (profile.currency.donorParts && profile.currency.donorParts[platform]) || 0;
 
   if (condition <= 0.10) {
-    const replaceCost = isBundle ? (partDef.bundleCost || 0) : (partDef.replaceCost || 0);
-
+    // DESTROYED — must replace, no repair option
     const replaceBtn = el('button', {
       className: 'btn btn--primary',
-      textContent: `Replace — ${formatYen(replaceCost)}`,
     });
+    replaceBtn.innerHTML = `Replace — ${formatYen(replaceCost)} <span style="color:var(--text-muted);font-size:11px;">(→ 85%)</span>`;
     replaceBtn.addEventListener('click', () => handleReplace(selectedPartId, replaceCost));
     actions.appendChild(replaceBtn);
 
-    const profile = state.getProfile();
-    const platform = vehicle.modelId;
-    const donorCount = (profile.currency.donorParts && profile.currency.donorParts[platform]) || 0;
     if (donorCount > 0) {
       const donorBtn = el('button', {
         className: 'btn btn--secondary',
-        textContent: `Use Donor Part (${donorCount})`,
+        style: 'border-color:var(--rarity-4); color:var(--rarity-4);',
       });
+      donorBtn.innerHTML = `Donor Part <span style="font-size:11px;">(→ 100%) · ${donorCount} left</span>`;
       donorBtn.addEventListener('click', () => handleDonorReplace(selectedPartId, platform));
       actions.appendChild(donorBtn);
     }
   } else if (condition < 0.90) {
+    // Repairable — repair is always primary
     const repairBtn = el('button', {
       className: 'btn btn--primary',
       textContent: 'Begin Repair',
@@ -1100,14 +1107,24 @@ function renderPartDetail(container) {
     });
     actions.appendChild(repairBtn);
 
-    if (condition < 0.30) {
-      const replaceCost = isBundle ? (partDef.bundleCost || 0) : (partDef.replaceCost || 0);
+    // Replace option for CRITICAL (≤30%) — secondary, shows quality tradeoff
+    if (condition <= 0.30) {
       const replaceBtn = el('button', {
         className: 'btn btn--secondary',
-        textContent: `Replace — ${formatYen(replaceCost)}`,
       });
+      replaceBtn.innerHTML = `Replace — ${formatYen(replaceCost)} <span style="color:var(--text-muted);font-size:11px;">(→ 85%)</span>`;
       replaceBtn.addEventListener('click', () => handleReplace(selectedPartId, replaceCost));
       actions.appendChild(replaceBtn);
+
+      if (donorCount > 0) {
+        const donorBtn = el('button', {
+          className: 'btn btn--secondary',
+          style: 'border-color:var(--rarity-4); color:var(--rarity-4);',
+        });
+        donorBtn.innerHTML = `Donor Part <span style="font-size:11px;">(→ 100%) · ${donorCount} left</span>`;
+        donorBtn.addEventListener('click', () => handleDonorReplace(selectedPartId, platform));
+        actions.appendChild(donorBtn);
+      }
     }
   }
 
@@ -1661,17 +1678,20 @@ function handleReplace(partId, cost) {
 
   modal.innerHTML = `
     <div class="modal-header">
-      <span class="modal-header__title">Replace Part</span>
+      <span class="modal-header__title">Buy Replacement</span>
       <button class="modal-header__close" data-action="close">×</button>
     </div>
     <div class="modal-body">
-      <p style="margin-bottom:12px;">Replace <strong>${escHtml(partName)}</strong>?</p>
+      <p style="margin-bottom:12px;">Buy an aftermarket <strong>${escHtml(partName)}</strong>?</p>
       <p class="font-data" style="font-size:var(--font-size-sm);">Cost: <strong style="color:var(--rarity-5);">${formatYen(cost)}</strong></p>
-      <p style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:8px;">Part will be set to 95% condition.</p>
+      <p style="font-size:var(--font-size-xs); color:var(--text-secondary); margin-top:8px;">
+        Aftermarket replacement — sets condition to <strong>85%</strong>.<br>
+        <span style="color:var(--text-muted);">Repair it yourself for a shot at higher quality, or use a Donor Part for 100%.</span>
+      </p>
     </div>
     <div class="modal-actions">
       <button class="btn btn--secondary" data-action="close">Cancel</button>
-      <button class="btn btn--primary" data-action="replace">Replace</button>
+      <button class="btn btn--primary" data-action="replace">Buy — ${formatYen(cost)}</button>
     </div>
   `;
 
@@ -1686,8 +1706,8 @@ function handleReplace(partId, cost) {
       close();
     } else if (action === 'replace') {
       state.updateCurrency('yen', -cost);
-      state.updatePart(instanceId, partId, { condition: 0.95 });
-      addLogEntry(instanceId, '✓', `Replaced ${partName} (${formatYen(cost)})`);
+      state.updatePart(instanceId, partId, { condition: 0.85 });
+      addLogEntry(instanceId, '✓', `Replaced ${partName} — aftermarket (${formatYen(cost)})`);
       checkHiddenReveal(partId, 'remove');
       checkSystemCompletion(partId);
       close();
@@ -1695,7 +1715,7 @@ function handleReplace(partId, cost) {
       refreshPartDetail();
       refreshRepairLog();
       refreshHeader();
-      showToast(`${partName} replaced!`);
+      showToast(`${partName} replaced (aftermarket 85%)`);
     }
   });
 }
@@ -1705,17 +1725,53 @@ function handleDonorReplace(partId, platform) {
   const { state } = getApp();
   const partDef = findPartDef(partTree, partId);
   const partName = partDef ? partDef.name : partId;
+  const profile = state.getProfile();
+  const donorCount = (profile.currency.donorParts && profile.currency.donorParts[platform]) || 0;
 
-  state.updateCurrency(`donorParts.${platform}`, -1);
-  state.updatePart(instanceId, partId, { condition: 0.95 });
-  addLogEntry(instanceId, '✓', `Replaced ${partName} (Donor Part)`);
-  checkHiddenReveal(partId, 'remove');
-  checkSystemCompletion(partId);
-  refreshSystemList();
-  refreshPartDetail();
-  refreshRepairLog();
-  refreshHeader();
-  showToast(`${partName} replaced with donor part!`);
+  const overlay = el('div', { className: 'modal-overlay' });
+  const modal = el('div', { className: 'modal' });
+
+  modal.innerHTML = `
+    <div class="modal-header">
+      <span class="modal-header__title">Use Donor Part</span>
+      <button class="modal-header__close" data-action="close">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:12px;">Use a <strong style="color:var(--rarity-4);">${platform.toUpperCase()} Donor Part</strong> for <strong>${escHtml(partName)}</strong>?</p>
+      <p class="font-data" style="font-size:var(--font-size-sm); color:var(--rarity-4);">OEM replacement — sets condition to <strong>100%</strong></p>
+      <p style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:8px;">
+        You have ${donorCount} ${platform.toUpperCase()} donor part${donorCount !== 1 ? 's' : ''} remaining.
+      </p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn--secondary" data-action="close">Cancel</button>
+      <button class="btn btn--primary" style="border-color:var(--rarity-4);background:var(--rarity-4);color:#000;" data-action="donor">Use Donor Part</button>
+    </div>
+  `;
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+
+  overlay.addEventListener('click', (e) => {
+    const action = e.target.dataset.action;
+    if (action === 'close' || e.target === overlay) {
+      close();
+    } else if (action === 'donor') {
+      state.updateCurrency(`donorParts.${platform}`, -1);
+      state.updatePart(instanceId, partId, { condition: 1.00 });
+      addLogEntry(instanceId, '★', `Replaced ${partName} — OEM donor part (100%)`);
+      checkHiddenReveal(partId, 'remove');
+      checkSystemCompletion(partId);
+      close();
+      refreshSystemList();
+      refreshPartDetail();
+      refreshRepairLog();
+      refreshHeader();
+      showToast(`★ ${partName} — perfect OEM replacement!`, 3000);
+    }
+  });
 }
 
 // ── Hidden Part Reveal ───────────────────────────────────────
@@ -2243,6 +2299,44 @@ function renderSkillBar(container) {
   }
 
   container.appendChild(grid);
+
+  // ── Donor parts inventory ──────────────────────────────
+  const donorParts = profile.currency?.donorParts || {};
+  const donorEntries = Object.entries(donorParts).filter(([_, count]) => count > 0);
+  if (donorEntries.length > 0) {
+    const donorSection = el('div', {
+      style: `margin-top:var(--space-sm); padding-top:var(--space-sm);
+              border-top:1px solid var(--border);`,
+    });
+    donorSection.appendChild(el('div', {
+      style: `font-size:var(--font-size-xs); font-weight:600; text-transform:uppercase;
+              letter-spacing:0.06em; color:var(--rarity-4); margin-bottom:var(--space-xs);`,
+      textContent: 'DONOR PARTS',
+    }));
+
+    const chipWrap = el('div', {
+      style: 'display:flex; flex-wrap:wrap; gap:6px; align-items:center;',
+    });
+
+    for (const [platform, count] of donorEntries) {
+      const chip = el('span', {
+        style: `display:inline-flex; align-items:center; gap:4px;
+                padding:3px 8px; border-radius:4px; font-family:var(--font-data);
+                font-size:11px; color:var(--rarity-4);
+                background:rgba(251,191,36,0.08); border:1px solid rgba(251,191,36,0.2);`,
+      });
+      chip.textContent = `${platform.toUpperCase()} ×${count}`;
+      chipWrap.appendChild(chip);
+    }
+
+    chipWrap.appendChild(el('span', {
+      style: 'font-size:10px; color:var(--text-muted); margin-left:4px;',
+      textContent: '— OEM replacements (→ 100%)',
+    }));
+
+    donorSection.appendChild(chipWrap);
+    container.appendChild(donorSection);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════

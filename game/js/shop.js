@@ -73,15 +73,15 @@ function findPartDefInTree(partId, partTree) {
 }
 
 /**
- * Walk every owned vehicle and collect parts with condition <= 0.10 (DESTROYED).
+ * Walk every owned vehicle and collect parts with condition <= 0.30 (DESTROYED + CRITICAL).
+ * These are parts the player can choose to replace instead of repairing.
  * Now async so it can load the real part-tree JSON for accurate names and costs.
  */
-async function collectDestroyedParts(state, vehicleData) {
+async function collectReplaceableParts(state, vehicleData) {
   const profile    = state.getProfile();
   const vehicles   = profile.garage.vehicles;
-  const destroyed  = [];
+  const parts      = [];
 
-  // vehicleData is { vehicles: [...] } — extract the array
   const vehicleList = vehicleData?.vehicles || [];
 
   for (const [instanceId, vehicle] of Object.entries(vehicles)) {
@@ -90,27 +90,36 @@ async function collectDestroyedParts(state, vehicleData) {
       ? vehicle.nickname
       : (meta ? meta.displayName : vehicle.modelId.toUpperCase());
 
-    // Load the real part tree so we get actual part names and replace costs
     const partTree = await loadPartTreeForShop(vehicle.modelId);
 
     for (const [partId, partState] of Object.entries(vehicle.parts)) {
       if (!partState.revealed || partState.condition === null) continue;
-      if (partState.condition > 0.10) continue;
+      if (partState.condition > 0.30) continue;
 
       const partDef = findPartDefInTree(partId, partTree);
-      destroyed.push({
+      const isDestroyed = partState.condition <= 0.10;
+
+      parts.push({
         instanceId,
         vehicleLabel,
         partId,
         partName:     partDef ? partDef.name        : partId,
-        replaceCost:  partDef ? (partDef.replaceCost || 200) : 200,
+        replaceCost:  partDef ? (partDef.replaceCost || partDef.bundleCost || 200) : 200,
         sourceRarity: partDef ? (partDef.sourceRarity || 'common') : 'common',
         modelId:      vehicle.modelId,
+        condition:    partState.condition,
+        isDestroyed,
       });
     }
   }
 
-  return destroyed;
+  // Sort: destroyed first, then by cost descending
+  parts.sort((a, b) => {
+    if (a.isDestroyed !== b.isDestroyed) return a.isDestroyed ? -1 : 1;
+    return b.replaceCost - a.replaceCost;
+  });
+
+  return parts;
 }
 
 function platformKey(modelId) {
@@ -222,7 +231,7 @@ function renderCurrencyBar(profile) {
   return bar;
 }
 
-function renderReplacementParts(destroyedParts, profile) {
+function renderReplacementParts(replaceableParts, profile) {
   const panel = document.createElement('div');
   panel.className = 'panel';
 
@@ -235,7 +244,22 @@ function renderReplacementParts(destroyedParts, profile) {
   body.className = 'panel-body';
   body.style.cssText = 'padding: 0;';
 
-  if (destroyedParts.length === 0) {
+  // ── Quality legend ──
+  const legend = document.createElement('div');
+  legend.style.cssText = `
+    padding: var(--space-sm) var(--space-base);
+    border-bottom: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: var(--space-base);
+    font-size: var(--font-size-xs); font-family: var(--font-data);
+    color: var(--text-muted);
+  `;
+  legend.innerHTML = `
+    <span>Buy (¥) → <strong style="color:var(--text-secondary);">85%</strong> aftermarket</span>
+    <span>Donor Part → <strong style="color:var(--rarity-4);">100%</strong> OEM</span>
+  `;
+  body.appendChild(legend);
+
+  if (replaceableParts.length === 0) {
     const empty = document.createElement('div');
     empty.style.cssText = `
       padding: var(--space-xl) var(--space-base);
@@ -243,13 +267,13 @@ function renderReplacementParts(destroyedParts, profile) {
       color: var(--text-secondary);
       font-size: var(--font-size-sm);
     `;
-    empty.textContent = 'No parts need replacing. Nice.';
+    empty.textContent = 'All parts above 30% — nothing needs replacing. Nice.';
     body.appendChild(empty);
     panel.appendChild(body);
     return panel;
   }
 
-  for (const item of destroyedParts) {
+  for (const item of replaceableParts) {
     body.appendChild(renderReplacementRow(item, profile));
   }
 
@@ -258,12 +282,14 @@ function renderReplacementParts(destroyedParts, profile) {
 }
 
 function renderReplacementRow(item, profile) {
-  const { instanceId, vehicleLabel, partId, partName, replaceCost, sourceRarity, modelId } = item;
+  const { instanceId, vehicleLabel, partId, partName, replaceCost, sourceRarity, modelId, condition, isDestroyed } = item;
   const yen      = profile.currency.yen;
   const donors   = profile.currency.donorParts || {};
   const platform = platformKey(modelId);
   const hasDonor = (donors[platform] || 0) > 0;
+  const donorCount = donors[platform] || 0;
   const canAfford = yen >= replaceCost;
+  const condPct = Math.round(condition * 100);
 
   const rarityInfo = RARITY_LABELS[sourceRarity] || RARITY_LABELS.common;
 
@@ -281,21 +307,13 @@ function renderReplacementRow(item, profile) {
   infoEl.style.cssText = 'flex: 1; min-width: 140px;';
   infoEl.innerHTML = `
     <div style="font-size: var(--font-size-sm); font-weight: 600; margin-bottom: 2px;">${partName}</div>
-    <div style="font-size: var(--font-size-xs); color: var(--text-muted); font-family: var(--font-data);">${vehicleLabel}</div>
+    <div style="font-size: var(--font-size-xs); color: var(--text-muted); font-family: var(--font-data);">
+      ${vehicleLabel}
+      <span style="margin-left:6px; color:${isDestroyed ? 'var(--condition-destroyed)' : 'var(--condition-critical)'}; font-weight:600;">
+        ${condPct}% ${isDestroyed ? 'DESTROYED' : 'CRITICAL'}
+      </span>
+    </div>
   `;
-
-  const rarityBadge = document.createElement('span');
-  rarityBadge.className = 'font-data';
-  rarityBadge.style.cssText = `
-    font-size: var(--font-size-xs);
-    color: ${rarityInfo.color};
-    padding: 2px var(--space-sm);
-    border: 1px solid ${rarityInfo.color};
-    border-radius: var(--radius-sm);
-    white-space: nowrap;
-    opacity: 0.85;
-  `;
-  rarityBadge.textContent = rarityInfo.label;
 
   const actions = document.createElement('div');
   actions.style.cssText = 'display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0;';
@@ -303,11 +321,12 @@ function renderReplacementRow(item, profile) {
   const buyBtn = document.createElement('button');
   if (canAfford) {
     buyBtn.className = 'btn btn--primary';
-    buyBtn.innerHTML = `Buy &nbsp;<span class="shop-price" style="font-size: var(--font-size-xs);">${formatYen(replaceCost)}</span>`;
+    buyBtn.innerHTML = `Buy ${formatYen(replaceCost)} <span style="font-size:10px;opacity:0.7;">→ 85%</span>`;
     buyBtn.addEventListener('click', () => {
       showConfirm(
-        `Replace ${partName}`,
-        `Buy a replacement <strong>${partName}</strong> for <strong style="color: var(--rarity-5);">${formatYen(replaceCost)}</strong>?`,
+        `Buy Replacement`,
+        `Buy an aftermarket <strong>${partName}</strong> for <strong style="color: var(--rarity-5);">${formatYen(replaceCost)}</strong>?<br>
+         <span style="font-size:0.8rem;color:var(--text-muted);">Aftermarket — condition set to 85%.</span>`,
         `Buy — ${formatYen(replaceCost)}`,
         () => executeBuyReplacement(instanceId, partId, replaceCost, false)
       );
@@ -327,11 +346,13 @@ function renderReplacementRow(item, profile) {
     const donorBtn = document.createElement('button');
     donorBtn.className = 'btn btn--secondary';
     donorBtn.style.cssText = 'border-color: var(--rarity-4); color: var(--rarity-4);';
-    donorBtn.textContent = 'Use Donor Part';
+    donorBtn.innerHTML = `Donor <span style="font-size:10px;">→ 100% · ${donorCount} left</span>`;
     donorBtn.addEventListener('click', () => {
       showConfirm(
         `Use Donor Part`,
-        `Use a <strong style="color: var(--rarity-4);">${platform.toUpperCase()} Donor Part</strong> to replace <strong>${partName}</strong> for free?`,
+        `Use a <strong style="color: var(--rarity-4);">${platform.toUpperCase()} Donor Part</strong> for <strong>${partName}</strong>?<br>
+         <span style="font-size:0.8rem;color:var(--rarity-4);">OEM pull — condition set to 100%.</span><br>
+         <span style="font-size:0.8rem;color:var(--text-muted);">${donorCount} remaining.</span>`,
         'Use Donor Part',
         () => executeBuyReplacement(instanceId, partId, 0, true, platform)
       );
@@ -339,7 +360,7 @@ function renderReplacementRow(item, profile) {
     actions.appendChild(donorBtn);
   }
 
-  row.append(infoEl, rarityBadge, actions);
+  row.append(infoEl, actions);
   return row;
 }
 
@@ -352,7 +373,9 @@ function executeBuyReplacement(instanceId, partId, cost, useDonor, platform) {
     state.updateCurrency('yen', -cost);
   }
 
-  state.updatePart(instanceId, partId, { condition: 0.95 });
+  // Donor parts are OEM pulls → 100%. Yen buys aftermarket → 85%.
+  const newCondition = useDonor ? 1.00 : 0.85;
+  state.updatePart(instanceId, partId, { condition: newCondition });
   state.markDirty();
 
   if (sync) sync.requestWrite?.();
@@ -533,9 +556,9 @@ export async function renderShop() {
 
   container.appendChild(renderCurrencyBar(profile));
 
-  const destroyedParts = await collectDestroyedParts(state, vehicleData);
+  const replaceableParts = await collectReplaceableParts(state, vehicleData);
 
-  container.appendChild(renderReplacementParts(destroyedParts, profile));
+  container.appendChild(renderReplacementParts(replaceableParts, profile));
 
   const spacer = document.createElement('div');
   spacer.style.cssText = 'height: var(--space-base);';
