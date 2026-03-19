@@ -1077,6 +1077,52 @@ const SYNTHS = {
   },
 
 
+  // ── wrench_trap_beat ──────────────────────────────────────────────────────
+  //
+  // Played for trap beats during the call phase — beats the player must HEAR
+  // but must NOT tap during response.  Deliberately sounds different from the
+  // normal call beat so the player can distinguish "tap this" from "skip this"
+  // on hearing alone, without relying on the visual ⚠ markers alone.
+  //
+  // Sound design: same ratchet base + two dissonance layers:
+  //   1. Sawtooth buzz (Eb4→Eb3 tritone descent, 70 ms)
+  //      The tritone is the most dissonant interval in the Eb pentatonic minor
+  //      scale used for Wrench (theory §7).  The rapid pitch fall mimics a
+  //      cross-threaded bolt — physically "wrong".
+  //   2. Square ping (880 Hz, highpassed) — a short electric "zap" that
+  //      contrasts with the smooth triangle ring of the normal call beat.
+
+  wrench_trap_beat(ctx, out, vol, pitch, at) {
+    const now = at || ctx.currentTime;
+
+    // Base ratchet (same transient so it reads as part of the rhythm)
+    SYNTHS._ratchet(ctx, out, vol * 0.90, pitch, now);
+
+    // Descending dissonant buzz — tritone (Eb4 → Eb3)
+    const buzz      = ctx.createOscillator();
+    buzz.type       = 'sawtooth';
+    buzz.frequency.setValueAtTime(311 * pitch, now);
+    buzz.frequency.exponentialRampToValueAtTime(155 * pitch, now + 0.07);
+    const buzzBP    = filter(ctx, 'bandpass', 230 * pitch, 3.5);
+    const buzzGain  = ctx.createGain();
+    adsr(buzzGain.gain, ctx, { t: now, attack: 0.001, hold: 0.004, decay: 0.065, peak: 0.30 * vol });
+    buzz.connect(buzzBP); buzzBP.connect(buzzGain); buzzGain.connect(out);
+    buzz.start(now); buzz.stop(now + 0.10);
+
+    // Short electric ping — square wave highpassed at 700 Hz
+    const ping      = ctx.createOscillator();
+    ping.type       = 'square';
+    ping.frequency.value = 880 * pitch;
+    const pingHP    = filter(ctx, 'highpass', 700 * pitch, 1.5);
+    const pingGain  = ctx.createGain();
+    adsr(pingGain.gain, ctx, { t: now, attack: 0.001, hold: 0.002, decay: 0.028, peak: 0.12 * vol });
+    ping.connect(pingHP); pingHP.connect(pingGain); pingGain.connect(out);
+    ping.start(now); ping.stop(now + 0.05);
+
+    return null;
+  },
+
+
   // ── wrench_combo_bump ─────────────────────────────────────────────────────
   //
   // Two-note ascending interval played at each combo level milestone.
@@ -2122,6 +2168,19 @@ export class RhythmEngine {
     const pattern = RhythmEngine.applyVariation(map, this._cycleCount);
     const isActive = pattern[step] ?? false;
 
+    // Detect trap beats so _playBeatSound can use a different timbre.
+    // Trap positions live in map.composition[compIdx].traps — the same
+    // static data the UI reads — so audio and visual stay in sync.
+    let isTrap = false;
+    if (map.composition && step < 8) {
+      const countIn = map._countInCycles ?? 0;
+      const compIdx = this._cycleCount - countIn;
+      if (compIdx >= 0) {
+        const entry = map.composition[Math.min(compIdx, map.composition.length - 1)];
+        isTrap = !!(entry?.traps?.includes(step));
+      }
+    }
+
     // Notify UI via callback (scheduled for the exact audio time)
     // Uses setTimeout to align approximately with audio playback
     const delay = Math.max(0, (time - (this._audio._ctx?.currentTime ?? 0)) * 1000);
@@ -2130,10 +2189,10 @@ export class RhythmEngine {
     if (!isActive) return;
 
     // Route to the appropriate sound based on mechanic type and step
-    this._playBeatSound(step, time, isActive);
+    this._playBeatSound(step, time, isActive, isTrap);
   }
 
-  _playBeatSound(step, time, isActive) {
+  _playBeatSound(step, time, isActive, isTrap = false) {
     if (!isActive) return;
     const map  = this._map;
     const ctx  = this._audio._ctx;
@@ -2159,11 +2218,17 @@ export class RhythmEngine {
 
     switch (map.mechanicType) {
       case 'wrench': {
-        // Only play the call beat sound during the CALL phase (steps 0–7).
-        // During response (steps 8–15) we stay silent so the player can hear
-        // themselves clearly and the call/response boundary is unambiguous.
+        // Only play call-phase sounds (steps 0-7).
+        // During response (steps 8-15) stay silent so the call/response
+        // boundary is unambiguous and the player can hear themselves.
+        // Trap beats use a dissonant buzz synth — same ratchet transient
+        // so they register as part of the rhythm, but clearly "wrong".
         if (step < 8) {
-          SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0, time);
+          if (isTrap) {
+            SYNTHS.wrench_trap_beat(ctx, out, vol * 0.85, 1.0, time);
+          } else {
+            SYNTHS.wrench_call_beat(ctx, out, vol * 0.85, 1.0, time);
+          }
         }
         break;
       }

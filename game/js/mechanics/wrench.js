@@ -725,10 +725,9 @@ export class WrenchMechanic {
     this._timingWindow  = RhythmEngine.getTimingWindow('wrench', this.skillLevel, this._map.bpm) * 1.4;
     this._totalCycles   = Math.max(4, Math.round((1 - condition) * 10));
     this._baseStepVal   = 1.0 / (this._totalCycles * 8);
-    // One 16th-note step — matches the engine's _advance() formula (60/bpm/4).
+    // One 16th-note step — matches the engine _advance() formula (60/bpm/4).
     // Previously 60/bpm (a quarter note = 4x too long), making call-cell
-    // highlights overshoot into adjacent steps so multiple cells lit up
-    // simultaneously and the rhythm felt smeared and arbitrary.
+    // highlights overshoot into adjacent steps so the rhythm felt smeared.
     this._stepDuration  = (60 / this._map.bpm / 4) * 1000;  // ms  per 16th-note step
     this._stepDurSec    = 60 / this._map.bpm / 4;            // sec per 16th-note step
 
@@ -1020,11 +1019,10 @@ export class WrenchMechanic {
         }, this._stepDuration * 0.55);
       }
 
-      // Steps 4-7: BPM-locked GET READY countdown.
-      // One pip lights up per step, giving the player a full beat (4 x 16th note)
-      // of metered preparation before the response cursor arrives at step 8.
-      // This uses the engine's own beat callbacks rather than a setTimeout, so
-      // it is immune to timer jitter and locked to the same grid as the call.
+      // Steps 4-7: BPM-locked GET READY — one pip per step, driven by engine
+      // callbacks (not setTimeout) so it is immune to jitter and locked to the
+      // same grid as the call. The player gets a full beat of metered preparation
+      // before the response cursor arrives at step 8.
       if (step === 4) {
         this._setBannerState('ready', 'GET READY');
         this._countdownEl.style.display = 'flex';
@@ -1033,7 +1031,7 @@ export class WrenchMechanic {
       if (step >= 4 && step <= 7) {
         const pipIdx = step - 4;  // 0 1 2 3
         this._countdownPips.forEach((p, i) => {
-          p.className = i < pipIdx  ? 'wv2-countdown-pip wv2-countdown-pip--done'
+          p.className = i < pipIdx   ? 'wv2-countdown-pip wv2-countdown-pip--done'
                       : i === pipIdx ? 'wv2-countdown-pip wv2-countdown-pip--active'
                       :               'wv2-countdown-pip';
         });
