@@ -8,7 +8,32 @@
 </head>
 <body>
 
-  <div id="game-root"></div>
+  <!-- ═══════════════════════════════════════
+       Fixed Header Bar
+  ═══════════════════════════════════════ -->
+  <header id="game-header">
+    <div class="header-title">JDM Restoration Garage</div>
+
+    <div class="header-right">
+      <div class="header-currency font-data">
+        <span id="hdr-yen">¥0</span>
+        <span class="text-muted"> · </span>
+        <span id="hdr-wt">0 WT</span>
+      </div>
+
+      <div class="header-sync" id="hdr-sync">
+        <span class="sync-dot sync-saved" id="sync-dot"></span>
+        <span class="sync-label" id="sync-label">Saved</span>
+      </div>
+
+      <button class="btn-icon" id="btn-mute" title="Toggle sound" aria-label="Toggle sound">🔊</button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════
+       Main Content Root
+  ═══════════════════════════════════════ -->
+  <main id="game-root"></main>
 
   <!-- ═══════════════════════════════════════
        Firebase Compat SDK (CDN)
