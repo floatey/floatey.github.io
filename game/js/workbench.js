@@ -458,6 +458,7 @@ export async function renderWorkbench(vehicleInstanceId) {
     instanceId: vehicleInstanceId,
     partTree,
     selectedPartId: null,
+    selectedSequenceId: null,
     expandedSystems: new Set(),
     mobileNavOpen: false,
   };
@@ -600,6 +601,32 @@ function renderSystemList(container) {
 
   container.innerHTML = '';
 
+  // ── JOBS section — multi-mechanic sequences ─────────────
+  const sequences = partTree.sequences || [];
+  if (sequences.length > 0) {
+    const jobsHeader = el('div', {
+      style: `display:flex; align-items:center; justify-content:space-between;
+              padding:var(--space-xs) var(--space-sm); margin-bottom:2px;`,
+    });
+    jobsHeader.appendChild(el('span', {
+      style: `font-size:var(--font-size-xs); font-weight:700; text-transform:uppercase;
+              letter-spacing:0.1em; color:var(--rarity-5,#f59e0b);
+              font-family:var(--font-data);`,
+      textContent: '⚡ JOBS',
+    }));
+    container.appendChild(jobsHeader);
+
+    for (const seq of sequences) {
+      const seqItem = renderSequenceNavItem(seq, vehicle);
+      container.appendChild(seqItem);
+    }
+
+    // Divider between jobs and systems
+    container.appendChild(el('div', {
+      style: `border-top:1px solid var(--border); margin:var(--space-sm) 0;`,
+    }));
+  }
+
   for (const system of partTree.systems) {
     const systemPartIds = systemsMap[system.id] || [];
     const completion = calcSystemCompletion(vehicle, systemPartIds);
@@ -715,9 +742,82 @@ function renderBundleItem(system, vehicle) {
   item.addEventListener('click', (e) => {
     e.stopPropagation();
     try { window.audioManager?.playClick(); } catch (_) {}
+    wb.selectedSequenceId = null;
     wb.selectedPartId = system.id;
     refreshPartDetail();
     refreshSystemList();
+  });
+
+  return item;
+}
+
+// ── Sequence nav item (JOBS section) ────────────────────────
+
+function renderSequenceNavItem(seq, vehicle) {
+  const isSelected = wb.selectedSequenceId === seq.id;
+
+  // Calculate step completion
+  let stepsTotal = seq.steps.length;
+  let stepsDone  = 0;
+  for (const step of seq.steps) {
+    const partId = step.partId;
+    if (!partId) continue;
+    const inst = vehicle.parts[partId];
+    if (inst && inst.condition !== null && inst.condition >= 0.70) stepsDone++;
+  }
+  const allDone = stepsDone >= stepsTotal;
+
+  const item = el('div', {
+    className: 'part-item' + (isSelected ? ' part-item--active' : ''),
+    style: 'padding-left:var(--space-sm);',
+  });
+
+  const left = el('div', {
+    style: 'display:flex; align-items:center; gap:var(--space-sm); min-width:0; flex:1;',
+  });
+
+  // Step dots
+  const dots = el('span', { style: 'display:flex; gap:2px; flex-shrink:0;' });
+  for (let i = 0; i < stepsTotal; i++) {
+    const stepPartId = seq.steps[i].partId;
+    const stepInst = vehicle.parts[stepPartId];
+    const done = stepInst && stepInst.condition !== null && stepInst.condition >= 0.70;
+    dots.appendChild(el('span', {
+      style: `width:6px; height:6px; border-radius:50%;
+              background:${done ? 'var(--condition-good)' : 'var(--border,#444)'};`,
+    }));
+  }
+  left.appendChild(dots);
+
+  left.appendChild(el('span', {
+    style: `overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+            ${allDone ? 'text-decoration:line-through; opacity:0.5;' : ''}`,
+    textContent: seq.name,
+  }));
+
+  const right = el('div', {
+    style: 'font-family:var(--font-data); font-size:var(--font-size-xs); color:var(--text-muted); white-space:nowrap;',
+  });
+  right.textContent = allDone ? '✅' : `${stepsDone}/${stepsTotal}`;
+
+  item.appendChild(left);
+  item.appendChild(right);
+
+  item.addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { window.audioManager?.playClick(); } catch (_) {}
+    wb.selectedSequenceId = seq.id;
+    wb.selectedPartId = null;
+    refreshPartDetail();
+    refreshSystemList();
+    // On mobile, close nav after selecting
+    if (window.innerWidth < 640) {
+      wb.mobileNavOpen = false;
+      const nav = document.getElementById('wb-system-nav');
+      if (nav) nav.classList.remove('is-open');
+      const toggle = document.getElementById('wb-mobile-toggle');
+      if (toggle) toggle.textContent = 'Systems ▼';
+    }
   });
 
   return item;
@@ -780,6 +880,7 @@ function renderPartItem(partDef, partInstance) {
   item.addEventListener('click', (e) => {
     e.stopPropagation();
     try { window.audioManager?.playClick(); } catch (_) {}
+    wb.selectedSequenceId = null;
     wb.selectedPartId = partDef.id;
     refreshPartDetail();
     refreshSystemList();
@@ -823,17 +924,26 @@ function refreshSkillBar() {
 // ══════════════════════════════════════════════════════════════
 
 function renderPartDetail(container) {
-  const { instanceId, partTree, selectedPartId } = wb;
+  const { instanceId, partTree, selectedPartId, selectedSequenceId } = wb;
   const { state } = getApp();
   const vehicle = state.getVehicle(instanceId);
 
   container.innerHTML = '';
 
+  // ── Sequence detail view ────────────────────────────────
+  if (selectedSequenceId) {
+    const seq = (partTree.sequences || []).find(s => s.id === selectedSequenceId);
+    if (seq) {
+      _renderSequenceDetail(container, seq, vehicle);
+      return;
+    }
+  }
+
   if (!selectedPartId) {
     container.appendChild(el('div', {
       className: 'part-detail',
       style: 'text-align:center; padding:var(--space-xl); color:var(--text-muted);',
-      textContent: 'Select a part from the system navigator to view details.',
+      textContent: 'Select a part or job from the navigator to view details.',
     }));
     return;
   }
@@ -989,55 +1099,6 @@ function renderPartDetail(container) {
 
   detail.appendChild(actions);
 
-  // 5b. Multi-mechanic sequence buttons — show for ANY part that belongs to a
-  // sequence, regardless of this particular part's condition. The sequence is
-  // actionable as long as at least one step still needs work.
-  if (!isBundle) {
-    const sequences = findSequencesForPart(partTree, selectedPartId);
-    if (sequences.length > 0) {
-      const seqSection = el('div', {
-        style: `margin-top:var(--space-sm); padding:var(--space-sm);
-                border:1px solid var(--border); border-radius:var(--radius-md);
-                background:rgba(245,158,11,0.04);`,
-      });
-
-      seqSection.appendChild(el('div', {
-        style: `font-size:var(--font-size-xs); color:var(--rarity-5,#f59e0b);
-                margin-bottom:var(--space-xs); text-transform:uppercase;
-                letter-spacing:0.06em; font-family:var(--font-data);`,
-        textContent: '⚡ Multi-step sequences',
-      }));
-
-      for (const { sequence } of sequences) {
-        const seqActionable = isSequenceActionable(sequence, vehicle);
-        const seqBtn = el('button', {
-          className: 'btn btn--secondary',
-          style: 'width:100%; margin-bottom:4px; text-align:left; font-size:var(--font-size-sm);',
-        });
-        seqBtn.innerHTML = `⚡ ${escHtml(sequence.name)} <span style="color:var(--text-muted); font-size:var(--font-size-xs);">(${sequence.steps.length} steps)</span>`;
-
-        if (!seqActionable || _activeSequence) {
-          seqBtn.disabled = true;
-        }
-        seqBtn.addEventListener('click', () => {
-          try { window.audioManager?.playClick(); } catch (_) {}
-          startSequence(sequence);
-        });
-        seqSection.appendChild(seqBtn);
-
-        // Description under button
-        if (sequence.description) {
-          seqSection.appendChild(el('div', {
-            style: 'font-size:11px; color:var(--text-muted); font-style:italic; margin-bottom:4px; padding-left:2px;',
-            textContent: sequence.description,
-          }));
-        }
-      }
-
-      detail.appendChild(seqSection);
-    }
-  }
-
   // 6. Flavor text
   const flavorTexts = partDef.flavorText || [];
   if (flavorTexts.length > 0) {
@@ -1049,6 +1110,160 @@ function renderPartDetail(container) {
     }));
   }
 
+  container.appendChild(detail);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SEQUENCE DETAIL — Right Panel (when a job is selected)
+// ══════════════════════════════════════════════════════════════
+
+/**
+ * Render the detail view for a selected multi-mechanic sequence.
+ * Shows step list, per-step status, description, and start button
+ * with a clear bonus incentive for completing the full chain.
+ */
+function _renderSequenceDetail(container, seq, vehicle) {
+  const { partTree } = wb;
+  const detail = el('div', { className: 'part-detail' });
+
+  // 1. Title
+  detail.appendChild(el('div', {
+    className: 'part-detail__name',
+    innerHTML: `⚡ ${escHtml(seq.name)}`,
+  }));
+
+  // 2. Description
+  if (seq.description) {
+    detail.appendChild(el('div', {
+      style: 'color:var(--text-secondary); font-style:italic; margin-bottom:var(--space-base); line-height:1.5;',
+      textContent: seq.description,
+    }));
+  }
+
+  // 3. Step list with status
+  const stepsWrap = el('div', {
+    style: `background:var(--bg-elevated); border:1px solid var(--border);
+            border-radius:var(--radius-md); overflow:hidden; margin-bottom:var(--space-base);`,
+  });
+
+  let stepsTotal = seq.steps.length;
+  let stepsDone  = 0;
+
+  for (let i = 0; i < seq.steps.length; i++) {
+    const step = seq.steps[i];
+    const partId = step.partId;
+    const partDef = findPartDef(partTree, partId);
+    const partInst = vehicle.parts[partId];
+    const partName = partDef ? partDef.name : partId;
+    const mechanic = step.mechanic || partDef?.repairType || 'wrench';
+    const mechInfo = getRepairTypeInfo(mechanic);
+    const condition = partInst?.condition;
+    const condInfo  = getConditionInfo(condition);
+    const isDone = condition !== null && condition >= 0.70;
+
+    if (isDone) stepsDone++;
+
+    const stepRow = el('div', {
+      style: `display:flex; align-items:center; gap:var(--space-sm);
+              padding:var(--space-sm) var(--space-base);
+              ${i > 0 ? 'border-top:1px solid var(--border);' : ''}
+              ${isDone ? 'opacity:0.5;' : ''}`,
+    });
+
+    // Step number circle
+    stepRow.appendChild(el('span', {
+      style: `width:22px; height:22px; border-radius:50%; display:flex;
+              align-items:center; justify-content:center; flex-shrink:0;
+              font-family:var(--font-data); font-size:11px; font-weight:700;
+              background:${isDone ? 'var(--condition-good)' : 'var(--bg-primary)'};
+              color:${isDone ? 'var(--bg-primary)' : 'var(--text-secondary)'};
+              border:1px solid ${isDone ? 'var(--condition-good)' : 'var(--border)'};`,
+      textContent: isDone ? '✓' : String(i + 1),
+    }));
+
+    // Step info
+    const stepInfo = el('div', { style: 'flex:1; min-width:0;' });
+    stepInfo.appendChild(el('div', {
+      style: `font-size:var(--font-size-sm); font-weight:500;
+              ${isDone ? 'text-decoration:line-through;' : 'color:var(--text-primary);'}`,
+      textContent: step.label || partName,
+    }));
+    stepInfo.appendChild(el('div', {
+      style: 'font-size:11px; color:var(--text-muted); font-family:var(--font-data);',
+      innerHTML: `${mechInfo.icon} ${mechInfo.label} · ${partName}`,
+    }));
+    stepRow.appendChild(stepInfo);
+
+    // Condition badge
+    stepRow.appendChild(el('span', {
+      style: `font-family:var(--font-data); font-size:11px; color:${condInfo.color}; white-space:nowrap;`,
+      textContent: isDone ? 'DONE' : `${condInfo.pct}%`,
+    }));
+
+    stepsWrap.appendChild(stepRow);
+  }
+
+  detail.appendChild(stepsWrap);
+
+  // 4. Bonus info
+  const allDone = stepsDone >= stepsTotal;
+  const actionable = !allDone && isSequenceActionable(seq, vehicle);
+
+  if (!allDone) {
+    detail.appendChild(el('div', {
+      style: `font-size:var(--font-size-sm); color:var(--rarity-5,#f59e0b);
+              margin-bottom:var(--space-base); padding:var(--space-sm);
+              background:rgba(245,158,11,0.06); border-radius:var(--radius-md);
+              border:1px solid rgba(245,158,11,0.15); font-family:var(--font-data);`,
+      innerHTML: `⚡ <strong>Sequence bonus:</strong> 1.5× XP on all steps + ¥ completion reward`,
+    }));
+  } else {
+    detail.appendChild(el('div', {
+      style: 'font-size:var(--font-size-sm); color:var(--condition-good); margin-bottom:var(--space-base); text-align:center; font-weight:600;',
+      textContent: '✅ All steps complete!',
+    }));
+  }
+
+  // 5. Progress bar
+  const progressPct = stepsTotal > 0 ? Math.round((stepsDone / stepsTotal) * 100) : 0;
+  const progressRow = el('div', { style: 'margin-bottom:var(--space-base);' });
+  progressRow.appendChild(el('div', {
+    style: 'display:flex; justify-content:space-between; font-family:var(--font-data); font-size:11px; color:var(--text-muted); margin-bottom:4px;',
+    innerHTML: `<span>Progress</span><span>${stepsDone}/${stepsTotal} steps</span>`,
+  }));
+  const track = el('div', {
+    style: 'height:6px; border-radius:3px; background:var(--bg-elevated); border:1px solid var(--border); overflow:hidden;',
+  });
+  track.appendChild(el('div', {
+    style: `height:100%; width:${progressPct}%; border-radius:3px;
+            background:${allDone ? 'var(--condition-good)' : 'var(--rarity-5,#f59e0b)'};
+            transition:width 300ms ease;`,
+  }));
+  progressRow.appendChild(track);
+  detail.appendChild(progressRow);
+
+  // 6. Action button
+  const actions = el('div', { className: 'part-detail__actions' });
+
+  if (actionable && !_activeSequence) {
+    const startBtn = el('button', {
+      className: 'btn btn--primary',
+      style: 'width:100%;',
+      textContent: `⚡ Start: ${seq.name}`,
+    });
+    startBtn.addEventListener('click', () => {
+      try { window.audioManager?.playClick(); } catch (_) {}
+      startSequence(seq);
+    });
+    actions.appendChild(startBtn);
+  } else if (_activeSequence) {
+    actions.appendChild(el('div', {
+      style: 'text-align:center; color:var(--text-muted); font-size:var(--font-size-sm); padding:var(--space-sm);',
+      textContent: 'Sequence in progress…',
+    }));
+  }
+
+  detail.appendChild(actions);
   container.appendChild(detail);
 }
 
@@ -1840,9 +2055,26 @@ function _completeSequence() {
   if (!_activeSequence) return;
   const { sequence, totalXP, logs } = _activeSequence;
   const { instanceId, partTree } = wb;
+  const { state } = getApp();
 
-  addLogEntry(instanceId, '⚡', `Sequence complete: ${sequence.name} (${logs.length} steps, +${totalXP} XP)`);
-  showToast(`⚡ ${sequence.name} — Sequence Complete!`, 4000);
+  // ── Sequence completion bonus: +50% XP retroactive + ¥ bonus ──
+  const bonusXP = Math.round(totalXP * 0.5);
+  if (bonusXP > 0) {
+    // Distribute bonus XP across each mechanic type used in the sequence
+    const mechTypes = [...new Set(sequence.steps.map(s => s.mechanic).filter(Boolean))];
+    const xpPerMech = Math.round(bonusXP / Math.max(1, mechTypes.length));
+    for (const mech of mechTypes) {
+      const levelUps = state.addSkillXP(mech, xpPerMech);
+      _handleLevelUps(levelUps);
+    }
+  }
+
+  const yenBonus = 150 + sequence.steps.length * 50;
+  state.updateCurrency('yen', yenBonus);
+
+  addLogEntry(instanceId, '⚡', `Sequence complete: ${sequence.name}`);
+  addLogEntry(instanceId, '⚡', `Sequence bonus: +${bonusXP} XP (1.5×) · +${formatYen(yenBonus)}`);
+  showToast(`⚡ ${sequence.name} Complete! +${bonusXP} XP · +${formatYen(yenBonus)}`, 5000);
 
   try { window.audioManager?.play('system_complete'); } catch (_) {}
 
