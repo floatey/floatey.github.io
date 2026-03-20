@@ -1593,7 +1593,9 @@ export class WrenchMechanic {
         if (cell) {
           cell.classList.remove('wv2-cell--cursor', 'wv2-cell--cursor-active', 'wv2-cell--resp-preview');
           cell.classList.add('wv2-cell--hit', 'wv2-cell--hit-anim');
+          const cycleAtTap = this._cycleIndex;
           setTimeout(() => {
+            if (this._cycleIndex !== cycleAtTap) return;  // cycle has moved on — bail
             cell?.classList.remove('wv2-cell--hit-anim');
             cell?.classList.add('wv2-cell--hit');
           }, 320);
