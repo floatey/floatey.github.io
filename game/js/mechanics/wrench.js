@@ -696,6 +696,10 @@ export class WrenchMechanic {
     // Intro double-call
     this._introCallsDone  = 0;
 
+    // Increments every time _startCallPhase runs — used to invalidate
+    // stale call-row setTimeouts across both normal and listen-again cycles.
+    this._callPhaseSeq    = 0;
+
     // DOM refs
     this._callCells      = [];
     this._responseCells  = [];
@@ -1050,7 +1054,9 @@ export class WrenchMechanic {
 
       if (isActive) {
         this._callCells[step]?.classList.add('wv2-cell--call-active');
+        const seqAtBeat = this._callPhaseSeq;
         setTimeout(() => {
+          if (this._callPhaseSeq !== seqAtBeat) return;  // new call phase started — bail
           const cell = this._callCells[step];
           if (cell && this._phase === 'call') {
             cell.classList.remove('wv2-cell--call-active');
@@ -1059,19 +1065,23 @@ export class WrenchMechanic {
         }, this._stepDuration * 0.55);
       }
 
-      // Steps 4-7: BPM-locked GET READY — one pip per step, no setTimeout.
-      if (step === 4) {
-        this._setBannerState('ready', 'GET READY');
-        this._countdownEl.style.display = 'flex';
-        this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
-      }
-      if (step >= 4 && step <= 7) {
-        const pipIdx = step - 4;  // 0 1 2 3
-        this._countdownPips.forEach((p, i) => {
-          p.className = i < pipIdx   ? 'wv2-countdown-pip wv2-countdown-pip--done'
-                      : i === pipIdx ? 'wv2-countdown-pip wv2-countdown-pip--active'
-                      :               'wv2-countdown-pip';
-        });
+      // Steps 4-7: BPM-locked GET READY — only when this call will actually
+      // transition to a real response on step 8 (i.e. not a listen-again pass).
+      const isListenAgain = this.skillLevel <= 5 && this._cycleIndex === 0 && this._introCallsDone < 1;
+      if (!isListenAgain) {
+        if (step === 4) {
+          this._setBannerState('ready', 'GET READY');
+          this._countdownEl.style.display = 'flex';
+          this._countdownPips.forEach(p => { p.className = 'wv2-countdown-pip'; });
+        }
+        if (step >= 4 && step <= 7) {
+          const pipIdx = step - 4;  // 0 1 2 3
+          this._countdownPips.forEach((p, i) => {
+            p.className = i < pipIdx   ? 'wv2-countdown-pip wv2-countdown-pip--done'
+                        : i === pipIdx ? 'wv2-countdown-pip wv2-countdown-pip--active'
+                        :               'wv2-countdown-pip';
+          });
+        }
       }
     }
 
@@ -1132,6 +1142,7 @@ export class WrenchMechanic {
 
   _startCallPhase() {
     this._phase = 'call';
+    this._callPhaseSeq++;
 
     // Stop any hold sustain that leaked past a cycle boundary
     if (this._holdSustainHandle) {
