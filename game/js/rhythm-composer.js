@@ -257,7 +257,14 @@ export function composeWrenchSession(partId, difficulty, totalCycles) {
       if (trapSet.has(i)) typed[i] = null;
     }
 
-    composition.push({ call, response, typed, holds, traps, phase });
+    // Build typed response pattern from the (potentially varied) response array.
+    // Holds are anchored to the call shape; traps are skipped in response too.
+    const typedResponse = buildTypedPattern(response, holds);
+    for (let i = 0; i < typedResponse.length; i++) {
+      if (trapSet.has(i)) typedResponse[i] = null;
+    }
+
+    composition.push({ call, response, typed, typedResponse, holds, traps, phase });
   }
 
   return { motifCells: [cellAName, cellBName], motif, composition };

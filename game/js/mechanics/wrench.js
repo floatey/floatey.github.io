@@ -663,9 +663,10 @@ export class WrenchMechanic {
     this._totalPatterns  = 0;
 
     // Per-cycle pattern (typed: null | {t:'tap'} | {t:'hold',len,endStep} | {t:'held',start} | {t:'hold-end',start})
-    this._typedPattern    = [];
-    this._callPattern     = [];  // raw bools for backwards compat
-    this._responsePattern = [];
+    this._typedPattern         = [];   // call shape — used for call row rendering only
+    this._typedResponsePattern = [];   // response shape — used for response evaluation/preview
+    this._callPattern          = [];   // raw bools for backwards compat
+    this._responsePattern      = [];
 
     // Per-cycle response tracking
     this._responseTaps       = [];   // result per step: 'correct'|'stripped'|'miss'|'ok'|'hold-correct'|etc.
@@ -1094,7 +1095,7 @@ export class WrenchMechanic {
       this._responseStep        = rStep;
       this._responseStepTime    = time;
       // Traps require right-click — treat as active so cursor pulses amber
-      this._responseStepActive  = !!this._typedPattern[rStep] || this._trapPositions.has(rStep);
+      this._responseStepActive  = !!this._typedResponsePattern[rStep] || this._trapPositions.has(rStep);
       this._responseStepEval    = false;
 
       // ── JITTER COMPENSATION ─────────────────────────────────────
@@ -1157,17 +1158,19 @@ export class WrenchMechanic {
     const entry = comp?.[ci];
 
     if (entry) {
-      this._callPattern     = [...entry.call];
-      this._responsePattern = [...entry.response];
-      this._typedPattern    = entry.typed;   // pre-composed with holds + trap nulls
-      this._trapPositions   = new Set(entry.traps ?? []);
+      this._callPattern          = [...entry.call];
+      this._responsePattern      = [...entry.response];
+      this._typedPattern         = entry.typed;          // call shape — for call row rendering
+      this._typedResponsePattern = entry.typedResponse ?? entry.typed;  // response shape — for evaluation
+      this._trapPositions        = new Set(entry.traps ?? []);
     } else {
       // Fallback to legacy generation if composition is missing
       const variedCall = RhythmEngine.applyVariation(this._map, this._cycleIndex);
-      this._callPattern     = variedCall.slice(0, 8);
-      this._responsePattern = [...this._callPattern];
-      this._typedPattern    = this._upgradePattern(this._callPattern, this._cycleIndex);
-      this._trapPositions   = new Set();
+      this._callPattern          = variedCall.slice(0, 8);
+      this._responsePattern      = [...this._callPattern];
+      this._typedPattern         = this._upgradePattern(this._callPattern, this._cycleIndex);
+      this._typedResponsePattern = this._typedPattern;
+      this._trapPositions        = new Set();
     }
 
     // Clear all cells
@@ -1255,7 +1258,7 @@ export class WrenchMechanic {
   _renderResponsePreview() {
     for (let i = 0; i < 8; i++) {
       const cell = this._responseCells[i];
-      const step = this._typedPattern[i];
+      const step = this._typedResponsePattern[i];
 
       // Preserve timing label
       const label = cell.querySelector('.wv2-timing-label');
@@ -1305,7 +1308,7 @@ export class WrenchMechanic {
     this._phase              = 'response';
     this._responseStep       = 0;
     this._responseStepTime   = stepTime;
-    this._responseStepActive = !!this._typedPattern[0] || this._trapPositions.has(0);
+    this._responseStepActive = !!this._typedResponsePattern[0] || this._trapPositions.has(0);
     this._responseStepEval   = false;
     this._responseTaps       = new Array(8).fill(null);
 
@@ -1351,7 +1354,7 @@ export class WrenchMechanic {
     if (this._responseStep !== prevStep) return;
     if (this._responseStepEval) return;
 
-    const stepData = this._typedPattern[prevStep];
+    const stepData = this._typedResponsePattern[prevStep];
 
     if (stepData?.t === 'held' || stepData?.t === 'hold-end') {
       // This is part of a hold — the hold result was already set by the press/release handlers.
@@ -1392,7 +1395,7 @@ export class WrenchMechanic {
 
   _evaluateMissedLastStep() {
     if (this._responseStep === 7 && !this._responseStepEval) {
-      const stepData = this._typedPattern[7];
+      const stepData = this._typedResponsePattern[7];
       if (stepData?.t === 'held' || stepData?.t === 'hold-end') {
         this._responseStepEval = true;
         return;
@@ -1428,7 +1431,7 @@ export class WrenchMechanic {
 
     for (let i = 0; i < 8; i++) {
       const t    = taps[i];
-      const step = this._typedPattern[i];
+      const step = this._typedResponsePattern[i];
       if (!step) continue;  // rest or trap position — handled separately below
 
       if (t === 'correct' || t === 'hold-correct') {
@@ -1455,7 +1458,7 @@ export class WrenchMechanic {
     }
 
     // Traps count as required inputs toward activeCount
-    const activeCount = this._typedPattern.filter(s => s && s.t !== 'held' && s.t !== 'hold-end').length
+    const activeCount = this._typedResponsePattern.filter(s => s && s.t !== 'held' && s.t !== 'hold-end').length
                       + this._trapPositions.size;
     const isPerfect   = stripped === 0 && missed === 0 && correct > 0;
 
@@ -1548,7 +1551,7 @@ export class WrenchMechanic {
 
     const rStep    = this._responseStep;
     const cell     = this._responseCells[rStep];
-    const stepData = this._typedPattern[rStep];
+    const stepData = this._typedResponsePattern[rStep];
 
     if (!stepData) {
       const isTrap = this._trapPositions.has(rStep);
@@ -1733,7 +1736,7 @@ export class WrenchMechanic {
 
     } else {
       // ── Non-trap beat: wrong input ────────────────────────────
-      const stepData = this._typedPattern[rStep];
+      const stepData = this._typedResponsePattern[rStep];
       if (stepData) {
         // Active normal beat — right-clicking it is just a miss
         this._responseTaps[rStep] = 'miss';
