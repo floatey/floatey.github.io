@@ -223,12 +223,8 @@ export function composeWrenchSession(partId, difficulty, totalCycles) {
     call[0] = true;
     if (diff >= 0.20 && !call[4] && !(call[3] && call[5])) call[4] = true;
 
-    // Response
+    // Response always mirrors the call exactly — player responds to what they heard.
     const response = [...call];
-    if (phase !== 'exposition') {
-      const cc = phase === 'development' ? 0.25 : phase === 'variation' ? 0.40 : 0.50;
-      if (rng() < cc) { response[6] = !call[6]; response[7] = !call[7]; }
-    }
 
     // Holds
     const holds = [];
